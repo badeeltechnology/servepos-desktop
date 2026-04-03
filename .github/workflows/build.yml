@@ -29,7 +29,7 @@ jobs:
         run: npm run build
 
       - name: Package for macOS
-        run: npx electron-builder --mac --config electron-builder.yml
+        run: npx electron-builder --mac zip --config electron-builder.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -37,7 +37,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ServePOS-macOS
-          path: dist/*.dmg
+          path: |
+            dist/*.zip
+            dist/*.dmg
 
   build-windows:
     runs-on: windows-latest

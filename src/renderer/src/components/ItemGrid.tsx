@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Search } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { useCartStore, CartModifier } from '../stores/cart'
 import ModifierModal from './ModifierModal'
 
@@ -19,6 +19,26 @@ interface ItemGroup {
   name_ar: string | null
 }
 
+// Vibrant category colors
+const categoryColors = [
+  'bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500',
+  'bg-rose-500', 'bg-cyan-500', 'bg-fuchsia-500', 'bg-lime-500',
+  'bg-orange-500', 'bg-teal-500', 'bg-indigo-500', 'bg-pink-500'
+]
+
+const categoryBgColors = [
+  'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100',
+  'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100',
+  'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100',
+  'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',
+  'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100',
+  'bg-cyan-50 text-cyan-700 border-cyan-200 hover:bg-cyan-100',
+  'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 hover:bg-fuchsia-100',
+  'bg-lime-50 text-lime-700 border-lime-200 hover:bg-lime-100',
+  'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100',
+  'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100',
+]
+
 export default function ItemGrid() {
   const [items, setItems] = useState<Item[]>([])
   const [groups, setGroups] = useState<ItemGroup[]>([])
@@ -32,9 +52,7 @@ export default function ItemGrid() {
 
   const addItem = useCartStore((s) => s.addItem)
 
-  useEffect(() => {
-    loadData()
-  }, [])
+  useEffect(() => { loadData() }, [])
 
   async function loadData() {
     const [itemsData, groupsData] = await Promise.all([
@@ -43,30 +61,23 @@ export default function ItemGrid() {
     ])
     setItems(itemsData)
     setGroups(groupsData)
-    if (groupsData.length > 0 && !activeGroup) {
-      setActiveGroup(null) // show all by default
-    }
   }
 
   const filteredItems = useMemo(() => {
-    let filtered = items.filter((i) => !i.variant_of) // hide variants from main grid
-    if (activeGroup) {
-      filtered = filtered.filter((i) => i.item_group === activeGroup)
-    }
+    let filtered = items.filter((i) => !i.variant_of)
+    if (activeGroup) filtered = filtered.filter((i) => i.item_group === activeGroup)
     if (search) {
       const q = search.toLowerCase()
-      filtered = filtered.filter(
-        (i) =>
-          i.item_name.toLowerCase().includes(q) ||
-          i.item_code.toLowerCase().includes(q) ||
-          (i.item_name_ar && i.item_name_ar.includes(q))
+      filtered = filtered.filter((i) =>
+        i.item_name.toLowerCase().includes(q) ||
+        i.item_code.toLowerCase().includes(q) ||
+        (i.item_name_ar && i.item_name_ar.includes(q))
       )
     }
     return filtered
   }, [items, activeGroup, search])
 
   async function handleItemClick(item: Item) {
-    // If item has variants, show variant picker
     if (item.has_variants) {
       const variants = await window.api.items.getVariants(item.item_code)
       setVariantItems(variants)
@@ -74,54 +85,31 @@ export default function ItemGrid() {
       setShowVariants(true)
       return
     }
-
-    // Check for modifiers
     const modGroups = await window.api.modifiers.getItemGroups(item.item_code)
     if (modGroups.length > 0) {
       setPendingItem(item)
       setShowModifiers(true)
       return
     }
-
-    // Simple item — add directly
-    addItem({
-      itemCode: item.item_code,
-      itemName: item.item_name,
-      qty: 1,
-      rate: item.rate
-    })
+    addItem({ itemCode: item.item_code, itemName: item.item_name, qty: 1, rate: item.rate })
   }
 
-  function handleVariantSelect(variant: Item) {
+  async function handleVariantSelect(variant: Item) {
     setShowVariants(false)
-    // Check modifiers for the variant too
-    handleItemAfterVariant(variant)
-  }
-
-  async function handleItemAfterVariant(item: Item) {
-    const modGroups = await window.api.modifiers.getItemGroups(item.item_code)
+    const modGroups = await window.api.modifiers.getItemGroups(variant.item_code)
     if (modGroups.length > 0) {
-      setPendingItem(item)
+      setPendingItem(variant)
       setShowModifiers(true)
       return
     }
-    addItem({
-      itemCode: item.item_code,
-      itemName: item.item_name,
-      qty: 1,
-      rate: item.rate
-    })
+    addItem({ itemCode: variant.item_code, itemName: variant.item_name, qty: 1, rate: variant.rate })
   }
 
   function handleModifierConfirm(modifiers: CartModifier[], instructions: string) {
     if (pendingItem) {
       addItem({
-        itemCode: pendingItem.item_code,
-        itemName: pendingItem.item_name,
-        qty: 1,
-        rate: pendingItem.rate,
-        modifiers,
-        specialInstructions: instructions
+        itemCode: pendingItem.item_code, itemName: pendingItem.item_name,
+        qty: 1, rate: pendingItem.rate, modifiers, specialInstructions: instructions
       })
     }
     setPendingItem(null)
@@ -129,92 +117,99 @@ export default function ItemGrid() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-gray-100">
       {/* Search bar */}
-      <div className="border-b bg-white px-4 py-3">
+      <div className="bg-white px-4 py-3 shadow-sm">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground/50" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search items..."
-            className="w-full rounded-lg border border-input bg-muted/30 py-2 pl-9 pr-3 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+            placeholder="Search menu items..."
+            className="w-full rounded-xl border-0 bg-gray-100 py-3 pl-11 pr-10 text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-muted">
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Category tabs */}
-      <div className="flex gap-1 overflow-x-auto border-b bg-white px-4 py-2">
-        <button
-          onClick={() => setActiveGroup(null)}
-          className={`whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
-            !activeGroup
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground hover:bg-muted/80'
-          }`}
-        >
-          All
-        </button>
-        {groups.map((g) => (
+      {/* Category tabs — large, scrollable, colorful */}
+      <div className="bg-white px-3 pb-3 shadow-sm">
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
           <button
-            key={g.name}
-            onClick={() => setActiveGroup(g.name)}
-            className={`whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
-              activeGroup === g.name
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            onClick={() => setActiveGroup(null)}
+            className={`flex-shrink-0 rounded-xl border-2 px-5 py-3 text-sm font-semibold transition-all ${
+              !activeGroup
+                ? 'border-primary bg-primary text-white shadow-md shadow-primary/25'
+                : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
             }`}
           >
-            {g.name}
+            All Items
           </button>
-        ))}
+          {groups.map((g, i) => {
+            const isActive = activeGroup === g.name
+            const colorIdx = i % categoryBgColors.length
+            return (
+              <button
+                key={g.name}
+                onClick={() => setActiveGroup(g.name)}
+                className={`flex-shrink-0 rounded-xl border-2 px-5 py-3 text-sm font-semibold transition-all ${
+                  isActive
+                    ? `${categoryColors[colorIdx]} text-white border-transparent shadow-md`
+                    : `${categoryBgColors[colorIdx]} border-transparent`
+                }`}
+              >
+                {g.name}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Item grid */}
       <div className="flex-1 overflow-y-auto p-4">
         {filteredItems.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            {search ? 'No items match your search' : 'No items available'}
+          <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
+            <Search className="mb-3 h-12 w-12 opacity-20" />
+            <p className="text-lg font-medium">{search ? 'No items match your search' : 'No items available'}</p>
+            <p className="text-sm opacity-60">Try a different category or search term</p>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
             {filteredItems.map((item) => (
               <button
                 key={item.item_code}
                 onClick={() => handleItemClick(item)}
-                className="group flex flex-col rounded-xl border bg-white p-3 text-left shadow-sm transition-all hover:border-primary/30 hover:shadow-md active:scale-[0.98]"
+                className="group flex flex-col overflow-hidden rounded-2xl border-2 border-white bg-white shadow-sm transition-all hover:border-primary/20 hover:shadow-lg active:scale-[0.97]"
               >
+                {/* Image or placeholder */}
                 {item.image ? (
-                  <div className="mb-2 aspect-square overflow-hidden rounded-lg bg-muted">
-                    <img
-                      src={item.image}
-                      alt={item.item_name}
-                      className="h-full w-full object-cover"
-                    />
+                  <div className="aspect-[4/3] w-full overflow-hidden bg-gray-100">
+                    <img src={item.image} alt={item.item_name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
                   </div>
                 ) : (
-                  <div className="mb-2 flex aspect-square items-center justify-center rounded-lg bg-gradient-to-br from-primary/5 to-primary/10">
-                    <span className="text-2xl font-bold text-primary/20">
-                      {item.item_name.charAt(0)}
-                    </span>
+                  <div className="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-primary/5 to-primary/15">
+                    <span className="text-4xl font-black text-primary/15">{item.item_name.charAt(0)}</span>
                   </div>
                 )}
-                <h3 className="text-sm font-medium leading-tight group-hover:text-primary">
-                  {item.item_name}
-                </h3>
-                {item.item_name_ar && (
-                  <p className="mt-0.5 text-xs text-muted-foreground" dir="rtl">
-                    {item.item_name_ar}
-                  </p>
-                )}
-                <div className="mt-auto pt-2">
-                  <span className="text-sm font-semibold text-primary">
-                    {item.rate.toFixed(2)}
-                  </span>
-                  {item.has_variants ? (
-                    <span className="ml-1 text-xs text-muted-foreground">+</span>
-                  ) : null}
+                {/* Info */}
+                <div className="flex flex-1 flex-col p-3">
+                  <h3 className="text-sm font-semibold leading-snug text-gray-800 group-hover:text-primary">
+                    {item.item_name}
+                  </h3>
+                  {item.item_name_ar && (
+                    <p className="mt-0.5 text-xs text-gray-400" dir="rtl">{item.item_name_ar}</p>
+                  )}
+                  <div className="mt-auto flex items-center justify-between pt-2">
+                    <span className="text-base font-bold text-primary">{item.rate.toFixed(2)}</span>
+                    {item.has_variants && (
+                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">SIZES</span>
+                    )}
+                  </div>
                 </div>
               </button>
             ))}
@@ -222,32 +217,27 @@ export default function ItemGrid() {
         )}
       </div>
 
-      {/* Variant picker modal */}
+      {/* Variant picker */}
       {showVariants && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="w-96 rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="mb-1 text-lg font-bold">{selectedItem.item_name}</h3>
-            <p className="mb-4 text-sm text-muted-foreground">Select a size / variant</p>
+            <h3 className="mb-1 text-xl font-bold">{selectedItem.item_name}</h3>
+            <p className="mb-5 text-sm text-muted-foreground">Select a size</p>
             <div className="space-y-2">
               {variantItems.map((v) => {
                 const attrs = v.attributes ? JSON.parse(v.attributes) : {}
                 const label = Object.values(attrs).join(' / ') || v.item_name
                 return (
-                  <button
-                    key={v.item_code}
-                    onClick={() => handleVariantSelect(v)}
-                    className="flex w-full items-center justify-between rounded-lg border p-3 text-sm hover:border-primary hover:bg-primary/5"
-                  >
-                    <span className="font-medium">{label}</span>
-                    <span className="font-semibold text-primary">{v.rate.toFixed(2)}</span>
+                  <button key={v.item_code} onClick={() => handleVariantSelect(v)}
+                    className="flex w-full items-center justify-between rounded-xl border-2 border-gray-100 p-4 text-sm transition-all hover:border-primary hover:bg-primary/5 active:scale-[0.98]">
+                    <span className="font-semibold">{label}</span>
+                    <span className="text-lg font-bold text-primary">{v.rate.toFixed(2)}</span>
                   </button>
                 )
               })}
             </div>
-            <button
-              onClick={() => setShowVariants(false)}
-              className="mt-4 w-full rounded-lg border border-input py-2 text-sm font-medium hover:bg-muted"
-            >
+            <button onClick={() => setShowVariants(false)}
+              className="mt-4 w-full rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-500 hover:bg-gray-50">
               Cancel
             </button>
           </div>
@@ -256,15 +246,8 @@ export default function ItemGrid() {
 
       {/* Modifier modal */}
       {showModifiers && pendingItem && (
-        <ModifierModal
-          itemCode={pendingItem.item_code}
-          itemName={pendingItem.item_name}
-          onConfirm={handleModifierConfirm}
-          onCancel={() => {
-            setShowModifiers(false)
-            setPendingItem(null)
-          }}
-        />
+        <ModifierModal itemCode={pendingItem.item_code} itemName={pendingItem.item_name}
+          onConfirm={handleModifierConfirm} onCancel={() => { setShowModifiers(false); setPendingItem(null) }} />
       )}
     </div>
   )
