@@ -29,6 +29,7 @@ interface ReceiptData {
     qty: number
     rate: number
     amount: number
+    description?: string
     modifiers?: { name: string; price: number }[]
     specialInstructions?: string
     discountPercent?: number
@@ -94,11 +95,22 @@ export function generateReceipt(data: ReceiptData): string {
   lines.push(formatLine('Qty  Item', 'Amount'))
   lines.push(CMD.DASH_LINE)
 
+  const showDescOnReceipt = config.show_description_on_receipt === '1'
+
   // Items
   for (const item of data.items) {
     const qtyStr = ` ${item.qty}   `
     const amtStr = item.amount.toFixed(decimals)
     lines.push(formatLine(`${qtyStr}${item.itemName}`, amtStr))
+
+    if (showDescOnReceipt && item.description) {
+      // Wrap description to fit 80mm paper (~32 chars)
+      const desc = item.description
+      const maxLen = 27 // indent 5 chars
+      for (let i = 0; i < desc.length; i += maxLen) {
+        lines.push(`     ${desc.slice(i, i + maxLen)}`)
+      }
+    }
 
     if (item.modifiers) {
       for (const mod of item.modifiers) {

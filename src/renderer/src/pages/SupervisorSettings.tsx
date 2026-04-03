@@ -383,14 +383,23 @@ function ItemVisibility() {
   const [groups, setGroups] = useState<any[]>([])
   const [items, setItems] = useState<any[]>([])
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
+  const [modifierGroups, setModifierGroups] = useState<any[]>([])
+  const [assigningItem, setAssigningItem] = useState<string | null>(null)
+  const [itemModGroups, setItemModGroups] = useState<any[]>([])
+  const [selectedModGroup, setSelectedModGroup] = useState('')
+  const [modRequired, setModRequired] = useState(false)
 
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    const g = await window.api.itemGroups.getAll()
-    const i = await window.api.items.getAll()
+    const [g, i, mg] = await Promise.all([
+      window.api.itemGroups.getAll(),
+      window.api.items.getAll(),
+      window.api.modifiers.getGroups()
+    ])
     setGroups(g)
     setItems(i)
+    setModifierGroups(mg)
   }
 
   async function toggleGroup(name: string, visible: boolean) {
@@ -403,12 +412,39 @@ function ItemVisibility() {
     loadData()
   }
 
+  async function openModifierAssign(itemCode: string) {
+    setAssigningItem(itemCode)
+    const assigned = await window.api.modifiers.getItemGroups(itemCode)
+    setItemModGroups(assigned)
+    setSelectedModGroup('')
+    setModRequired(false)
+  }
+
+  async function handleAssignModifier() {
+    if (!assigningItem || !selectedModGroup) return
+    await window.api.modifiers.assignToItem(assigningItem, selectedModGroup, modRequired, itemModGroups.length)
+    const assigned = await window.api.modifiers.getItemGroups(assigningItem)
+    setItemModGroups(assigned)
+    setSelectedModGroup('')
+    setModRequired(false)
+  }
+
+  async function handleRemoveModifier(id: string) {
+    await window.api.modifiers.removeFromItem(id)
+    if (assigningItem) {
+      const assigned = await window.api.modifiers.getItemGroups(assigningItem)
+      setItemModGroups(assigned)
+    }
+  }
+
   const filteredItems = selectedGroup ? items.filter((i) => i.item_group === selectedGroup) : items
+  const assigningItemData = assigningItem ? items.find((i) => i.item_code === assigningItem) : null
 
   return (
     <div className="max-w-3xl">
-      <h2 className="mb-4 text-xl font-bold">Item Visibility</h2>
+      <h2 className="mb-4 text-xl font-bold">Items & Modifiers</h2>
 
+      {/* Group filter */}
       <div className="mb-4 rounded-xl border bg-white p-4">
         <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Item Groups</h3>
         <div className="flex flex-wrap gap-2">
@@ -432,6 +468,7 @@ function ItemVisibility() {
         </div>
       </div>
 
+      {/* Items list */}
       <div className="rounded-xl border bg-white">
         <div className="border-b px-5 py-3">
           <span className="text-sm font-semibold">{selectedGroup || 'All Items'}</span>
@@ -439,23 +476,106 @@ function ItemVisibility() {
         </div>
         <div className="max-h-[500px] divide-y overflow-y-auto">
           {filteredItems.map((item) => (
-            <div key={item.item_code} className="flex items-center justify-between px-5 py-2">
-              <div>
-                <span className={`text-sm ${!item.is_visible ? 'text-muted-foreground line-through' : ''}`}>
-                  {item.item_name}
-                </span>
-                <span className="ml-2 text-xs text-muted-foreground">{item.rate?.toFixed(2)}</span>
+            <div key={item.item_code} className="flex items-center justify-between px-5 py-2.5">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-medium ${!item.is_visible ? 'text-muted-foreground line-through' : ''}`}>
+                    {item.item_name}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{item.rate?.toFixed(2)}</span>
+                </div>
+                {item.description && (
+                  <p className="mt-0.5 truncate text-xs text-gray-400">{item.description}</p>
+                )}
               </div>
-              <button
-                onClick={() => toggleItem(item.item_code, item.is_visible)}
-                className={`rounded-lg p-1.5 ${item.is_visible ? 'text-green-500 hover:bg-green-50' : 'text-red-400 hover:bg-red-50'}`}
-              >
-                {item.is_visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => openModifierAssign(item.item_code)}
+                  className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/5"
+                  title="Manage modifiers for this item"
+                >
+                  Modifiers
+                </button>
+                <button
+                  onClick={() => toggleItem(item.item_code, item.is_visible)}
+                  className={`rounded-lg p-1.5 ${item.is_visible ? 'text-green-500 hover:bg-green-50' : 'text-red-400 hover:bg-red-50'}`}
+                >
+                  {item.is_visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
           ))}
         </div>
       </div>
+
+      {/* Modifier assignment modal */}
+      {assigningItem && assigningItemData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-[500px] rounded-2xl bg-white shadow-2xl">
+            <div className="border-b px-6 py-4">
+              <h3 className="text-lg font-bold">Modifiers for {assigningItemData.item_name}</h3>
+              <p className="text-sm text-muted-foreground">Assign modifier groups that will show when this item is added to cart</p>
+            </div>
+
+            <div className="px-6 py-4">
+              {/* Currently assigned */}
+              {itemModGroups.length > 0 ? (
+                <div className="mb-4 space-y-2">
+                  <p className="text-xs font-semibold text-gray-500">Assigned Modifier Groups</p>
+                  {itemModGroups.map((img) => (
+                    <div key={img.id} className="flex items-center justify-between rounded-lg border px-4 py-2.5">
+                      <div>
+                        <span className="text-sm font-medium">{img.group_name}</span>
+                        <span className="ml-2 rounded bg-muted px-2 py-0.5 text-[10px]">{img.selection_type}</span>
+                        {img.is_required ? <span className="ml-1 rounded bg-red-50 px-2 py-0.5 text-[10px] text-red-600">Required</span> : null}
+                      </div>
+                      <button onClick={() => handleRemoveModifier(img.id)}
+                        className="rounded p-1.5 text-red-400 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mb-4 rounded-lg bg-muted/50 p-4 text-center text-sm text-muted-foreground">
+                  No modifier groups assigned. Add one below.
+                </p>
+              )}
+
+              {/* Add new assignment */}
+              <div className="rounded-lg border bg-muted/20 p-4">
+                <p className="mb-2 text-xs font-semibold text-gray-500">Add Modifier Group</p>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <select value={selectedModGroup} onChange={(e) => setSelectedModGroup(e.target.value)}
+                      className="w-full rounded-lg border border-input bg-white px-3 py-2 text-sm">
+                      <option value="">Select a group...</option>
+                      {modifierGroups
+                        .filter((mg) => !itemModGroups.some((img) => img.modifier_group_id === mg.id))
+                        .map((mg) => (
+                          <option key={mg.id} value={mg.id}>{mg.group_name} ({mg.selection_type})</option>
+                        ))}
+                    </select>
+                  </div>
+                  <label className="flex items-center gap-1.5 rounded-lg border border-input bg-white px-3 py-2 text-sm">
+                    <input type="checkbox" checked={modRequired} onChange={(e) => setModRequired(e.target.checked)} />
+                    Required
+                  </label>
+                  <button onClick={handleAssignModifier} disabled={!selectedModGroup}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                    Assign
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t px-6 py-3">
+              <button onClick={() => setAssigningItem(null)}
+                className="w-full rounded-lg border border-input py-2.5 text-sm font-medium hover:bg-muted">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

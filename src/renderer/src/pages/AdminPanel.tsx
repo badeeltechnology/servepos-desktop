@@ -390,7 +390,9 @@ export default function AdminPanel() {
                 {[
                   { key: 'show_logo', label: 'Show logo on receipt' },
                   { key: 'show_arabic', label: 'Show bilingual (Arabic + English)' },
-                  { key: 'show_cashier_name', label: 'Show cashier name' }
+                  { key: 'show_cashier_name', label: 'Show cashier name' },
+                  { key: 'show_description_on_receipt', label: 'Show item description on receipt' },
+                  { key: 'show_description_on_pos', label: 'Show item description on POS screen' }
                 ].map(({ key, label }) => (
                   <label key={key} className="flex items-center gap-2 text-sm">
                     <input

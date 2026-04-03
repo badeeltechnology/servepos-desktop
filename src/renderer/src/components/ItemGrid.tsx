@@ -10,6 +10,7 @@ interface Item {
   item_group: string | null
   rate: number
   image: string | null
+  description: string | null
   has_variants: number
   variant_of: string | null
 }
@@ -50,9 +51,15 @@ export default function ItemGrid() {
   const [showModifiers, setShowModifiers] = useState(false)
   const [pendingItem, setPendingItem] = useState<Item | null>(null)
 
+  const [showDescription, setShowDescription] = useState(false)
   const addItem = useCartStore((s) => s.addItem)
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { loadData(); loadConfig() }, [])
+
+  async function loadConfig() {
+    const config = await window.api.receiptConfig.getAll()
+    setShowDescription(config.show_description_on_pos === '1')
+  }
 
   async function loadData() {
     const [itemsData, groupsData] = await Promise.all([
@@ -203,6 +210,9 @@ export default function ItemGrid() {
                   </h3>
                   {item.item_name_ar && (
                     <p className="mt-0.5 text-xs text-gray-400" dir="rtl">{item.item_name_ar}</p>
+                  )}
+                  {showDescription && item.description && (
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-tight text-gray-400">{item.description}</p>
                   )}
                   <div className="mt-auto flex items-center justify-between pt-2">
                     <span className="text-base font-bold text-primary">{item.rate.toFixed(2)}</span>

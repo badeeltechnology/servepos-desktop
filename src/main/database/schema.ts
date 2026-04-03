@@ -33,6 +33,7 @@ export async function initDatabase(): Promise<void> {
 
   db.run('PRAGMA foreign_keys = ON')
   createTables()
+  runMigrations()
   saveDatabase()
 }
 
@@ -85,6 +86,8 @@ function createTables(): void {
       item_code TEXT PRIMARY KEY,
       item_name TEXT NOT NULL,
       item_name_ar TEXT,
+      description TEXT,
+      description_ar TEXT,
       item_group TEXT,
       rate REAL DEFAULT 0,
       stock_uom TEXT,
@@ -387,6 +390,29 @@ function createTables(): void {
   ]
   for (const idx of indexes) {
     database.run(idx)
+  }
+}
+
+function runMigrations(): void {
+  const database = getDb()
+
+  // Helper to check if column exists
+  function hasColumn(table: string, column: string): boolean {
+    try {
+      const stmt = database.prepare(`SELECT ${column} FROM ${table} LIMIT 0`)
+      stmt.free()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  // Migration 1: Add description fields to items
+  if (!hasColumn('items', 'description')) {
+    database.run('ALTER TABLE items ADD COLUMN description TEXT')
+  }
+  if (!hasColumn('items', 'description_ar')) {
+    database.run('ALTER TABLE items ADD COLUMN description_ar TEXT')
   }
 }
 
