@@ -414,6 +414,34 @@ function runMigrations(): void {
   if (!hasColumn('items', 'description_ar')) {
     database.run('ALTER TABLE items ADD COLUMN description_ar TEXT')
   }
+
+  // Migration 2: Add shift fields to sessions
+  if (!hasColumn('sessions', 'status')) {
+    database.run("ALTER TABLE sessions ADD COLUMN status TEXT DEFAULT 'Open'")
+  }
+  if (!hasColumn('sessions', 'user_name')) {
+    database.run('ALTER TABLE sessions ADD COLUMN user_name TEXT')
+  }
+  if (!hasColumn('sessions', 'opening_balance')) {
+    database.run("ALTER TABLE sessions ADD COLUMN opening_balance TEXT DEFAULT '[]'")
+  }
+  if (!hasColumn('sessions', 'closing_balance')) {
+    database.run("ALTER TABLE sessions ADD COLUMN closing_balance TEXT DEFAULT '[]'")
+  }
+  if (!hasColumn('sessions', 'expected_balance')) {
+    database.run("ALTER TABLE sessions ADD COLUMN expected_balance TEXT DEFAULT '[]'")
+  }
+  if (!hasColumn('sessions', 'erpnext_opening_name')) {
+    database.run('ALTER TABLE sessions ADD COLUMN erpnext_opening_name TEXT')
+  }
+  if (!hasColumn('sessions', 'erpnext_closing_name')) {
+    database.run('ALTER TABLE sessions ADD COLUMN erpnext_closing_name TEXT')
+  }
+
+  // Migration 3: Add session_id to orders
+  if (!hasColumn('orders', 'session_id')) {
+    database.run('ALTER TABLE orders ADD COLUMN session_id TEXT')
+  }
 }
 
 export function saveDatabase(): void {

@@ -280,14 +280,15 @@ export function createOrder(data: {
   guests?: number
   cashierId: string
   cashierName: string
+  sessionId?: string
 }): any {
   const id = uuidv4()
   const orderNumber = generateOrderNumber()
 
   execute(
-    `INSERT INTO orders (id, order_number, order_type, table_name, room, guests, cashier_id, cashier_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, orderNumber, data.orderType, data.tableName ?? null, data.room ?? null, data.guests ?? null, data.cashierId, data.cashierName]
+    `INSERT INTO orders (id, order_number, order_type, table_name, room, guests, cashier_id, cashier_name, session_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, orderNumber, data.orderType, data.tableName ?? null, data.room ?? null, data.guests ?? null, data.cashierId, data.cashierName, data.sessionId ?? null]
   )
 
   if (data.tableName) {
@@ -334,6 +335,15 @@ export function updateOrder(id: string, updates: Record<string, any>): boolean {
   if (sets.length === 0) return false
   values.push(id)
   execute(`UPDATE orders SET ${sets.join(', ')} WHERE id = ?`, values)
+
+  // If voiding a synced order, reset sync_status so cancellation syncs to ERPNext
+  if (updates.status === 'Void') {
+    const order = queryOne('SELECT sync_status, erpnext_docname FROM orders WHERE id = ?', [id])
+    if (order && order.erpnext_docname && order.sync_status === 'synced') {
+      execute("UPDATE orders SET sync_status = 'pending', sync_error = NULL WHERE id = ?", [id])
+    }
+  }
+
   return true
 }
 
@@ -503,6 +513,138 @@ export function assignModifierGroupToItem(itemCode: string, modifierGroupId: str
 
 export function removeModifierGroupFromItem(id: string): void {
   execute('DELETE FROM item_modifier_groups WHERE id = ?', [id])
+}
+
+// ==================== Sessions / Shifts ====================
+
+export function getActiveSession(): any | null {
+  return queryOne("SELECT * FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
+}
+
+export function openSession(data: {
+  userId: string
+  userName: string
+  openingBalance: { mode: string; amount: number }[]
+}): string {
+  // Check no active session exists
+  const existing = getActiveSession()
+  if (existing) throw new Error('A shift is already open. Close it first.')
+
+  const id = uuidv4()
+  execute(
+    `INSERT INTO sessions (id, user_id, user_name, status, opening_cash, opening_balance)
+     VALUES (?, ?, ?, 'Open', ?, ?)`,
+    [id, data.userId, data.userName,
+     data.openingBalance.reduce((s, b) => s + b.amount, 0),
+     JSON.stringify(data.openingBalance)]
+  )
+  return id
+}
+
+export function getSessionOpenOrders(sessionId: string): any[] {
+  return queryAll(
+    "SELECT * FROM orders WHERE session_id = ? AND status IN ('Open', 'Hold') ORDER BY created_at DESC",
+    [sessionId]
+  )
+}
+
+export function getSessionPendingSyncOrders(sessionId: string): any[] {
+  return queryAll(
+    "SELECT * FROM orders WHERE session_id = ? AND status = 'Completed' AND sync_status IN ('pending', 'failed') ORDER BY created_at DESC",
+    [sessionId]
+  )
+}
+
+export function closeSession(sessionId: string, closingBalance: { mode: string; amount: number }[]): any {
+  const session = queryOne('SELECT * FROM sessions WHERE id = ?', [sessionId])
+  if (!session) throw new Error('Session not found')
+  if (session.status !== 'Open') throw new Error('Session is not open')
+
+  // Check for open/hold orders
+  const openOrders = getSessionOpenOrders(sessionId)
+  if (openOrders.length > 0) {
+    throw new Error(`Cannot close shift: ${openOrders.length} order(s) still open or on hold. Supervisor must complete or void them first.`)
+  }
+
+  // Check for pending sync
+  const pendingSync = getSessionPendingSyncOrders(sessionId)
+  if (pendingSync.length > 0) {
+    throw new Error(`Cannot close shift: ${pendingSync.length} order(s) pending sync to ERPNext. Please sync first.`)
+  }
+
+  // Calculate expected balance from orders in this session
+  const orders = queryAll(
+    "SELECT id FROM orders WHERE session_id = ? AND status = 'Completed'",
+    [sessionId]
+  )
+
+  // Get all payments from completed orders in this session
+  const expectedByMode: Record<string, number> = {}
+  const openingBalance = JSON.parse(session.opening_balance || '[]')
+  for (const ob of openingBalance) {
+    expectedByMode[ob.mode] = ob.amount
+  }
+
+  for (const order of orders) {
+    const payments = queryAll('SELECT * FROM order_payments WHERE order_id = ?', [order.id])
+    for (const p of payments) {
+      expectedByMode[p.payment_method] = (expectedByMode[p.payment_method] || 0) + p.amount
+    }
+  }
+
+  const expectedBalance = Object.entries(expectedByMode).map(([mode, amount]) => ({ mode, amount }))
+
+  // Calculate totals
+  const completedOrders = queryAll(
+    "SELECT * FROM orders WHERE session_id = ? AND status = 'Completed'",
+    [sessionId]
+  )
+  const totalSales = completedOrders.reduce((s: number, o: any) => s + (o.grand_total || 0), 0)
+  const totalOrders = completedOrders.length
+
+  // Build payment breakdown
+  const paymentBreakdown: Record<string, number> = {}
+  for (const order of completedOrders) {
+    const payments = queryAll('SELECT * FROM order_payments WHERE order_id = ?', [order.id])
+    for (const p of payments) {
+      paymentBreakdown[p.payment_method] = (paymentBreakdown[p.payment_method] || 0) + p.amount
+    }
+  }
+
+  execute(
+    `UPDATE sessions SET
+      status = 'Closed',
+      closed_at = datetime('now'),
+      closing_cash = ?,
+      closing_balance = ?,
+      expected_balance = ?,
+      total_sales = ?,
+      total_orders = ?,
+      payment_breakdown = ?
+    WHERE id = ?`,
+    [
+      closingBalance.reduce((s, b) => s + b.amount, 0),
+      JSON.stringify(closingBalance),
+      JSON.stringify(expectedBalance),
+      totalSales,
+      totalOrders,
+      JSON.stringify(paymentBreakdown),
+      sessionId
+    ]
+  )
+
+  return queryOne('SELECT * FROM sessions WHERE id = ?', [sessionId])
+}
+
+export function getSessionOrders(sessionId: string): any[] {
+  return queryAll(
+    "SELECT * FROM orders WHERE session_id = ? ORDER BY created_at DESC",
+    [sessionId]
+  )
+}
+
+export function getSessions(limit = 10): any[] {
+  return queryAll('SELECT * FROM sessions ORDER BY opened_at DESC LIMIT ?', [limit])
 }
 
 // ==================== Setup Check ====================

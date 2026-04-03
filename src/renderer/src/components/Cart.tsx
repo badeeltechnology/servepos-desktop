@@ -5,12 +5,14 @@ import { useAuthStore } from '../stores/auth'
 import TablePicker from './TablePicker'
 
 interface CartProps {
+  onPlaceOrder: () => void
   onPay: () => void
   taxRate: number
   taxLabel?: string
+  isOrderPlaced?: boolean
 }
 
-export default function Cart({ onPay, taxRate, taxLabel = 'VAT' }: CartProps) {
+export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false }: CartProps) {
   const [discountEnabled, setDiscountEnabled] = useState(false)
   const [discountPermission, setDiscountPermission] = useState<'supervisor_only' | 'all_users'>('supervisor_only')
 
@@ -224,18 +226,27 @@ export default function Cart({ onPay, taxRate, taxLabel = 'VAT' }: CartProps) {
             </div>
           </div>
 
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 space-y-2">
             {canDiscount && (
               <button onClick={openOrderDiscount}
-                className="rounded-xl border-2 border-gray-200 px-4 py-3 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
+                className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
                 <Percent className="inline h-3.5 w-3.5 mr-1" />
                 Discount
               </button>
             )}
+            {!isOrderPlaced && (
+              <button onClick={onPlaceOrder}
+                className="w-full rounded-xl bg-emerald-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 active:scale-[0.98]">
+                Place Order & Print KOT
+              </button>
+            )}
             <button onClick={onPay}
-              className="flex-1 rounded-xl bg-primary py-3.5 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98]">
-              Pay {grandTotal.toFixed(2)}
+              className="w-full rounded-xl bg-primary py-3.5 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98]">
+              {isOrderPlaced ? `Payment — ${grandTotal.toFixed(2)}` : `Quick Pay — ${grandTotal.toFixed(2)}`}
             </button>
+            {isOrderPlaced && (
+              <p className="text-center text-xs text-emerald-600 font-medium">Order placed — KOT sent to kitchen</p>
+            )}
           </div>
         </div>
       )}

@@ -54,11 +54,37 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
     counts.items = items.length
     setConfig('last_item_sync', new Date().toISOString())
 
-    // Sync payment methods
+    // Sync payment methods and POS Profile details
     const posProfile = getConfig('pos_profile')
     if (posProfile) {
-      const payments = await client.getPaymentMethods(posProfile)
-      // Clear existing and re-insert
+      const profileDoc = await client.getDoc('POS Profile', posProfile)
+      if (profileDoc) {
+        // Save all POS Profile settings for sync-up invoice creation
+        const profileFields: Record<string, string> = {
+          warehouse: profileDoc.warehouse || '',
+          currency: profileDoc.currency || 'QAR',
+          pos_customer: profileDoc.customer || '',
+          selling_price_list: profileDoc.selling_price_list || '',
+          write_off_account: profileDoc.write_off_account || '',
+          write_off_cost_center: profileDoc.write_off_cost_center || '',
+          income_account: profileDoc.income_account || '',
+          expense_account: profileDoc.expense_account || '',
+          cost_center: profileDoc.cost_center || '',
+          taxes_and_charges: profileDoc.taxes_and_charges || '',
+          tax_category: profileDoc.tax_category || '',
+          apply_discount_on: profileDoc.apply_discount_on || 'Grand Total',
+          account_for_change_amount: profileDoc.account_for_change_amount || '',
+          letter_head: profileDoc.letter_head || '',
+          // Accounting dimensions
+          branch: profileDoc.branch || '',
+          department: profileDoc.department || ''
+        }
+        for (const [key, value] of Object.entries(profileFields)) {
+          if (value) setConfig(key, value)
+        }
+      }
+
+      const payments = profileDoc?.payments || []
       db.run('DELETE FROM payment_methods')
       for (const p of payments) {
         db.run(

@@ -109,6 +109,15 @@ export function registerIpcHandlers(): void {
   // ==================== Payment Methods ====================
   ipcMain.handle('paymentMethods:get', () => db.getPaymentMethods())
 
+  // ==================== Sessions / Shifts ====================
+  ipcMain.handle('sessions:getActive', () => db.getActiveSession())
+  ipcMain.handle('sessions:open', (_e, data: any) => db.openSession(data))
+  ipcMain.handle('sessions:close', (_e, sessionId: string, closingBalance: any[]) => db.closeSession(sessionId, closingBalance))
+  ipcMain.handle('sessions:getOrders', (_e, sessionId: string) => db.getSessionOrders(sessionId))
+  ipcMain.handle('sessions:getOpenOrders', (_e, sessionId: string) => db.getSessionOpenOrders(sessionId))
+  ipcMain.handle('sessions:getPendingSync', (_e, sessionId: string) => db.getSessionPendingSyncOrders(sessionId))
+  ipcMain.handle('sessions:getAll', (_e, limit?: number) => db.getSessions(limit))
+
   // ==================== Modifiers ====================
   ipcMain.handle('modifiers:getGroups', () => db.getModifierGroups())
   ipcMain.handle('modifiers:createGroup', (_e, data: any) => db.createModifierGroup(data))

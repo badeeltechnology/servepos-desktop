@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Search, X, Info } from 'lucide-react'
+import { Search, X, Info, LayoutGrid, List, ArrowLeft, FolderOpen, Globe } from 'lucide-react'
 import { useCartStore, CartModifier } from '../stores/cart'
 import ModifierModal from './ModifierModal'
 
@@ -21,47 +21,51 @@ interface ItemGroup {
   name_ar: string | null
 }
 
-// Vibrant category colors
-const categoryColors = [
-  'bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500',
-  'bg-rose-500', 'bg-cyan-500', 'bg-fuchsia-500', 'bg-lime-500',
-  'bg-orange-500', 'bg-teal-500', 'bg-indigo-500', 'bg-pink-500'
+// Category colors for the overview cards
+const catColors = [
+  { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', accent: 'bg-blue-500' },
+  { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', accent: 'bg-emerald-500' },
+  { bg: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-700', accent: 'bg-violet-500' },
+  { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', accent: 'bg-amber-500' },
+  { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700', accent: 'bg-rose-500' },
+  { bg: 'bg-cyan-50', border: 'border-cyan-200', text: 'text-cyan-700', accent: 'bg-cyan-500' },
+  { bg: 'bg-fuchsia-50', border: 'border-fuchsia-200', text: 'text-fuchsia-700', accent: 'bg-fuchsia-500' },
+  { bg: 'bg-lime-50', border: 'border-lime-200', text: 'text-lime-700', accent: 'bg-lime-500' },
+  { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', accent: 'bg-orange-500' },
+  { bg: 'bg-teal-50', border: 'border-teal-200', text: 'text-teal-700', accent: 'bg-teal-500' },
+  { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', accent: 'bg-indigo-500' },
+  { bg: 'bg-pink-50', border: 'border-pink-200', text: 'text-pink-700', accent: 'bg-pink-500' },
 ]
 
-const categoryBgColors = [
-  'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100',
-  'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100',
-  'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100',
-  'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',
-  'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100',
-  'bg-cyan-50 text-cyan-700 border-cyan-200 hover:bg-cyan-100',
-  'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 hover:bg-fuchsia-100',
-  'bg-lime-50 text-lime-700 border-lime-200 hover:bg-lime-100',
-  'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100',
-  'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100',
-]
+type ViewMode = 'categories' | 'grid' | 'list'
 
 export default function ItemGrid() {
   const [items, setItems] = useState<Item[]>([])
   const [groups, setGroups] = useState<ItemGroup[]>([])
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [variantItems, setVariantItems] = useState<Item[]>([])
   const [showVariants, setShowVariants] = useState(false)
   const [selectedItem, setSelectedItem] = useState<Item | null>(null)
   const [showModifiers, setShowModifiers] = useState(false)
   const [pendingItem, setPendingItem] = useState<Item | null>(null)
   const [detailItem, setDetailItem] = useState<Item | null>(null)
-
   const [showDescription, setShowDescription] = useState(false)
+  const [lang, setLang] = useState<'en' | 'ar' | 'both'>('en')
+
   const addItem = useCartStore((s) => s.addItem)
 
-  useEffect(() => { loadData(); loadConfig() }, [])
-
-  async function loadConfig() {
-    const config = await window.api.receiptConfig.getAll()
-    setShowDescription(config.show_description_on_pos === '1')
+  // Helper to get display name based on language setting
+  function itemName(item: Item): string {
+    if (lang === 'ar' && item.item_name_ar) return item.item_name_ar
+    return item.item_name
   }
+  function showArabicName(item: Item): boolean {
+    return lang === 'both' && !!item.item_name_ar
+  }
+
+  useEffect(() => { loadData(); loadConfig() }, [])
 
   async function loadData() {
     const [itemsData, groupsData] = await Promise.all([
@@ -72,6 +76,11 @@ export default function ItemGrid() {
     setGroups(groupsData)
   }
 
+  async function loadConfig() {
+    const config = await window.api.receiptConfig.getAll()
+    setShowDescription(config.show_description_on_pos === '1')
+  }
+
   const filteredItems = useMemo(() => {
     let filtered = items.filter((i) => !i.variant_of)
     if (activeGroup) filtered = filtered.filter((i) => i.item_group === activeGroup)
@@ -80,11 +89,27 @@ export default function ItemGrid() {
       filtered = filtered.filter((i) =>
         i.item_name.toLowerCase().includes(q) ||
         i.item_code.toLowerCase().includes(q) ||
-        (i.item_name_ar && i.item_name_ar.includes(q))
+        (i.item_name_ar && i.item_name_ar.includes(q)) ||
+        (i.description && i.description.toLowerCase().includes(q))
       )
     }
     return filtered
   }, [items, activeGroup, search])
+
+  // Count items per group and filter out empty/system groups
+  const groupCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    const mainItems = items.filter((i) => !i.variant_of)
+    for (const g of groups) {
+      counts[g.name] = mainItems.filter((i) => i.item_group === g.name).length
+    }
+    return counts
+  }, [items, groups])
+
+  // Only show groups that have actual items (filters out system groups like Raw Material, Services, etc.)
+  const visibleGroups = useMemo(() => {
+    return groups.filter((g) => (groupCounts[g.name] || 0) > 0)
+  }, [groups, groupCounts])
 
   async function handleItemClick(item: Item) {
     if (item.has_variants) {
@@ -125,147 +150,288 @@ export default function ItemGrid() {
     setShowModifiers(false)
   }
 
+  // Show category overview
+  const showCategoryOverview = viewMode === 'categories' && !activeGroup && !search
+
   return (
     <div className="flex h-full flex-col bg-gray-100">
-      {/* Search bar */}
-      <div className="bg-white px-4 py-3 shadow-sm">
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground/50" />
+      {/* Top bar: Search + View toggle */}
+      <div className="flex items-center gap-3 bg-white px-4 py-3 shadow-sm">
+        {/* Back button when drilled into a category (in category view mode) */}
+        {activeGroup && viewMode === 'categories' && (
+          <button
+            onClick={() => setActiveGroup(null)}
+            className="flex items-center gap-1.5 rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
+        )}
+
+        {/* Active group label */}
+        {activeGroup && (
+          <h2 className="text-lg font-bold text-gray-800">{activeGroup}</h2>
+        )}
+
+        {/* Search */}
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search menu items..."
-            className="w-full rounded-xl border-0 bg-gray-100 py-3 pl-11 pr-10 text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+            placeholder={activeGroup ? `Search in ${activeGroup}...` : 'Search all items...'}
+            className="w-full rounded-xl border-0 bg-gray-100 py-2.5 pl-10 pr-10 text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-muted">
-              <X className="h-4 w-4" />
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:bg-gray-200">
+              <X className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
-      </div>
 
-      {/* Category tabs — large, scrollable, colorful */}
-      <div className="bg-white px-3 pb-3 shadow-sm">
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          <button
-            onClick={() => setActiveGroup(null)}
-            className={`flex-shrink-0 rounded-xl border-2 px-5 py-3 text-sm font-semibold transition-all ${
-              !activeGroup
-                ? 'border-primary bg-primary text-white shadow-md shadow-primary/25'
-                : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            All Items
+        {/* Language toggle */}
+        <div className="flex rounded-lg border border-gray-200 p-0.5">
+          <button onClick={() => setLang('en')}
+            className={`rounded-md px-2 py-1.5 text-xs font-semibold ${lang === 'en' ? 'bg-primary text-white' : 'text-gray-400 hover:text-gray-600'}`}>
+            EN
           </button>
-          {groups.map((g, i) => {
-            const isActive = activeGroup === g.name
-            const colorIdx = i % categoryBgColors.length
-            return (
-              <button
-                key={g.name}
-                onClick={() => setActiveGroup(g.name)}
-                className={`flex-shrink-0 rounded-xl border-2 px-5 py-3 text-sm font-semibold transition-all ${
-                  isActive
-                    ? `${categoryColors[colorIdx]} text-white border-transparent shadow-md`
-                    : `${categoryBgColors[colorIdx]} border-transparent`
-                }`}
-              >
-                {g.name}
-              </button>
-            )
-          })}
+          <button onClick={() => setLang('ar')}
+            className={`rounded-md px-2 py-1.5 text-xs font-semibold ${lang === 'ar' ? 'bg-primary text-white' : 'text-gray-400 hover:text-gray-600'}`}>
+            AR
+          </button>
+          <button onClick={() => setLang('both')}
+            className={`rounded-md px-2 py-1.5 text-xs font-semibold ${lang === 'both' ? 'bg-primary text-white' : 'text-gray-400 hover:text-gray-600'}`}>
+            Both
+          </button>
+        </div>
+
+        {/* View mode toggle — always visible */}
+        <div className="flex rounded-lg border border-gray-200 p-0.5">
+          <button
+            onClick={() => { setViewMode('categories'); setActiveGroup(null) }}
+            className={`rounded-md p-2 ${viewMode === 'categories' ? 'bg-primary text-white' : 'text-gray-400 hover:text-gray-600'}`}
+            title="Category view"
+          >
+            <FolderOpen className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`rounded-md p-2 ${viewMode === 'grid' ? 'bg-primary text-white' : 'text-gray-400 hover:text-gray-600'}`}
+            title="Grid view"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`rounded-md p-2 ${viewMode === 'list' ? 'bg-primary text-white' : 'text-gray-400 hover:text-gray-600'}`}
+            title="List view"
+          >
+            <List className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
-      {/* Item grid */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {filteredItems.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
-            <Search className="mb-3 h-12 w-12 opacity-20" />
-            <p className="text-lg font-medium">{search ? 'No items match your search' : 'No items available'}</p>
-            <p className="text-sm opacity-60">Try a different category or search term</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredItems.map((item) => (
-              <button
-                key={item.item_code}
-                onClick={() => handleItemClick(item)}
-                className="group flex flex-col overflow-hidden rounded-2xl border-2 border-white bg-white shadow-sm transition-all hover:border-primary/20 hover:shadow-lg active:scale-[0.97]"
-              >
-                {/* Image or placeholder */}
-                {item.image ? (
-                  <div className="aspect-[4/3] w-full overflow-hidden bg-gray-100">
-                    <img src={item.image} alt={item.item_name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
-                  </div>
-                ) : (
-                  <div className="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-primary/5 to-primary/15">
-                    <span className="text-4xl font-black text-primary/15">{item.item_name.charAt(0)}</span>
-                  </div>
-                )}
-                {/* Info */}
-                <div className="flex flex-1 flex-col p-3">
-                  <h3 className="text-sm font-semibold leading-snug text-gray-800 group-hover:text-primary">
-                    {item.item_name}
-                  </h3>
-                  {item.item_name_ar && (
-                    <p className="mt-0.5 text-xs text-gray-400" dir="rtl">{item.item_name_ar}</p>
-                  )}
-                  {showDescription && item.description && (
-                    <p className="mt-1 line-clamp-2 text-[11px] leading-tight text-gray-400">{item.description}</p>
-                  )}
-                  <div className="mt-auto flex items-center justify-between pt-2">
-                    <span className="text-base font-bold text-primary">{item.rate.toFixed(2)}</span>
-                    <div className="flex items-center gap-1">
-                      {item.has_variants && (
-                        <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">SIZES</span>
-                      )}
-                      {item.description && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setDetailItem(item) }}
-                          className="rounded-full p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-500"
-                          title="View details"
-                        >
-                          <Info className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Variant picker */}
-      {showVariants && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-96 rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="mb-1 text-xl font-bold">{selectedItem.item_name}</h3>
-            <p className="mb-5 text-sm text-muted-foreground">Select a size</p>
-            <div className="space-y-2">
-              {variantItems.map((v) => {
-                const attrs = v.attributes ? JSON.parse(v.attributes) : {}
-                const label = Object.values(attrs).join(' / ') || v.item_name
+        {/* Category Overview */}
+        {showCategoryOverview && (
+          <div>
+            <h2 className="mb-4 text-lg font-bold text-gray-700">Menu Categories</h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {visibleGroups.map((g, i) => {
+                const color = catColors[i % catColors.length]
+                const count = groupCounts[g.name] || 0
                 return (
-                  <button key={v.item_code} onClick={() => handleVariantSelect(v)}
-                    className="flex w-full items-center justify-between rounded-xl border-2 border-gray-100 p-4 text-sm transition-all hover:border-primary hover:bg-primary/5 active:scale-[0.98]">
-                    <span className="font-semibold">{label}</span>
-                    <span className="text-lg font-bold text-primary">{v.rate.toFixed(2)}</span>
+                  <button
+                    key={g.name}
+                    onClick={() => setActiveGroup(g.name)}
+                    className={`group flex flex-col items-start rounded-2xl border-2 ${color.border} ${color.bg} p-5 text-left transition-all hover:shadow-lg active:scale-[0.97]`}
+                  >
+                    <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${color.accent} text-lg font-black text-white`}>
+                      {g.name.charAt(0)}
+                    </div>
+                    <h3 className={`text-base font-bold ${color.text}`}>{g.name}</h3>
+                    {g.name_ar && (
+                      <p className="mt-0.5 text-xs text-gray-400" dir="rtl">{g.name_ar}</p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-400">{count} item{count !== 1 ? 's' : ''}</p>
                   </button>
                 )
               })}
             </div>
-            <button onClick={() => setShowVariants(false)}
-              className="mt-4 w-full rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-500 hover:bg-gray-50">
-              Cancel
-            </button>
+
+            {visibleGroups.length === 0 && (
+              <div className="flex h-64 flex-col items-center justify-center text-gray-400">
+                <LayoutGrid className="mb-3 h-12 w-12 opacity-20" />
+                <p className="text-lg font-medium">No categories</p>
+                <p className="text-sm">Sync items from ERPNext to see categories here</p>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Search results or category items */}
+        {!showCategoryOverview && (
+          <>
+            {/* Category filter bar for grid/list views — large touch-friendly pills */}
+            {(viewMode === 'grid' || viewMode === 'list') && !search && (
+              <div className="mb-4 flex flex-wrap gap-2">
+                <button onClick={() => setActiveGroup(null)}
+                  className={`rounded-xl px-5 py-2.5 text-sm font-bold transition-all active:scale-95 ${
+                    !activeGroup ? 'bg-primary text-white shadow-md shadow-primary/25' : 'bg-white text-gray-500 shadow-sm hover:bg-gray-50 hover:shadow-md'
+                  }`}>
+                  All Items
+                </button>
+                {visibleGroups.map((g, i) => {
+                  const color = catColors[i % catColors.length]
+                  return (
+                    <button key={g.name} onClick={() => setActiveGroup(g.name)}
+                      className={`rounded-xl px-5 py-2.5 text-sm font-bold transition-all active:scale-95 ${
+                        activeGroup === g.name
+                          ? `${color.accent} text-white shadow-md`
+                          : `${color.bg} ${color.text} shadow-sm hover:shadow-md`
+                      }`}>
+                      {g.name}
+                      <span className="ml-1.5 opacity-60">({groupCounts[g.name] || 0})</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Quick category pills when in search mode */}
+            {search && !activeGroup && (
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {visibleGroups.map((g, i) => {
+                  const itemsInGroup = items.filter((item) => !item.variant_of && item.item_group === g.name)
+                  const matchCount = itemsInGroup.filter((item) => {
+                    const q = search.toLowerCase()
+                    return item.item_name.toLowerCase().includes(q) || (item.description && item.description.toLowerCase().includes(q))
+                  }).length
+                  if (matchCount === 0) return null
+                  return (
+                    <button key={g.name} onClick={() => setActiveGroup(g.name)}
+                      className="rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50">
+                      {g.name} <span className="text-gray-400">({matchCount})</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {filteredItems.length === 0 ? (
+              <div className="flex h-64 flex-col items-center justify-center text-gray-400">
+                <Search className="mb-3 h-12 w-12 opacity-20" />
+                <p className="text-lg font-medium">{search ? 'No items match your search' : 'No items in this category'}</p>
+                <p className="text-sm">Try a different search term or category</p>
+              </div>
+            ) : viewMode === 'grid' ? (
+              /* Grid View */
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
+                {filteredItems.map((item) => (
+                  <button
+                    key={item.item_code}
+                    onClick={() => handleItemClick(item)}
+                    className="group flex flex-col overflow-hidden rounded-2xl border-2 border-white bg-white shadow-sm transition-all hover:border-primary/20 hover:shadow-lg active:scale-[0.97]"
+                  >
+                    {item.image ? (
+                      <div className="aspect-[4/3] w-full overflow-hidden bg-gray-100">
+                        <img src={item.image} alt={item.item_name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                      </div>
+                    ) : (
+                      <div className="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-primary/5 to-primary/15">
+                        <span className="text-4xl font-black text-primary/15">{item.item_name.charAt(0)}</span>
+                      </div>
+                    )}
+                    <div className="flex flex-1 flex-col p-3">
+                      <h3 className={`text-sm font-semibold leading-snug text-gray-800 group-hover:text-primary ${lang === 'ar' ? 'text-right' : ''}`}
+                        dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+                        {itemName(item)}
+                      </h3>
+                      {showArabicName(item) && (
+                        <p className="mt-0.5 text-xs text-gray-400" dir="rtl">{item.item_name_ar}</p>
+                      )}
+                      {showDescription && item.description && (
+                        <p className="mt-1 line-clamp-2 text-[11px] leading-tight text-gray-400">{item.description}</p>
+                      )}
+                      <div className="mt-auto flex items-center justify-between pt-2">
+                        <span className="text-base font-bold text-primary">{item.rate.toFixed(2)}</span>
+                        <div className="flex items-center gap-1">
+                          {item.has_variants ? (
+                            <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">SIZES</span>
+                          ) : null}
+                          {item.description && (
+                            <button onClick={(e) => { e.stopPropagation(); setDetailItem(item) }}
+                              className="rounded-full p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-500" title="View details">
+                              <Info className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              /* List View — touch-friendly with large rows */
+              <div className="space-y-2">
+                {filteredItems.map((item) => (
+                  <button
+                    key={item.item_code}
+                    onClick={() => handleItemClick(item)}
+                    className="flex w-full items-center gap-4 rounded-2xl border-2 border-white bg-white px-4 py-4 text-left shadow-sm transition-all hover:border-primary/20 hover:shadow-md active:scale-[0.98]"
+                  >
+                    {/* Thumbnail — larger for touch */}
+                    {item.image ? (
+                      <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl bg-gray-100">
+                        <img src={item.image} alt={item.item_name} className="h-full w-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/5 to-primary/15">
+                        <span className="text-2xl font-black text-primary/20">{item.item_name.charAt(0)}</span>
+                      </div>
+                    )}
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <h3 className={`text-base font-bold text-gray-800 ${lang === 'ar' ? 'text-right' : ''}`}
+                        dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+                        {itemName(item)}
+                      </h3>
+                      {showArabicName(item) && (
+                        <p className="mt-0.5 text-sm text-gray-400" dir="rtl">{item.item_name_ar}</p>
+                      )}
+                      {showDescription && item.description && (
+                        <p className="mt-1 line-clamp-1 text-xs text-gray-400">{item.description}</p>
+                      )}
+                      {item.item_group && (
+                        <span className="mt-1 inline-block rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-400">{item.item_group}</span>
+                      )}
+                    </div>
+
+                    {/* Price + info */}
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="text-lg font-bold text-primary">{item.rate.toFixed(2)}</span>
+                      <div className="flex items-center gap-1">
+                        {item.has_variants && (
+                          <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">SIZES</span>
+                        )}
+                        {item.description && (
+                          <button onClick={(e) => { e.stopPropagation(); setDetailItem(item) }}
+                            className="rounded-full p-1.5 text-gray-300 hover:bg-gray-100 hover:text-gray-500">
+                            <Info className="h-4 w-4" />
+                        </button>
+                      )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Item detail popup */}
       {detailItem && (
@@ -311,6 +477,33 @@ export default function ItemGrid() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Variant picker */}
+      {showVariants && selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-96 rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="mb-1 text-xl font-bold">{selectedItem.item_name}</h3>
+            <p className="mb-5 text-sm text-gray-500">Select a size</p>
+            <div className="space-y-2">
+              {variantItems.map((v) => {
+                const attrs = v.attributes ? JSON.parse(v.attributes) : {}
+                const label = Object.values(attrs).join(' / ') || v.item_name
+                return (
+                  <button key={v.item_code} onClick={() => handleVariantSelect(v)}
+                    className="flex w-full items-center justify-between rounded-xl border-2 border-gray-100 p-4 text-sm transition-all hover:border-primary hover:bg-primary/5 active:scale-[0.98]">
+                    <span className="font-semibold">{label}</span>
+                    <span className="text-lg font-bold text-primary">{v.rate.toFixed(2)}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <button onClick={() => setShowVariants(false)}
+              className="mt-4 w-full rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-500 hover:bg-gray-50">
+              Cancel
+            </button>
           </div>
         </div>
       )}

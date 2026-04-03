@@ -18,9 +18,9 @@ export async function syncUp(): Promise<SyncResult> {
     const posProfile = getConfig('pos_profile')
     const company = getConfig('company')
 
-    // Get pending orders
+    // Get pending and failed orders (only Completed orders sync)
     const pendingStmt = db.prepare(
-      "SELECT * FROM orders WHERE sync_status = 'pending' AND status = 'Completed' ORDER BY created_at"
+      "SELECT * FROM orders WHERE sync_status IN ('pending', 'failed') AND status = 'Completed' ORDER BY created_at"
     )
     const pendingOrders: any[] = []
     while (pendingStmt.step()) {
@@ -48,15 +48,13 @@ export async function syncUp(): Promise<SyncResult> {
         }
         payStmt.free()
 
-        // Build POS Invoice document
+        // Build invoice items
         const invoiceItems = orderItems.map((item) => ({
           item_code: item.item_code,
           item_name: item.item_name,
           qty: item.qty,
           rate: item.rate,
-          amount: item.amount,
-          servepos_modifiers: item.modifiers || '',
-          servepos_comment: item.special_instructions || ''
+          amount: item.amount
         }))
 
         const invoicePayments = payments.map((p) => ({
@@ -64,21 +62,64 @@ export async function syncUp(): Promise<SyncResult> {
           amount: p.amount
         }))
 
+        // Create as Sales Invoice with is_pos=1 (works with all POS Profile modes)
+        const posDate = order.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
+        const posTime = order.created_at?.split('T')[1]?.split('.')[0] || '00:00:00'
+        const warehouse = getConfig('warehouse') || null
+
+        // Build invoice using all POS Profile settings
+        const customer = getConfig('pos_customer') || 'Walk In'
+        const currency = getConfig('currency') || 'QAR'
+        const sellingPriceList = getConfig('selling_price_list')
+        const writeOffAccount = getConfig('write_off_account')
+        const writeOffCostCenter = getConfig('write_off_cost_center')
+        const incomeAccount = getConfig('income_account')
+        const costCenter = getConfig('cost_center')
+        const taxesAndCharges = getConfig('taxes_and_charges')
+        const taxCategory = getConfig('tax_category')
+        const applyDiscountOn = getConfig('apply_discount_on')
+        const letterHead = getConfig('letter_head')
+
         const invoice: Record<string, any> = {
-          doctype: 'POS Invoice',
-          pos_profile: posProfile,
+          doctype: 'Sales Invoice',
           company: company,
-          customer: 'Walk In',  // default POS customer
-          posting_date: order.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-          posting_time: order.created_at?.split('T')[1]?.split('.')[0] || '00:00:00',
-          items: invoiceItems,
-          payments: invoicePayments,
-          servepos_order_type: order.order_type,
-          servepos_table: order.table_name || '',
-          servepos_room: order.room || '',
-          servepos_guests: order.guests || 0,
-          servepos_waiter: order.cashier_name || ''
+          customer: customer,
+          currency: currency,
+          posting_date: posDate,
+          posting_time: posTime,
+          is_pos: 1,
+          pos_profile: posProfile,
+          set_warehouse: warehouse,
+          update_stock: 1,
+          items: invoiceItems.map((item: any) => ({ ...item, warehouse })),
+          payments: invoicePayments
         }
+
+        // Add POS Profile settings if available
+        if (sellingPriceList) invoice.selling_price_list = sellingPriceList
+        if (writeOffAccount) invoice.write_off_account = writeOffAccount
+        if (writeOffCostCenter) invoice.write_off_cost_center = writeOffCostCenter
+        if (incomeAccount) invoice.income_account = incomeAccount
+        if (costCenter) invoice.cost_center = costCenter
+        if (taxesAndCharges) invoice.taxes_and_charges = taxesAndCharges
+        if (taxCategory) invoice.tax_category = taxCategory
+        if (applyDiscountOn) invoice.apply_discount_on = applyDiscountOn
+        if (letterHead) invoice.letter_head = letterHead
+
+        // Accounting dimensions from POS Profile
+        const branch = getConfig('branch')
+        const department = getConfig('department')
+        if (branch) invoice.branch = branch
+        if (department) invoice.department = department
+
+        // ServePOS custom fields (ignored if fields don't exist on the site)
+        invoice.servepos_cashier = order.cashier_name || null
+        invoice.servepos_order_number = order.order_number || null
+        invoice.servepos_order_type = order.order_type || null
+        invoice.servepos_table = order.table_name || null
+        invoice.servepos_room = order.room || null
+        invoice.servepos_guests = order.guests || 0
+        invoice.servepos_kot_generated = order.kot_printed ? 1 : 0
 
         if (order.discount_percent > 0) {
           invoice.additional_discount_percentage = order.discount_percent
@@ -87,13 +128,12 @@ export async function syncUp(): Promise<SyncResult> {
           invoice.discount_amount = order.discount_amount
         }
 
-        // Create in ERPNext
-        const created = await client.createDoc('POS Invoice', invoice)
+        const created = await client.createDoc('Sales Invoice', invoice)
 
         // Submit the invoice
         if (created?.name) {
           try {
-            await client.submitDoc('POS Invoice', created.name)
+            await client.submitDoc('Sales Invoice', created.name)
           } catch {
             // Created but not submitted — still mark as synced
           }
@@ -115,15 +155,15 @@ export async function syncUp(): Promise<SyncResult> {
       }
     }
 
-    // Sync void orders
+    // Sync void orders (orders that were synced to ERPNext then voided locally)
     const voidStmt = db.prepare(
-      "SELECT * FROM orders WHERE sync_status = 'pending' AND status = 'Void' AND erpnext_docname IS NOT NULL"
+      "SELECT * FROM orders WHERE sync_status IN ('pending', 'failed') AND status = 'Void' AND erpnext_docname IS NOT NULL"
     )
     while (voidStmt.step()) {
       const order = voidStmt.getAsObject() as any
       try {
         await client.callMethod('frappe.client.cancel', {
-          doctype: 'POS Invoice',
+          doctype: 'Sales Invoice',
           name: order.erpnext_docname
         })
         db.run("UPDATE orders SET sync_status = 'synced' WHERE id = ?", [order.id])

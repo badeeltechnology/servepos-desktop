@@ -128,31 +128,34 @@ export class ERPNextClient {
     const filters: any = { disabled: 0 }
     if (lastSync) filters.modified = ['>', lastSync]
 
-    // First try with servepos custom fields, fall back to standard fields
-    const standardFields = [
+    const baseFields = [
       'name', 'item_name', 'description', 'item_group', 'standard_rate',
       'stock_uom', 'image', 'has_variants', 'variant_of'
     ]
-    const customFields = [
-      'servepos_item_name_ar', 'servepos_description_ar',
-      'servepos_kitchen_station', 'servepos_preparation_time',
-      'servepos_is_available'
-    ]
+    const arabicFields = ['servepos_item_name_ar', 'servepos_description_ar']
+    const appFields = ['servepos_kitchen_station', 'servepos_preparation_time', 'servepos_is_available']
 
+    // Try all fields first (full servepos app installed)
     try {
       return await this.getList('Item', {
-        fields: [...standardFields, ...customFields],
-        filters,
-        limit: 0
+        fields: [...baseFields, ...arabicFields, ...appFields],
+        filters, limit: 0
       })
-    } catch {
-      // Custom fields don't exist — use standard fields only
-      return this.getList('Item', {
-        fields: standardFields,
-        filters,
-        limit: 0
+    } catch {}
+
+    // Try base + Arabic fields (Arabic custom fields exist but not full app)
+    try {
+      return await this.getList('Item', {
+        fields: [...baseFields, ...arabicFields],
+        filters, limit: 0
       })
-    }
+    } catch {}
+
+    // Fallback: standard fields only
+    return this.getList('Item', {
+      fields: baseFields,
+      filters, limit: 0
+    })
   }
 
   async getItemGroups(): Promise<any[]> {

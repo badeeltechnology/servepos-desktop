@@ -111,6 +111,17 @@ const api = {
     removeFromItem: (id: string) => ipcRenderer.invoke('modifiers:removeFromItem', id)
   },
 
+  // Sessions / Shifts
+  sessions: {
+    getActive: () => ipcRenderer.invoke('sessions:getActive'),
+    open: (data: any) => ipcRenderer.invoke('sessions:open', data),
+    close: (sessionId: string, closingBalance: any[]) => ipcRenderer.invoke('sessions:close', sessionId, closingBalance),
+    getOrders: (sessionId: string) => ipcRenderer.invoke('sessions:getOrders', sessionId),
+    getOpenOrders: (sessionId: string) => ipcRenderer.invoke('sessions:getOpenOrders', sessionId),
+    getPendingSync: (sessionId: string) => ipcRenderer.invoke('sessions:getPendingSync', sessionId),
+    getAll: (limit?: number) => ipcRenderer.invoke('sessions:getAll', limit)
+  },
+
   // Printers
   printers: {
     get: () => ipcRenderer.invoke('printers:get'),
