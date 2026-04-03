@@ -127,16 +127,31 @@ export class ERPNextClient {
   async getItems(lastSync?: string): Promise<any[]> {
     const filters: any = { disabled: 0 }
     if (lastSync) filters.modified = ['>', lastSync]
-    return this.getList('Item', {
-      fields: [
-        'name', 'item_name', 'item_group', 'standard_rate',
-        'stock_uom', 'image', 'has_variants', 'variant_of',
-        'servepos_kitchen_station', 'servepos_preparation_time',
-        'servepos_is_available'
-      ],
-      filters,
-      limit: 0
-    })
+
+    // First try with servepos custom fields, fall back to standard fields
+    const standardFields = [
+      'name', 'item_name', 'description', 'item_group', 'standard_rate',
+      'stock_uom', 'image', 'has_variants', 'variant_of'
+    ]
+    const customFields = [
+      'servepos_kitchen_station', 'servepos_preparation_time',
+      'servepos_is_available'
+    ]
+
+    try {
+      return await this.getList('Item', {
+        fields: [...standardFields, ...customFields],
+        filters,
+        limit: 0
+      })
+    } catch {
+      // Custom fields don't exist — use standard fields only
+      return this.getList('Item', {
+        fields: standardFields,
+        filters,
+        limit: 0
+      })
+    }
   }
 
   async getItemGroups(): Promise<any[]> {
