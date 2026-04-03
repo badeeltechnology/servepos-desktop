@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../stores/auth'
-import { ArrowLeft, Save, Printer, Image, FileText, Users, Settings, Database } from 'lucide-react'
+import { ArrowLeft, Save, Printer, Image, FileText, Users, Settings, Database, Loader2, Wifi } from 'lucide-react'
 
 type Tab = 'print-format' | 'system' | 'supervisor'
 
@@ -581,6 +581,9 @@ function SystemSettings() {
       {/* ERPNext Connection */}
       <ErpnextConnectionSettings config={config} onSave={loadData} />
 
+      {/* Sync Data */}
+      <SyncNowCard />
+
       {/* Sync & Timeout */}
       <div className="mb-6 rounded-xl border bg-white p-6">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -712,11 +715,21 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
       return
     }
     setSaving(true)
+    setStatus({ ok: true, message: 'Saving and syncing data from ERPNext...' })
     await window.api.config.set('erpnext_url', url.trim().replace(/\/+$/, ''))
     await window.api.config.set('api_key', apiKey.trim())
     await window.api.config.set('api_secret', apiSecret.trim())
     await window.api.config.set('company', selectedCompany)
     await window.api.config.set('pos_profile', selectedProfile)
+
+    // Run full sync to pull fresh data from the new connection
+    try {
+      await window.api.sync.run()
+      setStatus({ ok: true, message: 'Saved and synced successfully!' })
+    } catch {
+      setStatus({ ok: true, message: 'Saved. Sync will run in background.' })
+    }
+
     setSaving(false)
     setEditing(false)
     onSave()
@@ -828,12 +841,83 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
             ) : (
               <button onClick={handleSave} disabled={saving || !selectedCompany || !selectedProfile}
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                {saving ? 'Saving...' : 'Save Changes'}
+                {saving ? 'Saving & Syncing...' : 'Save Changes'}
               </button>
             )}
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function SyncNowCard() {
+  const [syncing, setSyncing] = useState(false)
+  const [result, setResult] = useState<any>(null)
+  const [lastSync, setLastSync] = useState<string | null>(null)
+
+  useEffect(() => { loadStatus() }, [])
+
+  async function loadStatus() {
+    const s = await window.api.sync.status()
+    setLastSync(s.lastSyncAt)
+    setResult(s.lastResult)
+  }
+
+  async function handleSync() {
+    setSyncing(true)
+    setResult(null)
+    const res = await window.api.sync.run()
+    setResult(res)
+    const s = await window.api.sync.status()
+    setLastSync(s.lastSyncAt)
+    setSyncing(false)
+  }
+
+  return (
+    <div className="mb-6 rounded-xl border bg-white p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Sync Data</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Last synced: {lastSync ? new Date(lastSync).toLocaleString() : 'Never'}
+          </p>
+        </div>
+        <button onClick={handleSync} disabled={syncing}
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+          {syncing ? (
+            <><Loader2 className="h-4 w-4 animate-spin" /> Syncing...</>
+          ) : (
+            <>Sync Now</>
+          )}
+        </button>
+      </div>
+
+      {result && (
+        <div className="space-y-2">
+          {result.down && (
+            <div className={`rounded-lg p-3 text-sm ${result.down.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+              <span className="font-medium">From ERPNext: </span>
+              {result.down.success ? (
+                result.down.counts ? Object.entries(result.down.counts).map(([k, v]) => `${k}: ${v}`).join(', ') : 'OK'
+              ) : (
+                result.down.error || 'Failed'
+              )}
+            </div>
+          )}
+          {result.up && (result.up.synced > 0 || result.up.failed > 0) && (
+            <div className={`rounded-lg p-3 text-sm ${result.up.failed === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+              <span className="font-medium">To ERPNext: </span>
+              {result.up.synced} synced{result.up.failed > 0 ? `, ${result.up.failed} failed` : ''}
+            </div>
+          )}
+        </div>
+      )}
+
+      <p className="mt-3 text-xs text-muted-foreground">
+        Pulls items, item groups, payment methods, tables, and rooms from ERPNext.
+        Pushes completed orders back to ERPNext.
+      </p>
     </div>
   )
 }
