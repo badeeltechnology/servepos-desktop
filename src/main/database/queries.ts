@@ -1,0 +1,437 @@
+import { getDb, saveDatabase } from './schema'
+import { v4 as uuidv4 } from 'uuid'
+import bcrypt from 'bcryptjs'
+
+// Helper to run a query and return all rows as objects
+function queryAll(sql: string, params: any[] = []): any[] {
+  const db = getDb()
+  const stmt = db.prepare(sql)
+  stmt.bind(params)
+  const rows: any[] = []
+  while (stmt.step()) {
+    rows.push(stmt.getAsObject())
+  }
+  stmt.free()
+  return rows
+}
+
+// Helper to run a query and return first row as object
+function queryOne(sql: string, params: any[] = []): any | null {
+  const db = getDb()
+  const stmt = db.prepare(sql)
+  stmt.bind(params)
+  let row = null
+  if (stmt.step()) {
+    row = stmt.getAsObject()
+  }
+  stmt.free()
+  return row
+}
+
+// Helper to run an INSERT/UPDATE/DELETE
+function execute(sql: string, params: any[] = []): void {
+  const db = getDb()
+  db.run(sql, params)
+  saveDatabase()
+}
+
+// ==================== Config ====================
+
+export function getConfig(key: string): string | null {
+  const row = queryOne('SELECT value FROM config WHERE key = ?', [key])
+  return row?.value ?? null
+}
+
+export function setConfig(key: string, value: string): void {
+  execute('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)', [key, value])
+}
+
+export function getAllConfig(): Record<string, string> {
+  const rows = queryAll('SELECT key, value FROM config')
+  const config: Record<string, string> = {}
+  for (const row of rows) {
+    config[row.key] = row.value
+  }
+  return config
+}
+
+// ==================== Receipt Config ====================
+
+export function getReceiptConfig(key: string): string | null {
+  const row = queryOne('SELECT value FROM receipt_config WHERE key = ?', [key])
+  return row?.value ?? null
+}
+
+export function setReceiptConfig(key: string, value: string): void {
+  execute('INSERT OR REPLACE INTO receipt_config (key, value) VALUES (?, ?)', [key, value])
+}
+
+export function getAllReceiptConfig(): Record<string, string> {
+  const rows = queryAll('SELECT key, value FROM receipt_config')
+  const config: Record<string, string> = {}
+  for (const row of rows) {
+    config[row.key] = row.value
+  }
+  return config
+}
+
+export function setReceiptConfigBulk(configs: Record<string, string>): void {
+  const db = getDb()
+  for (const [key, value] of Object.entries(configs)) {
+    db.run('INSERT OR REPLACE INTO receipt_config (key, value) VALUES (?, ?)', [key, value])
+  }
+  saveDatabase()
+}
+
+// ==================== Admin ====================
+
+export function createAdmin(username: string, password: string): void {
+  const id = uuidv4()
+  const passwordHash = bcrypt.hashSync(password, 10)
+  execute('INSERT INTO admin (id, username, password_hash) VALUES (?, ?, ?)', [id, username, passwordHash])
+}
+
+export function verifyAdmin(username: string, password: string): boolean {
+  const row = queryOne('SELECT password_hash FROM admin WHERE username = ?', [username])
+  if (!row) return false
+  return bcrypt.compareSync(password, row.password_hash)
+}
+
+export function adminExists(): boolean {
+  const row = queryOne('SELECT COUNT(*) as count FROM admin')
+  return (row?.count ?? 0) > 0
+}
+
+export function updateAdminPassword(username: string, newPassword: string): boolean {
+  const passwordHash = bcrypt.hashSync(newPassword, 10)
+  const before = queryOne('SELECT COUNT(*) as count FROM admin WHERE username = ?', [username])
+  if ((before?.count ?? 0) === 0) return false
+  execute('UPDATE admin SET password_hash = ?, updated_at = datetime("now") WHERE username = ?', [passwordHash, username])
+  return true
+}
+
+// ==================== Users ====================
+
+export interface User {
+  id: string
+  name: string
+  full_name: string | null
+  role: 'supervisor' | 'cashier'
+  erpnext_user: string | null
+  max_discount_pct: number
+  is_active: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export function createUser(
+  name: string,
+  pin: string,
+  role: 'supervisor' | 'cashier',
+  options?: {
+    fullName?: string
+    erpnextUser?: string
+    maxDiscountPct?: number
+    createdBy?: string
+  }
+): string {
+  const id = uuidv4()
+  const pinHash = bcrypt.hashSync(pin, 10)
+  execute(
+    `INSERT INTO users (id, name, full_name, pin_hash, role, erpnext_user, max_discount_pct, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, name, options?.fullName ?? null, pinHash, role, options?.erpnextUser ?? null, options?.maxDiscountPct ?? 0, options?.createdBy ?? null]
+  )
+  return id
+}
+
+export function verifyPin(pin: string): User | null {
+  const rows = queryAll('SELECT * FROM users WHERE is_active = 1')
+  for (const row of rows) {
+    if (bcrypt.compareSync(pin, row.pin_hash)) {
+      return {
+        id: row.id,
+        name: row.name,
+        full_name: row.full_name,
+        role: row.role,
+        erpnext_user: row.erpnext_user,
+        max_discount_pct: row.max_discount_pct,
+        is_active: row.is_active,
+        created_by: row.created_by,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      }
+    }
+  }
+  return null
+}
+
+export function getUsers(role?: string): User[] {
+  const sql = role
+    ? 'SELECT id, name, full_name, role, erpnext_user, max_discount_pct, is_active, created_by, created_at, updated_at FROM users WHERE role = ?'
+    : 'SELECT id, name, full_name, role, erpnext_user, max_discount_pct, is_active, created_by, created_at, updated_at FROM users'
+  return queryAll(sql, role ? [role] : [])
+}
+
+export function updateUser(id: string, updates: Partial<{ name: string; fullName: string; pin: string; erpnextUser: string; maxDiscountPct: number; isActive: number }>): boolean {
+  const sets: string[] = ['updated_at = datetime("now")']
+  const values: any[] = []
+
+  if (updates.name !== undefined) { sets.push('name = ?'); values.push(updates.name) }
+  if (updates.fullName !== undefined) { sets.push('full_name = ?'); values.push(updates.fullName) }
+  if (updates.pin !== undefined) { sets.push('pin_hash = ?'); values.push(bcrypt.hashSync(updates.pin, 10)) }
+  if (updates.erpnextUser !== undefined) { sets.push('erpnext_user = ?'); values.push(updates.erpnextUser) }
+  if (updates.maxDiscountPct !== undefined) { sets.push('max_discount_pct = ?'); values.push(updates.maxDiscountPct) }
+  if (updates.isActive !== undefined) { sets.push('is_active = ?'); values.push(updates.isActive) }
+
+  values.push(id)
+  execute(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, values)
+  return true
+}
+
+export function deleteUser(id: string): boolean {
+  execute('DELETE FROM users WHERE id = ?', [id])
+  return true
+}
+
+// ==================== Items ====================
+
+export function getItems(group?: string): any[] {
+  if (group) {
+    return queryAll('SELECT * FROM items WHERE item_group = ? AND is_visible = 1 AND is_available = 1 ORDER BY item_name', [group])
+  }
+  return queryAll('SELECT * FROM items WHERE is_visible = 1 AND is_available = 1 ORDER BY item_group, item_name')
+}
+
+export function getAllItems(): any[] {
+  return queryAll('SELECT * FROM items ORDER BY item_group, item_name')
+}
+
+export function getItemVariants(templateItemCode: string): any[] {
+  return queryAll('SELECT * FROM items WHERE variant_of = ? AND is_visible = 1 AND is_available = 1', [templateItemCode])
+}
+
+export function setItemVisibility(itemCode: string, visible: boolean): void {
+  execute('UPDATE items SET is_visible = ? WHERE item_code = ?', [visible ? 1 : 0, itemCode])
+}
+
+export function setItemGroupVisibility(groupName: string, visible: boolean): void {
+  execute('UPDATE item_groups SET is_visible = ? WHERE name = ?', [visible ? 1 : 0, groupName])
+}
+
+// ==================== Item Groups ====================
+
+export function getItemGroups(): any[] {
+  return queryAll('SELECT * FROM item_groups WHERE is_visible = 1 ORDER BY name')
+}
+
+export function getAllItemGroups(): any[] {
+  return queryAll('SELECT * FROM item_groups ORDER BY name')
+}
+
+// ==================== Tables & Rooms ====================
+
+export function getTables(room?: string): any[] {
+  if (room) {
+    return queryAll('SELECT * FROM tables_list WHERE room = ? AND is_active = 1 ORDER BY table_name', [room])
+  }
+  return queryAll('SELECT * FROM tables_list WHERE is_active = 1 ORDER BY room, table_name')
+}
+
+export function updateTableStatus(name: string, status: string, orderId?: string | null): void {
+  execute('UPDATE tables_list SET status = ?, current_order_id = ? WHERE name = ?', [status, orderId ?? null, name])
+}
+
+export function getRooms(): any[] {
+  return queryAll('SELECT * FROM rooms WHERE is_active = 1 ORDER BY room_name')
+}
+
+// ==================== Orders ====================
+
+export function generateOrderNumber(): string {
+  const branchCode = getConfig('branch_code') || 'POS'
+  const terminalNo = getConfig('terminal_number') || 'T01'
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+
+  const seqDate = getConfig('order_seq_date')
+  let seqNum = 1
+
+  if (seqDate === today) {
+    const current = getConfig('order_seq_number')
+    seqNum = (current ? parseInt(current) : 0) + 1
+  }
+
+  setConfig('order_seq_date', today)
+  setConfig('order_seq_number', String(seqNum))
+
+  return `${branchCode}-${terminalNo}-${today}-${String(seqNum).padStart(4, '0')}`
+}
+
+export function createOrder(data: {
+  orderType: string
+  tableName?: string
+  room?: string
+  guests?: number
+  cashierId: string
+  cashierName: string
+}): any {
+  const id = uuidv4()
+  const orderNumber = generateOrderNumber()
+
+  execute(
+    `INSERT INTO orders (id, order_number, order_type, table_name, room, guests, cashier_id, cashier_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, orderNumber, data.orderType, data.tableName ?? null, data.room ?? null, data.guests ?? null, data.cashierId, data.cashierName]
+  )
+
+  if (data.tableName) {
+    updateTableStatus(data.tableName, 'Occupied', id)
+  }
+
+  return getOrder(id)
+}
+
+export function getOrder(id: string): any | null {
+  return queryOne('SELECT * FROM orders WHERE id = ?', [id])
+}
+
+export function getOrders(filters?: { status?: string; cashierId?: string; date?: string }): any[] {
+  const conditions: string[] = []
+  const values: any[] = []
+
+  if (filters?.status) { conditions.push('status = ?'); values.push(filters.status) }
+  if (filters?.cashierId) { conditions.push('cashier_id = ?'); values.push(filters.cashierId) }
+  if (filters?.date) { conditions.push('date(created_at) = ?'); values.push(filters.date) }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  return queryAll(`SELECT * FROM orders ${where} ORDER BY created_at DESC`, values)
+}
+
+export function updateOrder(id: string, updates: Record<string, any>): boolean {
+  const fieldMap: Record<string, string> = {
+    status: 'status', tableName: 'table_name', room: 'room', guests: 'guests',
+    subtotal: 'subtotal', taxTotal: 'tax_total', discountAmount: 'discount_amount',
+    discountPercent: 'discount_percent', discountReason: 'discount_reason',
+    grandTotal: 'grand_total', voidReason: 'void_reason', kotPrinted: 'kot_printed',
+    completedAt: 'completed_at', syncStatus: 'sync_status', syncError: 'sync_error',
+    erpnextDocname: 'erpnext_docname'
+  }
+
+  const sets: string[] = []
+  const values: any[] = []
+
+  for (const [key, value] of Object.entries(updates)) {
+    const col = fieldMap[key]
+    if (col) { sets.push(`${col} = ?`); values.push(value) }
+  }
+
+  if (sets.length === 0) return false
+  values.push(id)
+  execute(`UPDATE orders SET ${sets.join(', ')} WHERE id = ?`, values)
+  return true
+}
+
+// ==================== Order Items ====================
+
+export function addOrderItem(data: {
+  orderId: string; itemCode: string; itemName: string; qty: number; rate: number;
+  discountAmount?: number; discountPercent?: number; amount: number;
+  modifiers?: string; modifierTotal?: number; specialInstructions?: string
+}): string {
+  const id = uuidv4()
+  execute(
+    `INSERT INTO order_items (id, order_id, item_code, item_name, qty, rate, discount_amount, discount_percent, amount, modifiers, modifier_total, special_instructions)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, data.orderId, data.itemCode, data.itemName, data.qty, data.rate,
+     data.discountAmount ?? 0, data.discountPercent ?? 0, data.amount,
+     data.modifiers ?? null, data.modifierTotal ?? 0, data.specialInstructions ?? null]
+  )
+  return id
+}
+
+export function getOrderItems(orderId: string): any[] {
+  return queryAll('SELECT * FROM order_items WHERE order_id = ?', [orderId])
+}
+
+export function updateOrderItem(id: string, updates: Record<string, any>): boolean {
+  const fieldMap: Record<string, string> = {
+    qty: 'qty', rate: 'rate', discountAmount: 'discount_amount', discountPercent: 'discount_percent',
+    amount: 'amount', modifiers: 'modifiers', modifierTotal: 'modifier_total', specialInstructions: 'special_instructions'
+  }
+  const sets: string[] = []
+  const values: any[] = []
+  for (const [key, value] of Object.entries(updates)) {
+    const col = fieldMap[key]
+    if (col) { sets.push(`${col} = ?`); values.push(value) }
+  }
+  if (sets.length === 0) return false
+  values.push(id)
+  execute(`UPDATE order_items SET ${sets.join(', ')} WHERE id = ?`, values)
+  return true
+}
+
+export function removeOrderItem(id: string): boolean {
+  execute('DELETE FROM order_items WHERE id = ?', [id])
+  return true
+}
+
+// ==================== Order Payments ====================
+
+export function addOrderPayment(orderId: string, method: string, amount: number, reference?: string): string {
+  const id = uuidv4()
+  execute('INSERT INTO order_payments (id, order_id, payment_method, amount, reference) VALUES (?, ?, ?, ?, ?)',
+    [id, orderId, method, amount, reference ?? null])
+  return id
+}
+
+export function getOrderPayments(orderId: string): any[] {
+  return queryAll('SELECT * FROM order_payments WHERE order_id = ?', [orderId])
+}
+
+// ==================== Order Edit Log ====================
+
+export function addOrderEditLog(data: {
+  orderId: string; action: string; itemCode?: string; itemName?: string;
+  oldValue?: string; newValue?: string; editedBy: string
+}): void {
+  const id = uuidv4()
+  execute(
+    `INSERT INTO order_edit_log (id, order_id, action, item_code, item_name, old_value, new_value, edited_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, data.orderId, data.action, data.itemCode ?? null, data.itemName ?? null, data.oldValue ?? null, data.newValue ?? null, data.editedBy]
+  )
+}
+
+// ==================== Payment Methods ====================
+
+export function getPaymentMethods(): any[] {
+  return queryAll('SELECT * FROM payment_methods ORDER BY is_default DESC, mode_of_payment')
+}
+
+// ==================== Modifiers ====================
+
+export function getModifierGroups(): any[] {
+  return queryAll('SELECT * FROM modifier_groups ORDER BY group_name')
+}
+
+export function getModifiersForGroup(groupId: string): any[] {
+  return queryAll('SELECT * FROM modifiers WHERE modifier_group_id = ? ORDER BY modifier_name', [groupId])
+}
+
+export function getItemModifierGroups(itemCode: string): any[] {
+  return queryAll(
+    `SELECT img.id, img.modifier_group_id, mg.group_name, mg.selection_type, img.is_required, mg.max_selections, img.display_order
+     FROM item_modifier_groups img
+     JOIN modifier_groups mg ON mg.id = img.modifier_group_id
+     WHERE img.item_code = ?
+     ORDER BY img.display_order`,
+    [itemCode]
+  )
+}
+
+// ==================== Setup Check ====================
+
+export function isSetupComplete(): boolean {
+  return adminExists() && getConfig('erpnext_url') !== null && getConfig('pos_profile') !== null
+}
