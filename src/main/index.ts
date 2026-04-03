@@ -3,7 +3,6 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase } from './database/schema'
 import { registerIpcHandlers } from './ipc/handlers'
-import { seedDemoData } from './database/seed'
 import { startAutoSync, stopAutoSync } from './sync/sync-engine'
 
 let mainWindow: BrowserWindow | null = null
@@ -52,9 +51,6 @@ app.whenReady().then(async () => {
 
   // Initialize database (async for sql.js WASM loading)
   await initDatabase()
-
-  // Seed demo data for development
-  seedDemoData()
 
   // Register IPC handlers
   registerIpcHandlers()
