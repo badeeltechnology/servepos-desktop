@@ -5,7 +5,7 @@ interface SetupProps {
   onComplete: () => void
 }
 
-type Step = 'admin' | 'connection' | 'profile' | 'settings' | 'supervisor' | 'done'
+type Step = 'admin' | 'connection' | 'settings' | 'supervisor' | 'done'
 
 export default function Setup({ onComplete }: SetupProps) {
   const [step, setStep] = useState<Step>('admin')
@@ -44,8 +44,7 @@ export default function Setup({ onComplete }: SetupProps) {
 
   const steps: { key: Step; label: string }[] = [
     { key: 'admin', label: 'Admin Account' },
-    { key: 'connection', label: 'ERPNext Connection' },
-    { key: 'profile', label: 'POS Profile' },
+    { key: 'connection', label: 'ERPNext & Profile' },
     { key: 'settings', label: 'Settings' },
     { key: 'supervisor', label: 'Supervisor' },
     { key: 'done', label: 'Complete' }
@@ -78,15 +77,12 @@ export default function Setup({ onComplete }: SetupProps) {
 
     try {
       setLoading(true)
-      // Save connection details first so the sync client can use them
       await window.api.config.set('erpnext_url', erpnextUrl.trim().replace(/\/+$/, ''))
       await window.api.config.set('api_key', apiKey.trim())
       await window.api.config.set('api_secret', apiSecret.trim())
 
-      // Verify connection by calling ERPNext API
       const testResult = await window.api.sync.testConnection()
       if (!testResult.success) {
-        // Clear saved credentials on failure
         await window.api.config.set('erpnext_url', '')
         await window.api.config.set('api_key', '')
         await window.api.config.set('api_secret', '')
@@ -96,22 +92,22 @@ export default function Setup({ onComplete }: SetupProps) {
 
       setConnectionVerified(true)
 
-      // Fetch real data from ERPNext
       const fetchedCompanies = await window.api.sync.getCompanies()
       if (fetchedCompanies.length === 0) {
         setError('No companies found in ERPNext. Please create a company first.')
         return
       }
       setCompanies(fetchedCompanies)
+      if (fetchedCompanies.length === 1) setSelectedCompany(fetchedCompanies[0])
 
       const fetchedProfiles = await window.api.sync.getPosProfiles()
       if (fetchedProfiles.length === 0) {
         setError('No POS Profiles found in ERPNext. Please create a POS Profile first.')
         return
       }
-      setProfiles(fetchedProfiles.map((p: any) => p.name))
-
-      setStep('profile')
+      const profileNames = fetchedProfiles.map((p: any) => p.name)
+      setProfiles(profileNames)
+      if (profileNames.length === 1) setSelectedProfile(profileNames[0])
     } catch (err: any) {
       setError(err.message || 'Failed to verify connection')
     } finally {
@@ -119,7 +115,7 @@ export default function Setup({ onComplete }: SetupProps) {
     }
   }
 
-  async function handleSelectProfile() {
+  async function handleSaveConnectionAndProfile() {
     setError('')
     if (!selectedCompany) { setError('Please select a company'); return }
     if (!selectedProfile) { setError('Please select a POS Profile'); return }
@@ -127,14 +123,11 @@ export default function Setup({ onComplete }: SetupProps) {
     await window.api.config.set('company', selectedCompany)
     await window.api.config.set('pos_profile', selectedProfile)
 
-    // Run initial sync to pull items, payment methods, tables
+    // Run initial sync
     try {
       setLoading(true)
-      setError('')
       await window.api.sync.run()
-    } catch {
-      // Non-blocking — sync may partially fail but setup should continue
-    } finally {
+    } catch { /* non-blocking */ } finally {
       setLoading(false)
     }
 
@@ -271,142 +264,98 @@ export default function Setup({ onComplete }: SetupProps) {
             <div className="rounded-2xl bg-white p-8 shadow-lg">
               <h2 className="mb-1 text-2xl font-bold">ERPNext Connection</h2>
               <p className="mb-6 text-sm text-muted-foreground">
-                Connect to your ERPNext server for item sync and data management.
+                Connect to your ERPNext server, then select company and POS profile.
               </p>
 
               <div className="space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium">ERPNext URL</label>
-                  <input
-                    type="url"
-                    value={erpnextUrl}
-                    onChange={(e) => setErpnextUrl(e.target.value)}
+                  <input type="url" value={erpnextUrl}
+                    onChange={(e) => { setErpnextUrl(e.target.value); setConnectionVerified(false) }}
                     className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="https://erp.example.com"
-                    autoFocus
-                  />
+                    placeholder="https://erp.example.com" autoFocus disabled={connectionVerified} />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium">API Key</label>
-                  <input
-                    type="text"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
+                  <input type="text" value={apiKey}
+                    onChange={(e) => { setApiKey(e.target.value); setConnectionVerified(false) }}
                     className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Enter API Key"
-                  />
+                    placeholder="Enter API Key" disabled={connectionVerified} />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium">API Secret</label>
-                  <input
-                    type="password"
-                    value={apiSecret}
-                    onChange={(e) => setApiSecret(e.target.value)}
+                  <input type="password" value={apiSecret}
+                    onChange={(e) => { setApiSecret(e.target.value); setConnectionVerified(false) }}
                     className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Enter API Secret"
-                  />
+                    placeholder="Enter API Secret" disabled={connectionVerified} />
                 </div>
 
-                {error && <p className="text-sm text-destructive">{error}</p>}
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => setStep('admin')}
-                    className="flex items-center gap-1 rounded-lg border border-input px-4 py-2.5 text-sm font-medium hover:bg-muted"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Back
-                  </button>
-                  <button
-                    onClick={handleVerifyConnection}
-                    disabled={loading}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : connectionVerified ? (
+                {/* Connection verified — show company & profile */}
+                {connectionVerified && companies.length > 0 && (
+                  <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-emerald-700">
                       <Wifi className="h-4 w-4" />
-                    ) : null}
-                    Verify & Continue
-                    <ChevronRight className="h-4 w-4" />
+                      Connected to ERPNext
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Company</label>
+                        <select value={selectedCompany} onChange={(e) => setSelectedCompany(e.target.value)}
+                          className="w-full rounded-lg border border-input bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                          <option value="">Select Company...</option>
+                          {companies.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">POS Profile</label>
+                        <select value={selectedProfile} onChange={(e) => setSelectedProfile(e.target.value)}
+                          className="w-full rounded-lg border border-input bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                          <option value="">Select POS Profile...</option>
+                          {profiles.map((p) => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Edit connection button when verified */}
+                {connectionVerified && (
+                  <button onClick={() => setConnectionVerified(false)}
+                    className="text-xs text-primary hover:underline">
+                    Change connection details
                   </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: POS Profile Selection */}
-          {step === 'profile' && (
-            <div className="rounded-2xl bg-white p-8 shadow-lg">
-              <h2 className="mb-1 text-2xl font-bold">Select POS Profile</h2>
-              <p className="mb-6 text-sm text-muted-foreground">
-                Choose the company, branch, and POS terminal for this installation.
-              </p>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium">Company</label>
-                  <select
-                    value={selectedCompany}
-                    onChange={(e) => setSelectedCompany(e.target.value)}
-                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">Select Company...</option>
-                    {companies.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium">Branch</label>
-                  <select
-                    value={selectedBranch}
-                    onChange={(e) => setSelectedBranch(e.target.value)}
-                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">Select Branch...</option>
-                    {branches.map((b) => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium">POS Profile</label>
-                  <select
-                    value={selectedProfile}
-                    onChange={(e) => setSelectedProfile(e.target.value)}
-                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">Select POS Profile...</option>
-                    {profiles.map((p) => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
+                )}
 
                 {error && <p className="text-sm text-destructive">{error}</p>}
 
                 <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => setStep('connection')}
-                    className="flex items-center gap-1 rounded-lg border border-input px-4 py-2.5 text-sm font-medium hover:bg-muted"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Back
+                  <button onClick={() => setStep('admin')}
+                    className="flex items-center gap-1 rounded-lg border border-input px-4 py-2.5 text-sm font-medium hover:bg-muted">
+                    <ChevronLeft className="h-4 w-4" /> Back
                   </button>
-                  <button
-                    onClick={handleSelectProfile}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                  >
-                    Continue
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                  {!connectionVerified ? (
+                    <button onClick={handleVerifyConnection} disabled={loading}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      Verify Connection
+                    </button>
+                  ) : (
+                    <button onClick={handleSaveConnectionAndProfile} disabled={loading || !selectedCompany || !selectedProfile}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      Continue
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* Step 4: Settings */}
+          {/* Removed separate profile step — now merged into connection step */}
+
+          {/* Step 3: Settings */}
+          {/* Step 3: Settings */}
           {step === 'settings' && (
             <div className="rounded-2xl bg-white p-8 shadow-lg">
               <h2 className="mb-1 text-2xl font-bold">Terminal Settings</h2>
@@ -487,7 +436,7 @@ export default function Setup({ onComplete }: SetupProps) {
 
                 <div className="flex gap-3 pt-2">
                   <button
-                    onClick={() => setStep('profile')}
+                    onClick={() => setStep('connection')}
                     className="flex items-center gap-1 rounded-lg border border-input px-4 py-2.5 text-sm font-medium hover:bg-muted"
                   >
                     <ChevronLeft className="h-4 w-4" />

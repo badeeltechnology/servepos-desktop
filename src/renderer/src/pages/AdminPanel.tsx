@@ -638,15 +638,25 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
   const [url, setUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [apiSecret, setApiSecret] = useState('')
+  const [selectedCompany, setSelectedCompany] = useState('')
+  const [selectedProfile, setSelectedProfile] = useState('')
+  const [companies, setCompanies] = useState<string[]>([])
+  const [profiles, setProfiles] = useState<string[]>([])
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [connected, setConnected] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null)
 
   function startEditing() {
     setUrl(config.erpnext_url || '')
     setApiKey(config.api_key || '')
     setApiSecret(config.api_secret || '')
+    setSelectedCompany(config.company || '')
+    setSelectedProfile(config.pos_profile || '')
     setStatus(null)
+    setConnected(false)
+    setCompanies([])
+    setProfiles([])
     setEditing(true)
   }
 
@@ -657,6 +667,8 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
     }
     setTesting(true)
     setStatus(null)
+    setConnected(false)
+
     // Temporarily save to test
     await window.api.config.set('erpnext_url', url.trim().replace(/\/+$/, ''))
     await window.api.config.set('api_key', apiKey.trim())
@@ -665,6 +677,25 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
     const result = await window.api.sync.testConnection()
     if (result.success) {
       setStatus({ ok: true, message: `Connected as ${result.user}` })
+      setConnected(true)
+
+      // Fetch companies and POS profiles
+      try {
+        const fetchedCompanies = await window.api.sync.getCompanies()
+        setCompanies(fetchedCompanies)
+        if (fetchedCompanies.length > 0 && !selectedCompany) {
+          setSelectedCompany(fetchedCompanies[0])
+        }
+
+        const fetchedProfiles = await window.api.sync.getPosProfiles()
+        const profileNames = fetchedProfiles.map((p: any) => p.name)
+        setProfiles(profileNames)
+        if (profileNames.length > 0 && !profileNames.includes(selectedProfile)) {
+          setSelectedProfile(profileNames[0])
+        }
+      } catch (err: any) {
+        setStatus({ ok: true, message: `Connected but failed to fetch data: ${err.message}` })
+      }
     } else {
       // Revert to old values
       await window.api.config.set('erpnext_url', config.erpnext_url || '')
@@ -676,10 +707,16 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
   }
 
   async function handleSave() {
+    if (!selectedCompany || !selectedProfile) {
+      setStatus({ ok: false, message: 'Please select a company and POS profile' })
+      return
+    }
     setSaving(true)
     await window.api.config.set('erpnext_url', url.trim().replace(/\/+$/, ''))
     await window.api.config.set('api_key', apiKey.trim())
     await window.api.config.set('api_secret', apiSecret.trim())
+    await window.api.config.set('company', selectedCompany)
+    await window.api.config.set('pos_profile', selectedProfile)
     setSaving(false)
     setEditing(false)
     onSave()
@@ -692,6 +729,7 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
     window.api.config.set('api_secret', config.api_secret || '')
     setEditing(false)
     setStatus(null)
+    setConnected(false)
   }
 
   return (
@@ -733,18 +771,18 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
         <div className="space-y-3">
           <div>
             <label className="mb-1 block text-sm font-medium">Site URL</label>
-            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)}
+            <input type="url" value={url} onChange={(e) => { setUrl(e.target.value); setConnected(false) }}
               className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="https://erp.example.com" />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium">API Key</label>
-            <input type="text" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+            <input type="text" value={apiKey} onChange={(e) => { setApiKey(e.target.value); setConnected(false) }}
               className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium">API Secret</label>
-            <input type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)}
+            <input type="password" value={apiSecret} onChange={(e) => { setApiSecret(e.target.value); setConnected(false) }}
               className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
 
@@ -754,17 +792,45 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
             </div>
           )}
 
+          {/* Company & Profile — shown after successful connection */}
+          {connected && companies.length > 0 && (
+            <div className="rounded-lg border-2 border-emerald-100 bg-emerald-50/30 p-4 space-y-3">
+              <p className="text-xs font-semibold text-emerald-700">Connection verified — select Company & POS Profile</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Company</label>
+                  <select value={selectedCompany} onChange={(e) => setSelectedCompany(e.target.value)}
+                    className="w-full rounded-lg border border-input bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <option value="">Select Company...</option>
+                    {companies.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">POS Profile</label>
+                  <select value={selectedProfile} onChange={(e) => setSelectedProfile(e.target.value)}
+                    className="w-full rounded-lg border border-input bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <option value="">Select POS Profile...</option>
+                    {profiles.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2 pt-1">
             <button onClick={handleCancel}
               className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-muted">Cancel</button>
-            <button onClick={handleTest} disabled={testing}
-              className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50">
-              {testing ? 'Testing...' : 'Test Connection'}
-            </button>
-            <button onClick={handleSave} disabled={saving || !status?.ok}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-              {saving ? 'Saving...' : 'Save'}
-            </button>
+            {!connected ? (
+              <button onClick={handleTest} disabled={testing}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                {testing ? 'Verifying...' : 'Verify Connection'}
+              </button>
+            ) : (
+              <button onClick={handleSave} disabled={saving || !selectedCompany || !selectedProfile}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            )}
           </div>
         </div>
       )}
