@@ -26,10 +26,12 @@ interface ReceiptData {
   cashierName: string
   items: {
     itemName: string
+    itemNameAr?: string
     qty: number
     rate: number
     amount: number
     description?: string
+    descriptionAr?: string
     modifiers?: { name: string; price: number }[]
     specialInstructions?: string
     discountPercent?: number
@@ -95,7 +97,9 @@ export function generateReceipt(data: ReceiptData): string {
   lines.push(formatLine('Qty  Item', 'Amount'))
   lines.push(CMD.DASH_LINE)
 
-  const showDescOnReceipt = config.show_description_on_receipt === '1'
+  const showDescEn = config.show_description_on_receipt === '1'
+  const showDescAr = config.show_description_ar_on_receipt === '1'
+  const showArabicItems = config.show_arabic_items === '1'
 
   // Items
   for (const item of data.items) {
@@ -103,10 +107,24 @@ export function generateReceipt(data: ReceiptData): string {
     const amtStr = item.amount.toFixed(decimals)
     lines.push(formatLine(`${qtyStr}${item.itemName}`, amtStr))
 
-    if (showDescOnReceipt && item.description) {
-      // Wrap description to fit 80mm paper (~32 chars)
+    // Arabic item name
+    if (showArabicItems && item.itemNameAr) {
+      lines.push(`     ${item.itemNameAr}`)
+    }
+
+    // English description
+    if (showDescEn && item.description) {
       const desc = item.description
-      const maxLen = 27 // indent 5 chars
+      const maxLen = 27
+      for (let i = 0; i < desc.length; i += maxLen) {
+        lines.push(`     ${desc.slice(i, i + maxLen)}`)
+      }
+    }
+
+    // Arabic description
+    if (showDescAr && item.descriptionAr) {
+      const desc = item.descriptionAr
+      const maxLen = 27
       for (let i = 0; i < desc.length; i += maxLen) {
         lines.push(`     ${desc.slice(i, i + maxLen)}`)
       }

@@ -15,17 +15,26 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
 
   useEffect(() => { loadData() }, [orderId])
 
+  const [allItems, setAllItems] = useState<Record<string, any>>({})
+
   async function loadData() {
-    const [o, i, p, c] = await Promise.all([
+    const [o, i, p, c, itemsList] = await Promise.all([
       window.api.orders.get(orderId),
       window.api.orderItems.get(orderId),
       window.api.orderPayments.get(orderId),
-      window.api.receiptConfig.getAll()
+      window.api.receiptConfig.getAll(),
+      window.api.items.getAll()
     ])
     setOrder(o)
     setItems(i)
     setPayments(p)
     setConfig(c)
+    // Build lookup for Arabic names
+    const lookup: Record<string, any> = {}
+    for (const item of itemsList) {
+      lookup[item.item_code] = item
+    }
+    setAllItems(lookup)
   }
 
   function handlePrint() {
@@ -142,12 +151,23 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
             <div className="my-1 border-t border-dashed border-gray-300" />
 
             {/* Items */}
-            {items.map((item) => (
+            {items.map((item) => {
+              const itemInfo = allItems[item.item_code] || {}
+              return (
               <div key={item.id} className="mb-1">
                 <div className="flex justify-between">
                   <span> {item.qty}   {item.item_name}</span>
                   <span>{item.amount.toFixed(decimals)}</span>
                 </div>
+                {showArabic && itemInfo.item_name_ar && (
+                  <p className="pl-6 text-gray-500" dir="rtl">{itemInfo.item_name_ar}</p>
+                )}
+                {config.show_description_on_receipt === '1' && itemInfo.description && (
+                  <p className="pl-6 text-gray-400" style={{ fontSize: '9px' }}>{itemInfo.description}</p>
+                )}
+                {config.show_description_ar_on_receipt === '1' && itemInfo.description_ar && (
+                  <p className="pl-6 text-gray-400" dir="rtl" style={{ fontSize: '9px' }}>{itemInfo.description_ar}</p>
+                )}
                 {item.modifiers && JSON.parse(item.modifiers).map((m: any, i: number) => (
                   <div key={i} className="flex justify-between text-gray-500 pl-4">
                     <span>+ {m.name}</span>
@@ -158,7 +178,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
                   <p className="text-gray-500 pl-4">"{item.special_instructions}"</p>
                 )}
               </div>
-            ))}
+            )})}
 
             <div className="my-2 border-t border-dashed border-gray-300" />
 

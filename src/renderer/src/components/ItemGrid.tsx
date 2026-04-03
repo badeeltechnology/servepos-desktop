@@ -327,47 +327,39 @@ export default function ItemGrid() {
                 <p className="text-sm">Try a different search term or category</p>
               </div>
             ) : viewMode === 'grid' ? (
-              /* Grid View */
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
+              /* Grid View — compact, more items visible */
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                 {filteredItems.map((item) => (
                   <button
                     key={item.item_code}
                     onClick={() => handleItemClick(item)}
-                    className="group flex flex-col overflow-hidden rounded-2xl border-2 border-white bg-white shadow-sm transition-all hover:border-primary/20 hover:shadow-lg active:scale-[0.97]"
+                    className="group flex flex-col overflow-hidden rounded-xl border-2 border-white bg-white shadow-sm transition-all hover:border-primary/20 hover:shadow-md active:scale-[0.97]"
                   >
                     {item.image ? (
-                      <div className="aspect-[4/3] w-full overflow-hidden bg-gray-100">
+                      <div className="aspect-square w-full overflow-hidden bg-gray-100">
                         <img src={item.image} alt={item.item_name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
                       </div>
                     ) : (
-                      <div className="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-primary/5 to-primary/15">
-                        <span className="text-4xl font-black text-primary/15">{item.item_name.charAt(0)}</span>
+                      <div className="flex h-16 w-full items-center justify-center bg-gradient-to-br from-primary/5 to-primary/10">
+                        <span className="text-2xl font-black text-primary/15">{item.item_name.charAt(0)}</span>
                       </div>
                     )}
-                    <div className="flex flex-1 flex-col p-3">
-                      <h3 className={`text-sm font-semibold leading-snug text-gray-800 group-hover:text-primary ${lang === 'ar' ? 'text-right' : ''}`}
+                    <div className="flex flex-1 flex-col p-2.5">
+                      <h3 className={`text-xs font-semibold leading-snug text-gray-800 group-hover:text-primary line-clamp-2 ${lang === 'ar' ? 'text-right' : ''}`}
                         dir={lang === 'ar' ? 'rtl' : 'ltr'}>
                         {itemName(item)}
                       </h3>
                       {showArabicName(item) && (
-                        <p className="mt-0.5 text-xs text-gray-400" dir="rtl">{item.item_name_ar}</p>
+                        <p className="mt-0.5 text-[10px] text-gray-400 line-clamp-1" dir="rtl">{item.item_name_ar}</p>
                       )}
-                      {showDescription && item.description && (
-                        <p className="mt-1 line-clamp-2 text-[11px] leading-tight text-gray-400">{item.description}</p>
-                      )}
-                      <div className="mt-auto flex items-center justify-between pt-2">
-                        <span className="text-base font-bold text-primary">{item.rate.toFixed(2)}</span>
-                        <div className="flex items-center gap-1">
-                          {item.has_variants ? (
-                            <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">SIZES</span>
-                          ) : null}
-                          {item.description && (
-                            <button onClick={(e) => { e.stopPropagation(); setDetailItem(item) }}
-                              className="rounded-full p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-500" title="View details">
-                              <Info className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
+                      <div className="mt-auto flex items-center justify-between pt-1.5">
+                        <span className="text-sm font-bold text-primary">{item.rate.toFixed(2)}</span>
+                        {item.description && (
+                          <button onClick={(e) => { e.stopPropagation(); setDetailItem(item) }}
+                            className="rounded-full p-0.5 text-gray-300 hover:text-gray-500" title="View details">
+                            <Info className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </button>

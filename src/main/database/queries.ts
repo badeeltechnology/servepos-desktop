@@ -418,6 +418,103 @@ export function addOrderEditLog(data: {
   )
 }
 
+// ==================== Default Modifiers ====================
+
+export function seedDefaultModifiers(): void {
+  // Only seed if no modifier groups exist
+  const existing = queryOne('SELECT COUNT(*) as count FROM modifier_groups')
+  if (existing && existing.count > 0) return
+
+  const groups = [
+    {
+      id: 'default-spice', name: 'Spice Level', type: 'Single', required: 0, max: 0,
+      modifiers: [
+        { name: 'Mild', price: 0 },
+        { name: 'Medium', price: 0 },
+        { name: 'Hot', price: 0 },
+        { name: 'Extra Hot', price: 0 }
+      ]
+    },
+    {
+      id: 'default-sugar', name: 'Sugar Level', type: 'Single', required: 0, max: 0,
+      modifiers: [
+        { name: 'No Sugar', price: 0 },
+        { name: 'Less Sugar', price: 0 },
+        { name: 'Normal Sugar', price: 0 },
+        { name: 'Extra Sugar', price: 0 }
+      ]
+    },
+    {
+      id: 'default-milk', name: 'Milk Option', type: 'Single', required: 0, max: 0,
+      modifiers: [
+        { name: 'Regular Milk', price: 0 },
+        { name: 'Oat Milk', price: 2 },
+        { name: 'Almond Milk', price: 2 },
+        { name: 'Coconut Milk', price: 2 },
+        { name: 'Soy Milk', price: 2 },
+        { name: 'No Milk', price: 0 }
+      ]
+    },
+    {
+      id: 'default-size', name: 'Size', type: 'Single', required: 0, max: 0,
+      modifiers: [
+        { name: 'Small', price: 0 },
+        { name: 'Medium', price: 3 },
+        { name: 'Large', price: 5 }
+      ]
+    },
+    {
+      id: 'default-temp', name: 'Temperature', type: 'Single', required: 0, max: 0,
+      modifiers: [
+        { name: 'Hot', price: 0 },
+        { name: 'Iced', price: 0 }
+      ]
+    },
+    {
+      id: 'default-cooking', name: 'Cooking Preference', type: 'Single', required: 0, max: 0,
+      modifiers: [
+        { name: 'Rare', price: 0 },
+        { name: 'Medium Rare', price: 0 },
+        { name: 'Medium', price: 0 },
+        { name: 'Medium Well', price: 0 },
+        { name: 'Well Done', price: 0 }
+      ]
+    },
+    {
+      id: 'default-extras', name: 'Extras', type: 'Multiple', required: 0, max: 0,
+      modifiers: [
+        { name: 'Extra Cheese', price: 4 },
+        { name: 'Extra Sauce', price: 2 },
+        { name: 'Extra Bread', price: 3 }
+      ]
+    },
+    {
+      id: 'default-remove', name: 'Remove', type: 'Multiple', required: 0, max: 0,
+      modifiers: [
+        { name: 'No Onion', price: 0 },
+        { name: 'No Tomato', price: 0 },
+        { name: 'No Lettuce', price: 0 },
+        { name: 'No Sauce', price: 0 },
+        { name: 'No Ice', price: 0 }
+      ]
+    }
+  ]
+
+  for (const g of groups) {
+    execute(
+      'INSERT OR IGNORE INTO modifier_groups (id, group_name, selection_type, is_required, max_selections) VALUES (?, ?, ?, ?, ?)',
+      [g.id, g.name, g.type, g.required, g.max]
+    )
+    for (let i = 0; i < g.modifiers.length; i++) {
+      const m = g.modifiers[i]
+      execute(
+        'INSERT OR IGNORE INTO modifiers (id, modifier_group_id, modifier_name, price, is_default) VALUES (?, ?, ?, ?, 0)',
+        [`${g.id}-${i}`, g.id, m.name, m.price]
+      )
+    }
+  }
+}
+
 // ==================== Payment Methods ====================
 
 export function getPaymentMethods(): any[] {
@@ -555,7 +652,7 @@ export function getSessionPendingSyncOrders(sessionId: string): any[] {
   )
 }
 
-export function closeSession(sessionId: string, closingBalance: { mode: string; amount: number }[]): any {
+export function closeSession(sessionId: string, closingBalance: { mode: string; amount: number }[], remarks?: string): any {
   const session = queryOne('SELECT * FROM sessions WHERE id = ?', [sessionId])
   if (!session) throw new Error('Session not found')
   if (session.status !== 'Open') throw new Error('Session is not open')
@@ -620,7 +717,8 @@ export function closeSession(sessionId: string, closingBalance: { mode: string; 
       expected_balance = ?,
       total_sales = ?,
       total_orders = ?,
-      payment_breakdown = ?
+      payment_breakdown = ?,
+      remarks = ?
     WHERE id = ?`,
     [
       closingBalance.reduce((s, b) => s + b.amount, 0),
@@ -629,6 +727,7 @@ export function closeSession(sessionId: string, closingBalance: { mode: string; 
       totalSales,
       totalOrders,
       JSON.stringify(paymentBreakdown),
+      remarks || null,
       sessionId
     ]
   )

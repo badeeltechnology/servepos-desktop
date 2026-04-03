@@ -3,23 +3,24 @@ import { useAuthStore } from '../stores/auth'
 import {
   Users, Settings, Printer, Package, LayoutGrid, ClipboardList,
   Plus, Trash2, Edit3, Eye, EyeOff, Save, RefreshCw, ArrowLeft,
-  CheckCircle, XCircle, AlertCircle, ChevronDown
+  CheckCircle, XCircle, AlertCircle, ChevronDown, BarChart3, Clock
 } from 'lucide-react'
 
-type Tab = 'users' | 'modifiers' | 'items' | 'printers' | 'sync' | 'orders' | 'session'
+type Tab = 'users' | 'modifiers' | 'items' | 'printers' | 'sync' | 'orders' | 'shifts' | 'reports'
 
 export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('users')
   const user = useAuthStore((s) => s.user)
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
+    { key: 'reports', label: 'Dashboard', icon: <BarChart3 className="h-4 w-4" /> },
     { key: 'users', label: 'Cashiers', icon: <Users className="h-4 w-4" /> },
     { key: 'modifiers', label: 'Modifiers', icon: <Package className="h-4 w-4" /> },
-    { key: 'items', label: 'Item Visibility', icon: <LayoutGrid className="h-4 w-4" /> },
+    { key: 'items', label: 'Items & Modifiers', icon: <LayoutGrid className="h-4 w-4" /> },
     { key: 'printers', label: 'Printers', icon: <Printer className="h-4 w-4" /> },
     { key: 'orders', label: 'Order History', icon: <ClipboardList className="h-4 w-4" /> },
-    { key: 'sync', label: 'Sync', icon: <RefreshCw className="h-4 w-4" /> },
-    { key: 'session', label: 'Session', icon: <Settings className="h-4 w-4" /> }
+    { key: 'shifts', label: 'Shift History', icon: <Clock className="h-4 w-4" /> },
+    { key: 'sync', label: 'Sync', icon: <RefreshCw className="h-4 w-4" /> }
   ]
 
   return (
@@ -57,7 +58,8 @@ export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
         {activeTab === 'printers' && <PrinterManagement />}
         {activeTab === 'orders' && <OrderHistory />}
         {activeTab === 'sync' && <SyncDashboard />}
-        {activeTab === 'session' && <SessionManagement />}
+        {activeTab === 'shifts' && <ShiftHistory />}
+        {activeTab === 'reports' && <ReportsDashboard />}
       </div>
     </div>
   )
@@ -867,38 +869,259 @@ function SyncDashboard() {
 }
 
 // ==================== Session Management ====================
-function SessionManagement() {
-  const user = useAuthStore((s) => s.user)
-  const [session, setSession] = useState<any>(null)
-  const [openingCash, setOpeningCash] = useState(0)
+// ==================== Shift History ====================
+function ShiftHistory() {
+  const [sessions, setSessions] = useState<any[]>([])
+  const [selected, setSelected] = useState<any>(null)
 
-  useEffect(() => {
-    // Check for active session
-    // For now, placeholder
-  }, [])
+  useEffect(() => { loadSessions() }, [])
+
+  async function loadSessions() {
+    const data = await window.api.sessions.getAll(50)
+    setSessions(data)
+  }
 
   return (
-    <div className="max-w-2xl">
-      <h2 className="mb-4 text-xl font-bold">Session Management</h2>
+    <div className="max-w-3xl">
+      <h2 className="mb-4 text-xl font-bold">Shift History</h2>
 
-      <div className="rounded-xl border bg-white p-6">
-        {!session ? (
-          <div>
-            <h3 className="mb-3 font-semibold">Open New Shift</h3>
-            <div className="mb-4">
-              <label className="mb-1 block text-sm font-medium">Opening Cash Balance</label>
-              <input type="number" value={openingCash} onChange={(e) => setOpeningCash(parseFloat(e.target.value) || 0)} className="w-48 rounded-lg border border-input px-3 py-2 text-sm" min={0} step={0.01} />
+      <div className="flex gap-4">
+        {/* Shift list */}
+        <div className="flex-1 rounded-xl border bg-white">
+          {sessions.length === 0 ? (
+            <p className="p-6 text-center text-sm text-muted-foreground">No shifts yet.</p>
+          ) : (
+            <div className="divide-y">
+              {sessions.map((s) => {
+                const opened = new Date(s.opened_at + 'Z')
+                const closed = s.closed_at ? new Date(s.closed_at + 'Z') : null
+                return (
+                  <button key={s.id} onClick={() => setSelected(s)}
+                    className={`flex w-full items-center justify-between px-5 py-3 text-left hover:bg-gray-50 ${selected?.id === s.id ? 'bg-primary/5' : ''}`}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold">{s.user_name}</span>
+                        <span className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${s.status === 'Open' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+                          {s.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        {opened.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} {opened.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        {closed && ` — ${closed.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-bold">{(s.total_sales || 0).toFixed(2)}</span>
+                      <p className="text-xs text-gray-400">{s.total_orders || 0} orders</p>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
-            <button className="rounded-lg bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-              Open Shift
-            </button>
-          </div>
-        ) : (
-          <div>
-            <h3 className="mb-3 font-semibold">Current Shift</h3>
-            <p className="text-sm text-muted-foreground">Shift management with close/reconcile will be here.</p>
+          )}
+        </div>
+
+        {/* Shift detail */}
+        {selected && (
+          <div className="w-[320px] rounded-xl border bg-white p-5">
+            <h3 className="mb-3 font-bold">Shift Detail</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500">Cashier</span><span className="font-medium">{selected.user_name}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Status</span><span className="font-medium">{selected.status}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Orders</span><span className="font-medium">{selected.total_orders || 0}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Total Sales</span><span className="font-bold text-primary">{(selected.total_sales || 0).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Opening Cash</span><span>{(selected.opening_cash || 0).toFixed(2)}</span></div>
+              {selected.closing_cash !== null && (
+                <div className="flex justify-between"><span className="text-gray-500">Closing Cash</span><span>{(selected.closing_cash || 0).toFixed(2)}</span></div>
+              )}
+            </div>
+
+            {/* Payment breakdown */}
+            {selected.payment_breakdown && (
+              <div className="mt-4">
+                <h4 className="mb-2 text-xs font-bold text-gray-400 uppercase">Payment Breakdown</h4>
+                <div className="space-y-1">
+                  {Object.entries(JSON.parse(selected.payment_breakdown)).map(([method, amount]: [string, any]) => (
+                    <div key={method} className="flex justify-between text-sm">
+                      <span className="text-gray-500">{method}</span>
+                      <span className="font-medium">{amount.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Remarks */}
+            {selected.remarks && (
+              <div className="mt-4 rounded-lg bg-amber-50 p-3 text-xs text-amber-700">
+                <strong>Remarks:</strong> {selected.remarks}
+              </div>
+            )}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ==================== Reports Dashboard ====================
+function ReportsDashboard() {
+  const [orders, setOrders] = useState<any[]>([])
+  const [sessions, setSessions] = useState<any[]>([])
+  const [dateRange, setDateRange] = useState<'today' | 'week' | 'month'>('today')
+
+  useEffect(() => { loadData() }, [dateRange])
+
+  async function loadData() {
+    const today = new Date().toISOString().split('T')[0]
+    const allOrders = await window.api.orders.getAll({ date: today })
+    setOrders(allOrders)
+    const allSessions = await window.api.sessions.getAll(20)
+    setSessions(allSessions)
+  }
+
+  const completedOrders = orders.filter((o) => o.status === 'Completed')
+  const voidedOrders = orders.filter((o) => o.status === 'Void')
+  const totalSales = completedOrders.reduce((s, o) => s + (o.grand_total || 0), 0)
+  const totalOrders = completedOrders.length
+  const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0
+
+  // Top items
+  const [topItems, setTopItems] = useState<{ name: string; qty: number; amount: number }[]>([])
+  useEffect(() => {
+    async function loadTopItems() {
+      const itemCounts: Record<string, { name: string; qty: number; amount: number }> = {}
+      for (const order of completedOrders) {
+        const items = await window.api.orderItems.get(order.id)
+        for (const item of items) {
+          if (!itemCounts[item.item_code]) {
+            itemCounts[item.item_code] = { name: item.item_name, qty: 0, amount: 0 }
+          }
+          itemCounts[item.item_code].qty += item.qty
+          itemCounts[item.item_code].amount += item.amount
+        }
+      }
+      const sorted = Object.values(itemCounts).sort((a, b) => b.qty - a.qty).slice(0, 10)
+      setTopItems(sorted)
+    }
+    if (completedOrders.length > 0) loadTopItems()
+  }, [completedOrders.length])
+
+  // Payment method breakdown
+  const [paymentBreakdown, setPaymentBreakdown] = useState<Record<string, number>>({})
+  useEffect(() => {
+    async function loadPayments() {
+      const breakdown: Record<string, number> = {}
+      for (const order of completedOrders) {
+        const payments = await window.api.orderPayments.get(order.id)
+        for (const p of payments) {
+          breakdown[p.payment_method] = (breakdown[p.payment_method] || 0) + p.amount
+        }
+      }
+      setPaymentBreakdown(breakdown)
+    }
+    if (completedOrders.length > 0) loadPayments()
+  }, [completedOrders.length])
+
+  // Hourly sales
+  const hourlySales: Record<string, number> = {}
+  for (const order of completedOrders) {
+    const hour = new Date(order.created_at + 'Z').getHours()
+    const label = `${String(hour).padStart(2, '0')}:00`
+    hourlySales[label] = (hourlySales[label] || 0) + (order.grand_total || 0)
+  }
+
+  return (
+    <div className="max-w-4xl">
+      <h2 className="mb-4 text-xl font-bold">Dashboard</h2>
+
+      {/* Summary cards */}
+      <div className="mb-6 grid grid-cols-4 gap-3">
+        <div className="rounded-xl bg-white border p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase">Total Sales</p>
+          <p className="mt-1 text-2xl font-bold text-primary">{totalSales.toFixed(2)}</p>
+        </div>
+        <div className="rounded-xl bg-white border p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase">Orders</p>
+          <p className="mt-1 text-2xl font-bold text-gray-800">{totalOrders}</p>
+        </div>
+        <div className="rounded-xl bg-white border p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase">Avg Order Value</p>
+          <p className="mt-1 text-2xl font-bold text-gray-800">{avgOrderValue.toFixed(2)}</p>
+        </div>
+        <div className="rounded-xl bg-white border p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase">Voided</p>
+          <p className="mt-1 text-2xl font-bold text-red-500">{voidedOrders.length}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Payment breakdown */}
+        <div className="rounded-xl border bg-white p-5">
+          <h3 className="mb-3 text-sm font-bold text-gray-500 uppercase">Payment Methods</h3>
+          {Object.entries(paymentBreakdown).length === 0 ? (
+            <p className="text-sm text-gray-400">No data</p>
+          ) : (
+            <div className="space-y-2">
+              {Object.entries(paymentBreakdown).map(([method, amount]) => (
+                <div key={method} className="flex items-center justify-between">
+                  <span className="text-sm font-medium">{method}</span>
+                  <div className="flex items-center gap-3">
+                    <div className="h-2 w-32 rounded-full bg-gray-100 overflow-hidden">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${totalSales > 0 ? (amount / totalSales) * 100 : 0}%` }} />
+                    </div>
+                    <span className="text-sm font-bold w-20 text-right">{amount.toFixed(2)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Top selling items */}
+        <div className="rounded-xl border bg-white p-5">
+          <h3 className="mb-3 text-sm font-bold text-gray-500 uppercase">Top Items</h3>
+          {topItems.length === 0 ? (
+            <p className="text-sm text-gray-400">No data</p>
+          ) : (
+            <div className="space-y-2">
+              {topItems.map((item, idx) => (
+                <div key={item.name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[10px] font-bold text-gray-500">{idx + 1}</span>
+                    <span className="text-sm font-medium">{item.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-bold">{item.amount.toFixed(2)}</span>
+                    <span className="ml-2 text-xs text-gray-400">x{item.qty}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Hourly sales */}
+        <div className="rounded-xl border bg-white p-5 col-span-2">
+          <h3 className="mb-3 text-sm font-bold text-gray-500 uppercase">Sales by Hour</h3>
+          {Object.keys(hourlySales).length === 0 ? (
+            <p className="text-sm text-gray-400">No data</p>
+          ) : (
+            <div className="flex items-end gap-1 h-32">
+              {Object.entries(hourlySales).sort().map(([hour, amount]) => {
+                const maxSale = Math.max(...Object.values(hourlySales))
+                const height = maxSale > 0 ? (amount / maxSale) * 100 : 0
+                return (
+                  <div key={hour} className="flex flex-1 flex-col items-center gap-1">
+                    <span className="text-[9px] font-bold text-gray-500">{amount.toFixed(0)}</span>
+                    <div className="w-full rounded-t bg-primary/80" style={{ height: `${height}%`, minHeight: '2px' }} />
+                    <span className="text-[9px] text-gray-400">{hour}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

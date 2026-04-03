@@ -67,16 +67,27 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
     tableName: order.table_name,
     guests: order.guests,
     cashierName: order.cashier_name || '',
-    items: items.map((item: any) => ({
-      itemName: item.item_name,
-      qty: item.qty,
-      rate: item.rate,
-      amount: item.amount,
-      modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
-      specialInstructions: item.special_instructions,
-      discountPercent: item.discount_percent,
-      discountAmount: item.discount_amount
-    })),
+    items: items.map((item: any) => {
+      // Lookup Arabic name and descriptions from items table
+      const itemInfo = db.prepare('SELECT item_name_ar, description, description_ar FROM items WHERE item_code = ?')
+      itemInfo.bind([item.item_code])
+      const info = itemInfo.step() ? itemInfo.getAsObject() as any : {}
+      itemInfo.free()
+
+      return {
+        itemName: item.item_name,
+        itemNameAr: info.item_name_ar || null,
+        qty: item.qty,
+        rate: item.rate,
+        amount: item.amount,
+        description: info.description || null,
+        descriptionAr: info.description_ar || null,
+        modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
+        specialInstructions: item.special_instructions,
+        discountPercent: item.discount_percent,
+        discountAmount: item.discount_amount
+      }
+    }),
     subtotal: order.subtotal || 0,
     taxTotal: order.tax_total || 0,
     taxLabel,

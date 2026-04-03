@@ -15,6 +15,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState('')
+  const [remarks, setRemarks] = useState('')
   const [orderCount, setOrderCount] = useState(0)
   const [totalSales, setTotalSales] = useState(0)
   const [openOrderCount, setOpenOrderCount] = useState(0)
@@ -68,7 +69,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
     setLoading(true)
     try {
       const closingBalance = Object.entries(closingBalances).map(([mode, amount]) => ({ mode, amount }))
-      await window.api.sessions.close(sessionId, closingBalance)
+      await window.api.sessions.close(sessionId, closingBalance, remarks)
       onClose()
     } catch (err: any) {
       setError(err.message || 'Failed to close shift')
@@ -191,6 +192,18 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
               <p className="mt-1 text-xs text-gray-400">Electronic payments are tracked automatically from transactions.</p>
             </>
           )}
+
+          {/* Remarks */}
+          <div className="mt-5">
+            <h3 className="mb-2 text-sm font-bold text-gray-500 uppercase">Remarks (optional)</h3>
+            <textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Any notes about this shift — discrepancies, incidents, etc."
+              className="w-full resize-none rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none"
+              rows={3}
+            />
+          </div>
         </div>
 
         {/* Blockers & Footer */}

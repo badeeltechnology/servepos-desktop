@@ -389,9 +389,11 @@ export default function AdminPanel() {
               <div className="space-y-3">
                 {[
                   { key: 'show_logo', label: 'Show logo on receipt' },
-                  { key: 'show_arabic', label: 'Show bilingual (Arabic + English)' },
+                  { key: 'show_arabic', label: 'Show Arabic name on receipt (header, footer)' },
+                  { key: 'show_arabic_items', label: 'Show Arabic item names on receipt' },
                   { key: 'show_cashier_name', label: 'Show cashier name' },
-                  { key: 'show_description_on_receipt', label: 'Show item description on receipt' },
+                  { key: 'show_description_on_receipt', label: 'Show item description (English) on receipt' },
+                  { key: 'show_description_ar_on_receipt', label: 'Show item description (Arabic) on receipt' },
                   { key: 'show_description_on_pos', label: 'Show item description on POS screen' }
                 ].map(({ key, label }) => (
                   <label key={key} className="flex items-center gap-2 text-sm">

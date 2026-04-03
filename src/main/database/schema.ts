@@ -442,6 +442,11 @@ function runMigrations(): void {
   if (!hasColumn('orders', 'session_id')) {
     database.run('ALTER TABLE orders ADD COLUMN session_id TEXT')
   }
+
+  // Migration 4: Add remarks to sessions
+  if (!hasColumn('sessions', 'remarks')) {
+    database.run('ALTER TABLE sessions ADD COLUMN remarks TEXT')
+  }
 }
 
 export function saveDatabase(): void {
