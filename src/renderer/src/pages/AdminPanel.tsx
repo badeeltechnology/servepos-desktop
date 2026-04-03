@@ -579,27 +579,7 @@ function SystemSettings() {
       </div>
 
       {/* ERPNext Connection */}
-      <div className="mb-6 rounded-xl border bg-white p-6">
-        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          ERPNext Connection
-        </h3>
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium">Site URL</label>
-            <input type="text" value={config.erpnext_url || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium">Company</label>
-              <input type="text" value={config.company || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium">POS Profile</label>
-              <input type="text" value={config.pos_profile || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
-            </div>
-          </div>
-        </div>
-      </div>
+      <ErpnextConnectionSettings config={config} onSave={loadData} />
 
       {/* Sync & Timeout */}
       <div className="mb-6 rounded-xl border bg-white p-6">
@@ -649,6 +629,145 @@ function SystemSettings() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, string>; onSave: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [url, setUrl] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [apiSecret, setApiSecret] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null)
+
+  function startEditing() {
+    setUrl(config.erpnext_url || '')
+    setApiKey(config.api_key || '')
+    setApiSecret(config.api_secret || '')
+    setStatus(null)
+    setEditing(true)
+  }
+
+  async function handleTest() {
+    if (!url.trim() || !apiKey.trim() || !apiSecret.trim()) {
+      setStatus({ ok: false, message: 'All fields are required' })
+      return
+    }
+    setTesting(true)
+    setStatus(null)
+    // Temporarily save to test
+    await window.api.config.set('erpnext_url', url.trim().replace(/\/+$/, ''))
+    await window.api.config.set('api_key', apiKey.trim())
+    await window.api.config.set('api_secret', apiSecret.trim())
+
+    const result = await window.api.sync.testConnection()
+    if (result.success) {
+      setStatus({ ok: true, message: `Connected as ${result.user}` })
+    } else {
+      // Revert to old values
+      await window.api.config.set('erpnext_url', config.erpnext_url || '')
+      await window.api.config.set('api_key', config.api_key || '')
+      await window.api.config.set('api_secret', config.api_secret || '')
+      setStatus({ ok: false, message: `Failed: ${result.error}` })
+    }
+    setTesting(false)
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    await window.api.config.set('erpnext_url', url.trim().replace(/\/+$/, ''))
+    await window.api.config.set('api_key', apiKey.trim())
+    await window.api.config.set('api_secret', apiSecret.trim())
+    setSaving(false)
+    setEditing(false)
+    onSave()
+  }
+
+  function handleCancel() {
+    // Revert if we changed during test
+    window.api.config.set('erpnext_url', config.erpnext_url || '')
+    window.api.config.set('api_key', config.api_key || '')
+    window.api.config.set('api_secret', config.api_secret || '')
+    setEditing(false)
+    setStatus(null)
+  }
+
+  return (
+    <div className="mb-6 rounded-xl border bg-white p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          ERPNext Connection
+        </h3>
+        {!editing && (
+          <button onClick={startEditing}
+            className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:bg-muted">
+            Edit Connection
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Site URL</label>
+            <input type="text" value={config.erpnext_url || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium">Company</label>
+              <input type="text" value={config.company || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">POS Profile</label>
+              <input type="text" value={config.pos_profile || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">API Key</label>
+            <input type="text" value={config.api_key ? `${config.api_key.slice(0, 8)}...` : ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 font-mono text-sm" />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Site URL</label>
+            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)}
+              className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="https://erp.example.com" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">API Key</label>
+            <input type="text" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+              className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">API Secret</label>
+            <input type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)}
+              className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+          </div>
+
+          {status && (
+            <div className={`rounded-lg p-3 text-sm ${status.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+              {status.message}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleCancel}
+              className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-muted">Cancel</button>
+            <button onClick={handleTest} disabled={testing}
+              className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50">
+              {testing ? 'Testing...' : 'Test Connection'}
+            </button>
+            <button onClick={handleSave} disabled={saving || !status?.ok}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
