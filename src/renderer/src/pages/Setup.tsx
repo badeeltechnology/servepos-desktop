@@ -78,20 +78,38 @@ export default function Setup({ onComplete }: SetupProps) {
 
     try {
       setLoading(true)
-      // Save connection details
+      // Save connection details first so the sync client can use them
       await window.api.config.set('erpnext_url', erpnextUrl.trim().replace(/\/+$/, ''))
       await window.api.config.set('api_key', apiKey.trim())
       await window.api.config.set('api_secret', apiSecret.trim())
 
-      // TODO: Verify connection by calling ERPNext API
-      // For now, mark as verified and move on
+      // Verify connection by calling ERPNext API
+      const testResult = await window.api.sync.testConnection()
+      if (!testResult.success) {
+        // Clear saved credentials on failure
+        await window.api.config.set('erpnext_url', '')
+        await window.api.config.set('api_key', '')
+        await window.api.config.set('api_secret', '')
+        setError(`Connection failed: ${testResult.error || 'Invalid credentials'}. Please check URL and API Key/Secret.`)
+        return
+      }
+
       setConnectionVerified(true)
 
-      // TODO: Fetch companies, branches, profiles from ERPNext
-      // Placeholder data for now
-      setCompanies(['Harbour Lane Hospitality'])
-      setBranches(['Garden Cafe - The Pearl', 'Rooftop Lounge'])
-      setProfiles(['OG Counter 1', 'OG Counter 2', 'Bar POS'])
+      // Fetch real data from ERPNext
+      const fetchedCompanies = await window.api.sync.getCompanies()
+      if (fetchedCompanies.length === 0) {
+        setError('No companies found in ERPNext. Please create a company first.')
+        return
+      }
+      setCompanies(fetchedCompanies)
+
+      const fetchedProfiles = await window.api.sync.getPosProfiles()
+      if (fetchedProfiles.length === 0) {
+        setError('No POS Profiles found in ERPNext. Please create a POS Profile first.')
+        return
+      }
+      setProfiles(fetchedProfiles.map((p: any) => p.name))
 
       setStep('profile')
     } catch (err: any) {
@@ -107,8 +125,19 @@ export default function Setup({ onComplete }: SetupProps) {
     if (!selectedProfile) { setError('Please select a POS Profile'); return }
 
     await window.api.config.set('company', selectedCompany)
-    await window.api.config.set('branch', selectedBranch)
     await window.api.config.set('pos_profile', selectedProfile)
+
+    // Run initial sync to pull items, payment methods, tables
+    try {
+      setLoading(true)
+      setError('')
+      await window.api.sync.run()
+    } catch {
+      // Non-blocking — sync may partially fail but setup should continue
+    } finally {
+      setLoading(false)
+    }
+
     setStep('settings')
   }
 
