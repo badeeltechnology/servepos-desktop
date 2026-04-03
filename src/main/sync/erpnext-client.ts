@@ -134,6 +134,7 @@ export class ERPNextClient {
       'stock_uom', 'image', 'has_variants', 'variant_of'
     ]
     const customFields = [
+      'servepos_item_name_ar', 'servepos_description_ar',
       'servepos_kitchen_station', 'servepos_preparation_time',
       'servepos_is_available'
     ]

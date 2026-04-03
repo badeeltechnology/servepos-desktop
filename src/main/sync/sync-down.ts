@@ -31,11 +31,15 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       existing.free()
 
       db.run(
-        `INSERT OR REPLACE INTO items (item_code, item_name, description, item_group, rate, stock_uom, image,
-         is_available, is_visible, kitchen_station, preparation_time, has_variants, variant_of, synced_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        `INSERT OR REPLACE INTO items (item_code, item_name, item_name_ar, description, description_ar,
+         item_group, rate, stock_uom, image, is_available, is_visible, kitchen_station, preparation_time,
+         has_variants, variant_of, synced_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
         [
-          item.name, item.item_name, item.description || null,
+          item.name, item.item_name,
+          item.servepos_item_name_ar || null,
+          item.description || null,
+          item.servepos_description_ar || null,
           item.item_group, item.standard_rate || 0,
           item.stock_uom, item.image || null,
           item.servepos_is_available !== undefined ? (item.servepos_is_available ? 1 : 0) : 1,

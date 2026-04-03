@@ -323,7 +323,7 @@ export function updateOrder(id: string, updates: Record<string, any>): boolean {
 
   for (const [key, value] of Object.entries(updates)) {
     const col = fieldMap[key]
-    if (col) { sets.push(`${col} = ?`); values.push(value) }
+    if (col && value !== undefined) { sets.push(`${col} = ?`); values.push(value ?? null) }
   }
 
   if (sets.length === 0) return false
@@ -363,7 +363,7 @@ export function updateOrderItem(id: string, updates: Record<string, any>): boole
   const values: any[] = []
   for (const [key, value] of Object.entries(updates)) {
     const col = fieldMap[key]
-    if (col) { sets.push(`${col} = ?`); values.push(value) }
+    if (col && value !== undefined) { sets.push(`${col} = ?`); values.push(value ?? null) }
   }
   if (sets.length === 0) return false
   values.push(id)

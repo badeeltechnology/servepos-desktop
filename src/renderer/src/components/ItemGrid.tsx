@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Search, X } from 'lucide-react'
+import { Search, X, Info } from 'lucide-react'
 import { useCartStore, CartModifier } from '../stores/cart'
 import ModifierModal from './ModifierModal'
 
@@ -7,10 +7,11 @@ interface Item {
   item_code: string
   item_name: string
   item_name_ar: string | null
+  description: string | null
+  description_ar: string | null
   item_group: string | null
   rate: number
   image: string | null
-  description: string | null
   has_variants: number
   variant_of: string | null
 }
@@ -50,6 +51,7 @@ export default function ItemGrid() {
   const [selectedItem, setSelectedItem] = useState<Item | null>(null)
   const [showModifiers, setShowModifiers] = useState(false)
   const [pendingItem, setPendingItem] = useState<Item | null>(null)
+  const [detailItem, setDetailItem] = useState<Item | null>(null)
 
   const [showDescription, setShowDescription] = useState(false)
   const addItem = useCartStore((s) => s.addItem)
@@ -216,9 +218,20 @@ export default function ItemGrid() {
                   )}
                   <div className="mt-auto flex items-center justify-between pt-2">
                     <span className="text-base font-bold text-primary">{item.rate.toFixed(2)}</span>
-                    {item.has_variants && (
-                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">SIZES</span>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {item.has_variants && (
+                        <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">SIZES</span>
+                      )}
+                      {item.description && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setDetailItem(item) }}
+                          className="rounded-full p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-500"
+                          title="View details"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </button>
@@ -250,6 +263,54 @@ export default function ItemGrid() {
               className="mt-4 w-full rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-500 hover:bg-gray-50">
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Item detail popup */}
+      {detailItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDetailItem(null)}>
+          <div className="w-[420px] rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {detailItem.image ? (
+              <div className="h-48 w-full overflow-hidden rounded-t-2xl bg-gray-100">
+                <img src={detailItem.image} alt={detailItem.item_name} className="h-full w-full object-cover" />
+              </div>
+            ) : (
+              <div className="flex h-32 w-full items-center justify-center rounded-t-2xl bg-gradient-to-br from-primary/10 to-primary/20">
+                <span className="text-5xl font-black text-primary/20">{detailItem.item_name.charAt(0)}</span>
+              </div>
+            )}
+            <div className="p-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-800">{detailItem.item_name}</h3>
+                  {detailItem.item_name_ar && (
+                    <p className="mt-1 text-base text-gray-500" dir="rtl">{detailItem.item_name_ar}</p>
+                  )}
+                </div>
+                <span className="text-xl font-bold text-primary">{detailItem.rate.toFixed(2)}</span>
+              </div>
+              {detailItem.description && (
+                <div className="mt-4">
+                  <p className="text-sm leading-relaxed text-gray-600">{detailItem.description}</p>
+                </div>
+              )}
+              {detailItem.description_ar && (
+                <div className="mt-2">
+                  <p className="text-sm leading-relaxed text-gray-500" dir="rtl">{detailItem.description_ar}</p>
+                </div>
+              )}
+              <div className="mt-5 flex gap-3">
+                <button onClick={() => setDetailItem(null)}
+                  className="flex-1 rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-500 hover:bg-gray-50">
+                  Close
+                </button>
+                <button onClick={() => { handleItemClick(detailItem); setDetailItem(null) }}
+                  className="flex-1 rounded-xl bg-primary py-3 text-sm font-semibold text-white hover:bg-primary/90">
+                  Add to Order
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
