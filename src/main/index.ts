@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, nativeImage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase } from './database/schema'
@@ -9,6 +9,8 @@ import { startAutoSync, stopAutoSync } from './sync/sync-engine'
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
+  const iconPath = join(__dirname, '../../resources/icon.png')
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -16,6 +18,7 @@ function createWindow(): void {
     minHeight: 700,
     show: false,
     title: 'ServePOS',
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
