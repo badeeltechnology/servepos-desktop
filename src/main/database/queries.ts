@@ -2,11 +2,16 @@ import { getDb, saveDatabase } from './schema'
 import { v4 as uuidv4 } from 'uuid'
 import bcrypt from 'bcryptjs'
 
+// Sanitize params — sql.js does not accept undefined
+function sanitizeParams(params: any[]): any[] {
+  return params.map((p) => (p === undefined ? null : p))
+}
+
 // Helper to run a query and return all rows as objects
 function queryAll(sql: string, params: any[] = []): any[] {
   const db = getDb()
   const stmt = db.prepare(sql)
-  stmt.bind(params)
+  stmt.bind(sanitizeParams(params))
   const rows: any[] = []
   while (stmt.step()) {
     rows.push(stmt.getAsObject())
@@ -19,7 +24,7 @@ function queryAll(sql: string, params: any[] = []): any[] {
 function queryOne(sql: string, params: any[] = []): any | null {
   const db = getDb()
   const stmt = db.prepare(sql)
-  stmt.bind(params)
+  stmt.bind(sanitizeParams(params))
   let row = null
   if (stmt.step()) {
     row = stmt.getAsObject()
@@ -31,7 +36,7 @@ function queryOne(sql: string, params: any[] = []): any | null {
 // Helper to run an INSERT/UPDATE/DELETE
 function execute(sql: string, params: any[] = []): void {
   const db = getDb()
-  db.run(sql, params)
+  db.run(sql, sanitizeParams(params))
   saveDatabase()
 }
 
