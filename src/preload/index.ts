@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
+  // App
+  app: {
+    getVersion: () => ipcRenderer.invoke('app:getVersion'),
+    checkForUpdate: () => ipcRenderer.invoke('app:checkForUpdate')
+  },
+
   // Config
   config: {
     get: (key: string) => ipcRenderer.invoke('config:get', key),

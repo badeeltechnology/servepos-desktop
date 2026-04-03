@@ -489,17 +489,7 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {activeTab === 'system' && (
-          <div className="mx-auto max-w-2xl">
-            <h2 className="mb-6 text-2xl font-bold">System Settings</h2>
-            <div className="rounded-xl border bg-white p-6">
-              <p className="text-sm text-muted-foreground">
-                System configuration will be available here — ERPNext connection, sync interval,
-                inactivity timeout, data purge.
-              </p>
-            </div>
-          </div>
-        )}
+        {activeTab === 'system' && <SystemSettings />}
 
         {activeTab === 'supervisor' && (
           <div className="mx-auto max-w-2xl">
@@ -511,6 +501,151 @@ export default function AdminPanel() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function SystemSettings() {
+  const [version, setVersion] = useState('')
+  const [updateInfo, setUpdateInfo] = useState<any>(null)
+  const [checking, setChecking] = useState(false)
+  const [config, setConfig] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  async function loadData() {
+    const v = await window.api.app.getVersion()
+    setVersion(v)
+    const c = await window.api.config.getAll()
+    setConfig(c)
+  }
+
+  async function checkUpdate() {
+    setChecking(true)
+    const info = await window.api.app.checkForUpdate()
+    setUpdateInfo(info)
+    setChecking(false)
+  }
+
+  async function saveConfig(key: string, value: string) {
+    await window.api.config.set(key, value)
+    setConfig((prev) => ({ ...prev, [key]: value }))
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl">
+      <h2 className="mb-6 text-2xl font-bold">System Settings</h2>
+
+      {/* Version & Update */}
+      <div className="mb-6 rounded-xl border bg-white p-6">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Version
+        </h3>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-lg font-bold">ServePOS v{version}</p>
+            <p className="text-xs text-muted-foreground">By Badeel Technology</p>
+          </div>
+          <button
+            onClick={checkUpdate}
+            disabled={checking}
+            className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+          >
+            {checking ? 'Checking...' : 'Check for Update'}
+          </button>
+        </div>
+        {updateInfo && (
+          <div className={`mt-4 rounded-lg p-3 text-sm ${updateInfo.hasUpdate ? 'bg-primary/5 text-primary' : 'bg-green-50 text-green-700'}`}>
+            {updateInfo.hasUpdate ? (
+              <div className="flex items-center justify-between">
+                <span>New version available: <strong>v{updateInfo.latestVersion}</strong></span>
+                <button
+                  onClick={() => window.open(updateInfo.releaseUrl, '_blank')}
+                  className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  Download
+                </button>
+              </div>
+            ) : (
+              <span>You're on the latest version.</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ERPNext Connection */}
+      <div className="mb-6 rounded-xl border bg-white p-6">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          ERPNext Connection
+        </h3>
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Site URL</label>
+            <input type="text" value={config.erpnext_url || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium">Company</label>
+              <input type="text" value={config.company || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">POS Profile</label>
+              <input type="text" value={config.pos_profile || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sync & Timeout */}
+      <div className="mb-6 rounded-xl border bg-white p-6">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Preferences
+        </h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Auto-sync Interval</label>
+            <select
+              value={config.auto_sync_interval || '5'}
+              onChange={(e) => saveConfig('auto_sync_interval', e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="1">Every 1 minute</option>
+              <option value="2">Every 2 minutes</option>
+              <option value="5">Every 5 minutes</option>
+              <option value="10">Every 10 minutes</option>
+              <option value="15">Every 15 minutes</option>
+              <option value="30">Every 30 minutes</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Inactivity Timeout</label>
+            <select
+              value={config.inactivity_timeout || '10'}
+              onChange={(e) => saveConfig('inactivity_timeout', e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="5">5 minutes</option>
+              <option value="10">10 minutes</option>
+              <option value="15">15 minutes</option>
+              <option value="30">30 minutes</option>
+              <option value="60">1 hour</option>
+              <option value="0">Never</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Branch Code</label>
+            <input type="text" value={config.branch_code || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 font-mono text-sm" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Terminal No.</label>
+            <input type="text" value={config.terminal_number || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 font-mono text-sm" />
+          </div>
+        </div>
       </div>
     </div>
   )

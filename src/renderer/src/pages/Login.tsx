@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '../stores/auth'
-import { Settings } from 'lucide-react'
+import { Settings, ArrowUpCircle } from 'lucide-react'
 
 export default function Login() {
   const [pin, setPin] = useState('')
@@ -8,6 +8,19 @@ export default function Login() {
   const [showAdminLogin, setShowAdminLogin] = useState(false)
   const [adminUsername, setAdminUsername] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
+  const [appVersion, setAppVersion] = useState('')
+  const [updateInfo, setUpdateInfo] = useState<any>(null)
+
+  useEffect(() => {
+    loadVersionInfo()
+  }, [])
+
+  async function loadVersionInfo() {
+    const version = await window.api.app.getVersion()
+    setAppVersion(version)
+    const update = await window.api.app.checkForUpdate()
+    if (update.hasUpdate) setUpdateInfo(update)
+  }
   const [adminError, setAdminError] = useState('')
 
   const { setUser, setAdminMode } = useAuthStore()
@@ -100,6 +113,20 @@ export default function Login() {
       >
         <Settings className="h-5 w-5" />
       </button>
+
+      {/* Version & update banner */}
+      <div className="absolute bottom-4 left-0 right-0 text-center">
+        <span className="text-xs text-muted-foreground/50">v{appVersion}</span>
+        {updateInfo && (
+          <button
+            onClick={() => window.open(updateInfo.releaseUrl, '_blank')}
+            className="ml-2 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20"
+          >
+            <ArrowUpCircle className="h-3 w-3" />
+            Update available: v{updateInfo.latestVersion}
+          </button>
+        )}
+      </div>
 
       <div className="mb-8 text-center">
         <h1 className="text-4xl font-bold text-primary">ServePOS</h1>

@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, app } from 'electron'
 import * as db from '../database/queries'
 import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
 import { ERPNextClient } from '../sync/erpnext-client'
@@ -6,6 +6,29 @@ import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, get
 import { printReceipt, printKots, printAmendmentKot } from '../print/print-engine'
 
 export function registerIpcHandlers(): void {
+  // ==================== App ====================
+  ipcMain.handle('app:getVersion', () => app.getVersion())
+  ipcMain.handle('app:checkForUpdate', async () => {
+    try {
+      const res = await fetch('https://api.github.com/repos/badeeltechnology/servepos-desktop/releases/latest')
+      if (!res.ok) return { hasUpdate: false }
+      const release = await res.json()
+      const latestVersion = release.tag_name?.replace(/^v/, '') || ''
+      const currentVersion = app.getVersion()
+      const hasUpdate = latestVersion && latestVersion !== currentVersion
+      return {
+        hasUpdate,
+        currentVersion,
+        latestVersion,
+        releaseUrl: release.html_url || '',
+        releaseName: release.name || '',
+        publishedAt: release.published_at || ''
+      }
+    } catch {
+      return { hasUpdate: false, currentVersion: app.getVersion() }
+    }
+  })
+
   // ==================== Sync ====================
   ipcMain.handle('sync:run', () => runSync())
   ipcMain.handle('sync:status', () => getSyncStatus())
