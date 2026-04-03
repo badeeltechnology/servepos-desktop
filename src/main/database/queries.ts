@@ -415,8 +415,65 @@ export function getModifierGroups(): any[] {
   return queryAll('SELECT * FROM modifier_groups ORDER BY group_name')
 }
 
+export function createModifierGroup(data: {
+  groupName: string; selectionType: string; isRequired: boolean; maxSelections: number
+}): string {
+  const id = uuidv4()
+  execute(
+    'INSERT INTO modifier_groups (id, group_name, selection_type, is_required, max_selections) VALUES (?, ?, ?, ?, ?)',
+    [id, data.groupName, data.selectionType, data.isRequired ? 1 : 0, data.maxSelections]
+  )
+  return id
+}
+
+export function updateModifierGroup(id: string, data: {
+  groupName?: string; selectionType?: string; isRequired?: boolean; maxSelections?: number
+}): void {
+  const sets: string[] = []
+  const vals: any[] = []
+  if (data.groupName !== undefined) { sets.push('group_name = ?'); vals.push(data.groupName) }
+  if (data.selectionType !== undefined) { sets.push('selection_type = ?'); vals.push(data.selectionType) }
+  if (data.isRequired !== undefined) { sets.push('is_required = ?'); vals.push(data.isRequired ? 1 : 0) }
+  if (data.maxSelections !== undefined) { sets.push('max_selections = ?'); vals.push(data.maxSelections) }
+  if (sets.length === 0) return
+  vals.push(id)
+  execute(`UPDATE modifier_groups SET ${sets.join(', ')} WHERE id = ?`, vals)
+}
+
+export function deleteModifierGroup(id: string): void {
+  execute('DELETE FROM modifier_groups WHERE id = ?', [id])
+}
+
 export function getModifiersForGroup(groupId: string): any[] {
   return queryAll('SELECT * FROM modifiers WHERE modifier_group_id = ? ORDER BY modifier_name', [groupId])
+}
+
+export function createModifier(data: {
+  modifierGroupId: string; modifierName: string; price: number; isDefault?: boolean
+}): string {
+  const id = uuidv4()
+  execute(
+    'INSERT INTO modifiers (id, modifier_group_id, modifier_name, price, is_default) VALUES (?, ?, ?, ?, ?)',
+    [id, data.modifierGroupId, data.modifierName, data.price, data.isDefault ? 1 : 0]
+  )
+  return id
+}
+
+export function updateModifier(id: string, data: {
+  modifierName?: string; price?: number; isDefault?: boolean
+}): void {
+  const sets: string[] = []
+  const vals: any[] = []
+  if (data.modifierName !== undefined) { sets.push('modifier_name = ?'); vals.push(data.modifierName) }
+  if (data.price !== undefined) { sets.push('price = ?'); vals.push(data.price) }
+  if (data.isDefault !== undefined) { sets.push('is_default = ?'); vals.push(data.isDefault ? 1 : 0) }
+  if (sets.length === 0) return
+  vals.push(id)
+  execute(`UPDATE modifiers SET ${sets.join(', ')} WHERE id = ?`, vals)
+}
+
+export function deleteModifier(id: string): void {
+  execute('DELETE FROM modifiers WHERE id = ?', [id])
 }
 
 export function getItemModifierGroups(itemCode: string): any[] {
@@ -428,6 +485,19 @@ export function getItemModifierGroups(itemCode: string): any[] {
      ORDER BY img.display_order`,
     [itemCode]
   )
+}
+
+export function assignModifierGroupToItem(itemCode: string, modifierGroupId: string, isRequired: boolean, displayOrder: number): string {
+  const id = uuidv4()
+  execute(
+    'INSERT INTO item_modifier_groups (id, item_code, modifier_group_id, is_required, display_order) VALUES (?, ?, ?, ?, ?)',
+    [id, itemCode, modifierGroupId, isRequired ? 1 : 0, displayOrder]
+  )
+  return id
+}
+
+export function removeModifierGroupFromItem(id: string): void {
+  execute('DELETE FROM item_modifier_groups WHERE id = ?', [id])
 }
 
 // ==================== Setup Check ====================

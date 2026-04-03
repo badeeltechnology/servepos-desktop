@@ -111,8 +111,16 @@ export function registerIpcHandlers(): void {
 
   // ==================== Modifiers ====================
   ipcMain.handle('modifiers:getGroups', () => db.getModifierGroups())
+  ipcMain.handle('modifiers:createGroup', (_e, data: any) => db.createModifierGroup(data))
+  ipcMain.handle('modifiers:updateGroup', (_e, id: string, data: any) => db.updateModifierGroup(id, data))
+  ipcMain.handle('modifiers:deleteGroup', (_e, id: string) => db.deleteModifierGroup(id))
   ipcMain.handle('modifiers:getForGroup', (_e, groupId: string) => db.getModifiersForGroup(groupId))
+  ipcMain.handle('modifiers:create', (_e, data: any) => db.createModifier(data))
+  ipcMain.handle('modifiers:update', (_e, id: string, data: any) => db.updateModifier(id, data))
+  ipcMain.handle('modifiers:delete', (_e, id: string) => db.deleteModifier(id))
   ipcMain.handle('modifiers:getItemGroups', (_e, itemCode: string) => db.getItemModifierGroups(itemCode))
+  ipcMain.handle('modifiers:assignToItem', (_e, itemCode: string, groupId: string, isRequired: boolean, order: number) => db.assignModifierGroupToItem(itemCode, groupId, isRequired, order))
+  ipcMain.handle('modifiers:removeFromItem', (_e, id: string) => db.removeModifierGroupFromItem(id))
 
   // ==================== Printers ====================
   ipcMain.handle('printers:get', () => getPrinters())

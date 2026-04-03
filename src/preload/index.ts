@@ -99,8 +99,16 @@ const api = {
   // Modifiers
   modifiers: {
     getGroups: () => ipcRenderer.invoke('modifiers:getGroups'),
+    createGroup: (data: any) => ipcRenderer.invoke('modifiers:createGroup', data),
+    updateGroup: (id: string, data: any) => ipcRenderer.invoke('modifiers:updateGroup', id, data),
+    deleteGroup: (id: string) => ipcRenderer.invoke('modifiers:deleteGroup', id),
     getForGroup: (groupId: string) => ipcRenderer.invoke('modifiers:getForGroup', groupId),
-    getItemGroups: (itemCode: string) => ipcRenderer.invoke('modifiers:getItemGroups', itemCode)
+    create: (data: any) => ipcRenderer.invoke('modifiers:create', data),
+    update: (id: string, data: any) => ipcRenderer.invoke('modifiers:update', id, data),
+    delete: (id: string) => ipcRenderer.invoke('modifiers:delete', id),
+    getItemGroups: (itemCode: string) => ipcRenderer.invoke('modifiers:getItemGroups', itemCode),
+    assignToItem: (itemCode: string, groupId: string, isRequired: boolean, order: number) => ipcRenderer.invoke('modifiers:assignToItem', itemCode, groupId, isRequired, order),
+    removeFromItem: (id: string) => ipcRenderer.invoke('modifiers:removeFromItem', id)
   },
 
   // Printers
