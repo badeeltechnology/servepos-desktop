@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-mac:
     runs-on: macos-latest
@@ -63,7 +66,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ServePOS-Windows
-          path: dist/*.exe
+          path: |
+            dist/*.exe
+            dist/*.msi
 
   release:
     needs: [build-mac, build-windows]
