@@ -388,7 +388,7 @@ export default function POS() {
           <ItemGrid />
         </div>
         <div className="w-[360px] flex-shrink-0 border-l shadow-lg">
-          <Cart onPlaceOrder={handlePlaceOrder} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} />
+          <Cart onPlaceOrder={handlePlaceOrder} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId} />
         </div>
       </div>
 

@@ -162,12 +162,19 @@ export async function printKots(orderId: string): Promise<{ success: boolean; pr
       orderType: order.order_type,
       tableName: order.table_name,
       cashierName: order.cashier_name || '',
-      items: group.items.map((item: any) => ({
-        itemName: item.item_name,
-        qty: item.qty,
-        modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
-        specialInstructions: item.special_instructions
-      }))
+      items: group.items.map((item: any) => {
+        const itemInfo = db.prepare('SELECT item_name_ar FROM items WHERE item_code = ?')
+        itemInfo.bind([item.item_code])
+        const info = itemInfo.step() ? itemInfo.getAsObject() as any : {}
+        itemInfo.free()
+        return {
+          itemName: item.item_name,
+          itemNameAr: info.item_name_ar || undefined,
+          qty: item.qty,
+          modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
+          specialInstructions: item.special_instructions
+        }
+      })
     }
 
     const kot = generateKot(kotData)

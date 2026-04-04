@@ -10,9 +10,10 @@ interface CartProps {
   taxRate: number
   taxLabel?: string
   isOrderPlaced?: boolean
+  activeOrderId?: string | null
 }
 
-export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false }: CartProps) {
+export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId }: CartProps) {
   const [discountEnabled, setDiscountEnabled] = useState(false)
   const [discountPermission, setDiscountPermission] = useState<'supervisor_only' | 'all_users'>('supervisor_only')
 
@@ -244,8 +245,11 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
               className="w-full rounded-xl bg-primary py-3.5 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98]">
               {isOrderPlaced ? `Payment — ${grandTotal.toFixed(2)}` : `Quick Pay — ${grandTotal.toFixed(2)}`}
             </button>
-            {isOrderPlaced && (
-              <p className="text-center text-xs text-emerald-600 font-medium">Order placed — KOT sent to kitchen</p>
+            {isOrderPlaced && activeOrderId && (
+              <button onClick={() => window.api.print.kots(activeOrderId)}
+                className="w-full rounded-xl border-2 border-orange-200 px-4 py-2.5 text-xs font-semibold text-orange-600 hover:bg-orange-50 hover:border-orange-300">
+                Reprint KOT
+              </button>
             )}
           </div>
         </div>

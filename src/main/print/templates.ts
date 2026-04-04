@@ -192,6 +192,7 @@ interface KotData {
   cashierName: string
   items: {
     itemName: string
+    itemNameAr?: string
     qty: number
     modifiers?: { name: string }[]
     specialInstructions?: string
@@ -205,6 +206,7 @@ export function generateKot(data: KotData): string {
   const showRestName = config.kot_show_restaurant_name !== '0'
   const showTable = config.kot_show_table !== '0'
   const showOrderNum = config.kot_show_order_number !== '0'
+  const showArabicItems = config.kot_show_arabic_items === '1'
   const largeFont = config.kot_font_size === 'large'
 
   const lines: string[] = [CMD.INIT]
@@ -243,6 +245,9 @@ export function generateKot(data: KotData): string {
   } else {
     for (const item of data.items) {
       lines.push(CMD.BOLD_ON, ` ${item.qty}x  ${item.itemName.toUpperCase()}`, CMD.BOLD_OFF)
+      if (showArabicItems && item.itemNameAr) {
+        lines.push(`     ${item.itemNameAr}`)
+      }
       if (item.modifiers) {
         for (const mod of item.modifiers) {
           lines.push(`     >> ${mod.name}`)

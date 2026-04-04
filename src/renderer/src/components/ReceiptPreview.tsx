@@ -69,6 +69,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
   if (!order) return null
 
   const showArabic = config.show_arabic === '1'
+  const showArabicItems = config.show_arabic_items === '1'
   const showCashier = config.show_cashier_name !== '0'
   const showCr = config.show_cr_number === '1' && config.cr_number
   const showVat = config.show_vat_number === '1' && config.vat_number
@@ -159,7 +160,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
                   <span> {item.qty}   {item.item_name}</span>
                   <span>{item.amount.toFixed(decimals)}</span>
                 </div>
-                {showArabic && itemInfo.item_name_ar && (
+                {showArabicItems && itemInfo.item_name_ar && (
                   <p className="pl-6 text-gray-500" dir="rtl">{itemInfo.item_name_ar}</p>
                 )}
                 {config.show_description_on_receipt === '1' && itemInfo.description && (

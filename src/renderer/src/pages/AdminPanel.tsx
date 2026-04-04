@@ -441,7 +441,8 @@ export default function AdminPanel() {
                 {[
                   { key: 'kot_show_order_number', label: 'Show order number on KOT' },
                   { key: 'kot_show_table', label: 'Show table on KOT' },
-                  { key: 'kot_show_restaurant_name', label: 'Show restaurant name on KOT' }
+                  { key: 'kot_show_restaurant_name', label: 'Show restaurant name on KOT' },
+                  { key: 'kot_show_arabic_items', label: 'Show Arabic item names on KOT' }
                 ].map(({ key, label }) => (
                   <label key={key} className="flex items-center gap-2 text-sm">
                     <input
@@ -495,16 +496,186 @@ export default function AdminPanel() {
 
         {activeTab === 'system' && <SystemSettings />}
 
-        {activeTab === 'supervisor' && (
-          <div className="mx-auto max-w-2xl">
-            <h2 className="mb-6 text-2xl font-bold">Supervisor Management</h2>
-            <div className="rounded-xl border bg-white p-6">
-              <p className="text-sm text-muted-foreground">
-                Create or replace the supervisor account for this terminal.
-              </p>
+        {activeTab === 'supervisor' && <SupervisorManagement />}
+      </div>
+    </div>
+  )
+}
+
+function SupervisorManagement() {
+  const [supervisors, setSupervisors] = useState<any[]>([])
+  const [name, setName] = useState('')
+  const [pin, setPin] = useState('')
+  const [pinConfirm, setPinConfirm] = useState('')
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [newPin, setNewPin] = useState('')
+  const [newPinConfirm, setNewPinConfirm] = useState('')
+
+  useEffect(() => { loadSupervisors() }, [])
+
+  async function loadSupervisors() {
+    const users = await window.api.users.getAll('supervisor')
+    setSupervisors(users)
+  }
+
+  async function handleCreate() {
+    setError('')
+    setSuccess('')
+    if (!name.trim()) { setError('Supervisor name is required'); return }
+    if (pin.length < 6 || pin.length > 8) { setError('PIN must be 6-8 digits'); return }
+    if (!/^\d+$/.test(pin)) { setError('PIN must contain only numbers'); return }
+    if (pin !== pinConfirm) { setError('PINs do not match'); return }
+
+    try {
+      await window.api.users.create(name.trim(), pin, 'supervisor')
+      setName('')
+      setPin('')
+      setPinConfirm('')
+      setSuccess('Supervisor created successfully')
+      await loadSupervisors()
+    } catch (err: any) {
+      setError(err.message || 'Failed to create supervisor')
+    }
+  }
+
+  async function handleResetPin(id: string) {
+    setError('')
+    setSuccess('')
+    if (newPin.length < 6 || newPin.length > 8) { setError('PIN must be 6-8 digits'); return }
+    if (!/^\d+$/.test(newPin)) { setError('PIN must contain only numbers'); return }
+    if (newPin !== newPinConfirm) { setError('PINs do not match'); return }
+
+    try {
+      await window.api.users.update(id, { pin: newPin })
+      setEditingId(null)
+      setNewPin('')
+      setNewPinConfirm('')
+      setSuccess('PIN updated successfully')
+    } catch (err: any) {
+      setError(err.message || 'Failed to update PIN')
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (supervisors.length <= 1) { setError('Cannot delete the last supervisor'); return }
+    try {
+      await window.api.users.delete(id)
+      setSuccess('Supervisor deleted')
+      await loadSupervisors()
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete supervisor')
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl">
+      <h2 className="mb-6 text-2xl font-bold">Supervisor Management</h2>
+
+      {error && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {success && <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">{success}</div>}
+
+      {/* Existing supervisors */}
+      {supervisors.length > 0 && (
+        <div className="mb-6 rounded-xl border bg-white p-6">
+          <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Current Supervisors
+          </h3>
+          <div className="divide-y">
+            {supervisors.map((s) => (
+              <div key={s.id} className="flex items-center justify-between py-3">
+                <div>
+                  <span className="font-medium">{s.user_name}</span>
+                  <span className="ml-2 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">Supervisor</span>
+                </div>
+                <div className="flex gap-2">
+                  {editingId === s.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="password"
+                        value={newPin}
+                        onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                        className="w-24 rounded-lg border border-input px-2 py-1 text-center font-mono text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="New PIN"
+                        inputMode="numeric"
+                      />
+                      <input
+                        type="password"
+                        value={newPinConfirm}
+                        onChange={(e) => setNewPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                        className="w-24 rounded-lg border border-input px-2 py-1 text-center font-mono text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="Confirm"
+                        inputMode="numeric"
+                        onKeyDown={(e) => e.key === 'Enter' && handleResetPin(s.id)}
+                      />
+                      <button onClick={() => handleResetPin(s.id)} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/5">Save</button>
+                      <button onClick={() => { setEditingId(null); setNewPin(''); setNewPinConfirm('') }} className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted">Cancel</button>
+                    </div>
+                  ) : (
+                    <>
+                      <button onClick={() => setEditingId(s.id)} className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/5">Reset PIN</button>
+                      <button onClick={() => handleDelete(s.id)} className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50">Delete</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Create new supervisor */}
+      <div className="rounded-xl border bg-white p-6">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Create New Supervisor
+        </h3>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="e.g., Ahmad"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium">PIN (6-8 digits)</label>
+              <input
+                type="password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                className="w-full rounded-lg border border-input px-3 py-2 text-center font-mono text-lg tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="••••••"
+                inputMode="numeric"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Confirm PIN</label>
+              <input
+                type="password"
+                value={pinConfirm}
+                onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                className="w-full rounded-lg border border-input px-3 py-2 text-center font-mono text-lg tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="••••••"
+                inputMode="numeric"
+                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+              />
             </div>
           </div>
-        )}
+          <div className="flex justify-end pt-2">
+            <button
+              onClick={handleCreate}
+              className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              <Users className="h-4 w-4" />
+              Create Supervisor
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -765,10 +765,15 @@ function OrderHistory() {
                 <div className="flex items-center gap-3">
                   <span className="font-medium">{(o.grand_total || 0).toFixed(2)}</span>
                   <span className="text-xs text-muted-foreground">{o.cashier_name}</span>
-                  {o.status === 'Completed' && (
+                  {(o.status === 'Completed' || o.status === 'Hold' || o.status === 'Open') && (
                     <div className="flex gap-1">
-                      <button onClick={() => window.api.print.receipt(o.id)} className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/5">Reprint</button>
-                      <button onClick={() => voidOrder(o.id)} className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50">Void</button>
+                      <button onClick={() => window.api.print.kots(o.id)} className="rounded px-2 py-1 text-xs text-orange-600 hover:bg-orange-50">Reprint KOT</button>
+                      {o.status === 'Completed' && (
+                        <>
+                          <button onClick={() => window.api.print.receipt(o.id)} className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/5">Reprint Receipt</button>
+                          <button onClick={() => voidOrder(o.id)} className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50">Void</button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
