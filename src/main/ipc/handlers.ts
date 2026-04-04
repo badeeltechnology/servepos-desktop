@@ -4,7 +4,7 @@ import { deleteDatabase, initDatabase } from '../database/schema'
 import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
 import { ERPNextClient } from '../sync/erpnext-client'
 import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute, discoverUsbPrinters } from '../print/printer'
-import { printReceipt, printKots, printAmendmentKot } from '../print/print-engine'
+import { printReceipt, printKots, printAmendmentKot, printWaiterCopy } from '../print/print-engine'
 
 export function registerIpcHandlers(): void {
   // ==================== App ====================
@@ -163,4 +163,5 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('print:receipt', (_e, orderId: string) => printReceipt(orderId))
   ipcMain.handle('print:kots', (_e, orderId: string) => printKots(orderId))
   ipcMain.handle('print:amendmentKot', (_e, orderId: string, amendments: any[]) => printAmendmentKot(orderId, amendments))
+  ipcMain.handle('print:waiterCopy', (_e, orderId: string) => printWaiterCopy(orderId))
 }

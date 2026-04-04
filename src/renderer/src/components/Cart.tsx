@@ -246,13 +246,35 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
               {isOrderPlaced ? `Payment — ${grandTotal.toFixed(2)}` : `Quick Pay — ${grandTotal.toFixed(2)}`}
             </button>
             {isOrderPlaced && activeOrderId && (
-              <button onClick={async () => {
-                const res = await window.api.print.kots(activeOrderId)
-                alert(res?.success ? 'KOT reprinted successfully' : `KOT reprint failed: ${res?.errors?.join(', ') || 'Check printer'}`)
-              }}
-                className="w-full rounded-xl border-2 border-orange-200 px-4 py-2.5 text-xs font-semibold text-orange-600 hover:bg-orange-50 hover:border-orange-300">
-                Reprint KOT
-              </button>
+              <div className="space-y-2">
+                <button onClick={async () => {
+                  const kotRes = await window.api.print.kots(activeOrderId)
+                  const waiterRes = await window.api.print.waiterCopy(activeOrderId)
+                  const errors: string[] = []
+                  if (!kotRes?.success) errors.push('KOT: ' + (kotRes?.errors?.join(', ') || 'failed'))
+                  if (!waiterRes?.success) errors.push('Waiter: ' + (waiterRes?.error || 'failed'))
+                  alert(errors.length === 0 ? 'KOT + Waiter copy printed' : errors.join('\n'))
+                }}
+                  className="w-full rounded-xl border-2 border-emerald-200 px-3 py-2.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 hover:border-emerald-300">
+                  Print KOT + Waiter Copy
+                </button>
+                <div className="flex gap-2">
+                  <button onClick={async () => {
+                    const res = await window.api.print.kots(activeOrderId)
+                    alert(res?.success ? 'KOT reprinted' : `KOT failed: ${res?.errors?.join(', ') || 'Check printer'}`)
+                  }}
+                    className="flex-1 rounded-xl border-2 border-orange-200 px-3 py-2 text-xs font-semibold text-orange-600 hover:bg-orange-50 hover:border-orange-300">
+                    Reprint KOT
+                  </button>
+                  <button onClick={async () => {
+                    const res = await window.api.print.waiterCopy(activeOrderId)
+                    alert(res?.success ? 'Waiter copy printed' : `Failed: ${res?.error || 'Check printer'}`)
+                  }}
+                    className="flex-1 rounded-xl border-2 border-blue-200 px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 hover:border-blue-300">
+                    Waiter Copy
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>

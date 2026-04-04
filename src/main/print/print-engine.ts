@@ -1,7 +1,7 @@
 import { getDb, saveDatabase } from '../database/schema'
 import { getConfig, getAllReceiptConfig, getOrderItems, getOrderPayments } from '../database/queries'
 import { sendToPrinter, getPrinters, getPrintRoutes, PrinterConfig } from './printer'
-import { generateReceipt, generateKot } from './templates'
+import { generateReceipt, generateKot, generateWaiterCopy } from './templates'
 import { v4 as uuidv4 } from 'uuid'
 
 // Get next KOT number
@@ -227,5 +227,59 @@ export async function printAmendmentKot(orderId: string, amendments: { action: s
 
   const result = await sendToPrinter(printer, kot)
   logPrint(orderId, 'kot_amendment', printer.id, result.success, result.error)
+  return result
+}
+
+export async function printWaiterCopy(orderId: string): Promise<{ success: boolean; error?: string }> {
+  const db = getDb()
+
+  const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
+  orderStmt.bind([orderId])
+  if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
+  const order = orderStmt.getAsObject() as any
+  orderStmt.free()
+
+  const items = getOrderItems(orderId)
+
+  // Print to receipt printer
+  const routes = getPrintRoutes()
+  const receiptRoute = routes.find((r) => r.print_type === 'receipt')
+  if (!receiptRoute) return { success: false, error: 'No receipt printer configured' }
+
+  const printers = getPrinters()
+  const printer = printers.find((p) => p.id === receiptRoute.printer_id)
+  if (!printer) return { success: false, error: 'Receipt printer not found' }
+
+  const config = getAllReceiptConfig()
+  const taxEnabled = config.tax_enabled === '1'
+  const taxRate = taxEnabled ? parseFloat(config.tax_rate || '0') : 0
+
+  const waiterData = {
+    orderNumber: order.order_number,
+    orderType: order.order_type,
+    tableName: order.table_name,
+    guests: order.guests,
+    cashierName: order.cashier_name || '',
+    items: items.map((item: any) => {
+      const itemInfo = db.prepare('SELECT item_name_ar FROM items WHERE item_code = ?')
+      itemInfo.bind([item.item_code])
+      const info = itemInfo.step() ? itemInfo.getAsObject() as any : {}
+      itemInfo.free()
+      return {
+        itemName: item.item_name,
+        itemNameAr: info.item_name_ar || undefined,
+        qty: item.qty,
+        rate: item.rate,
+        amount: item.amount,
+        modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
+        specialInstructions: item.special_instructions
+      }
+    }),
+    grandTotal: order.grand_total || 0
+  }
+
+  const copy = generateWaiterCopy(waiterData)
+  const result = await sendToPrinter(printer, copy)
+  logPrint(orderId, 'waiter_copy', printer.id, result.success, result.error)
   return result
 }

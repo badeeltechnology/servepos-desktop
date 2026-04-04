@@ -141,6 +141,14 @@ export default function POS() {
       let kotResult: any
       try { kotResult = await window.api.print.kots(order.id) } catch (e: any) { kotResult = { success: false, errors: [e.message] } }
 
+      // Auto-print waiter copy if enabled
+      try {
+        const rc = await window.api.receiptConfig.getAll()
+        if (rc.auto_print_waiter_copy === '1') {
+          await window.api.print.waiterCopy(order.id)
+        }
+      } catch {}
+
       setActiveOrderId(order.id)
       setIsOrderPlaced(true)
       if (kotResult?.success === false || (kotResult?.errors && kotResult.errors.length > 0)) {

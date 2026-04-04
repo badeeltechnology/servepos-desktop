@@ -361,6 +361,101 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
   return lines.join(LF)
 }
 
+// ==================== Waiter Copy ====================
+interface WaiterCopyData {
+  orderNumber: string
+  orderType: string
+  tableName?: string
+  guests?: number
+  cashierName: string
+  items: {
+    itemName: string
+    itemNameAr?: string
+    qty: number
+    rate: number
+    amount: number
+    modifiers?: { name: string; price: number }[]
+    specialInstructions?: string
+  }[]
+  grandTotal: number
+}
+
+export function generateWaiterCopy(data: WaiterCopyData): string {
+  const config = getAllReceiptConfig()
+  const showArabicItems = config.show_arabic_items === '1'
+  const currSym = config.currency_symbol || 'QAR'
+  const currPos = config.currency_position || 'after'
+  const decimals = parseInt(config.currency_decimals || '2')
+
+  const fmtAmt = (n: number) => {
+    const num = n.toFixed(decimals)
+    return currPos === 'before' ? `${currSym} ${num}` : `${num} ${currSym}`
+  }
+
+  const lines: string[] = [CMD.INIT]
+
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push(CMD.BOLD_ON, CMD.DOUBLE_BOTH)
+  lines.push('WAITER COPY')
+  lines.push(CMD.NORMAL_SIZE, CMD.BOLD_OFF)
+  lines.push(getSeparatorLine())
+
+  // Order info
+  lines.push(CMD.ALIGN_LEFT)
+  lines.push(formatLine(`#${data.orderNumber}`, data.orderType))
+  lines.push(`Date: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}  ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`)
+  if (data.tableName) {
+    lines.push(formatLine(`Table: ${data.tableName}`, data.guests ? `Guests: ${data.guests}` : ''))
+  }
+  lines.push(`Cashier: ${data.cashierName}`)
+
+  lines.push(getSeparatorLine())
+
+  // Items
+  lines.push(CMD.BOLD_ON, formatLine('Qty  Item', 'Amount'), CMD.BOLD_OFF)
+  lines.push(getDashLine())
+
+  for (const item of data.items) {
+    const qtyStr = ` ${item.qty}   `
+    lines.push(formatLine(`${qtyStr}${item.itemName}`, item.amount.toFixed(decimals)))
+
+    if (showArabicItems && item.itemNameAr) {
+      lines.push(`     ${item.itemNameAr}`)
+    }
+
+    if (item.modifiers) {
+      for (const mod of item.modifiers) {
+        if (mod.price > 0) {
+          lines.push(formatLine(`     + ${mod.name}`, `+${mod.price.toFixed(decimals)}`))
+        } else {
+          lines.push(`     + ${mod.name}`)
+        }
+      }
+    }
+    if (item.specialInstructions) {
+      lines.push(`     * ${item.specialInstructions}`)
+    }
+  }
+
+  lines.push(getSeparatorLine())
+
+  // Total
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push(CMD.BOLD_ON, CMD.DOUBLE_BOTH)
+  lines.push(`TOTAL: ${fmtAmt(data.grandTotal)}`)
+  lines.push(CMD.NORMAL_SIZE, CMD.BOLD_OFF)
+
+  lines.push(getSeparatorLine())
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push('** WAITER COPY **')
+  lines.push(getSeparatorLine())
+
+  lines.push(CMD.FEED_3)
+  lines.push(CMD.PARTIAL_CUT)
+
+  return lines.join(LF)
+}
+
 interface KotData {
   kotNumber: number
   stationName: string

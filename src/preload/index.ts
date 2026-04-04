@@ -145,7 +145,8 @@ const api = {
   print: {
     receipt: (orderId: string) => ipcRenderer.invoke('print:receipt', orderId),
     kots: (orderId: string) => ipcRenderer.invoke('print:kots', orderId),
-    amendmentKot: (orderId: string, amendments: any[]) => ipcRenderer.invoke('print:amendmentKot', orderId, amendments)
+    amendmentKot: (orderId: string, amendments: any[]) => ipcRenderer.invoke('print:amendmentKot', orderId, amendments),
+    waiterCopy: (orderId: string) => ipcRenderer.invoke('print:waiterCopy', orderId)
   },
 
   // Sync

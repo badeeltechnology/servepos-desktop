@@ -695,6 +695,10 @@ function OrderHistory() {
                         const res = await window.api.print.kots(o.id)
                         alert(res?.success ? 'KOT reprinted' : `KOT failed: ${res?.errors?.join(', ') || 'Check printer'}`)
                       }} className="rounded px-2 py-1 text-xs text-orange-600 hover:bg-orange-50">Reprint KOT</button>
+                      <button onClick={async () => {
+                        const res = await window.api.print.waiterCopy(o.id)
+                        alert(res?.success ? 'Waiter copy printed' : `Failed: ${res?.error || 'Check printer'}`)
+                      }} className="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">Waiter Copy</button>
                       {o.status === 'Completed' && (
                         <>
                           <button onClick={async () => {
