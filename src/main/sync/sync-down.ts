@@ -1,6 +1,7 @@
 import { getDb, saveDatabase } from '../database/schema'
 import { getConfig, setConfig } from '../database/queries'
 import { ERPNextClient } from './erpnext-client'
+import { v4 as uuidv4 } from 'uuid'
 
 export async function syncDown(): Promise<{ success: boolean; error?: string; counts?: Record<string, number> }> {
   try {
@@ -11,10 +12,17 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
     // Sync item groups
     const groups = await client.getItemGroups()
     for (const g of groups) {
+      // Preserve local visibility
+      const existing = db.prepare('SELECT is_visible FROM item_groups WHERE name = ?')
+      existing.bind([g.name])
+      const hasExisting = existing.step()
+      const currentVisibility = hasExisting ? (existing.getAsObject() as any).is_visible : 1
+      existing.free()
+
       db.run(
-        `INSERT OR REPLACE INTO item_groups (name, parent_item_group, image, synced_at)
-         VALUES (?, ?, ?, datetime('now'))`,
-        [g.name, g.parent_item_group || null, g.image || null]
+        `INSERT OR REPLACE INTO item_groups (name, parent_item_group, image, is_menu_group, is_visible, synced_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+        [g.name, g.parent_item_group || null, g.image || null, g.servepos_is_menu_group ? 1 : 0, currentVisibility]
       )
     }
     counts.item_groups = groups.length
@@ -33,8 +41,8 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       db.run(
         `INSERT OR REPLACE INTO items (item_code, item_name, item_name_ar, description, description_ar,
          item_group, rate, stock_uom, image, is_available, is_visible, kitchen_station, preparation_time,
-         has_variants, variant_of, synced_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+         has_variants, variant_of, visible_profiles, synced_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
         [
           item.name, item.item_name,
           item.servepos_item_name_ar || null,
@@ -47,7 +55,8 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
           item.servepos_kitchen_station || null,
           item.servepos_preparation_time || null,
           item.has_variants ? 1 : 0,
-          item.variant_of || null
+          item.variant_of || null,
+          item.servepos_visible_profiles || null
         ]
       )
     }
@@ -107,9 +116,9 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
         existingTable.free()
 
         db.run(
-          `INSERT OR REPLACE INTO tables_list (name, table_name, room, capacity, status, current_order_id, is_active, synced_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-          [t.name, t.table_name, t.room || null, t.capacity || 4, currentStatus, currentOrder, t.is_active ? 1 : 0]
+          `INSERT OR REPLACE INTO tables_list (name, table_name, room, capacity, status, current_order_id, is_active, branch, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+          [t.name, t.table_name, t.room || null, t.capacity || 4, currentStatus, currentOrder, t.is_active ? 1 : 0, t.branch || null]
         )
       }
       counts.tables = tables.length
@@ -123,14 +132,80 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       const rooms = await client.getRooms()
       for (const r of rooms) {
         db.run(
-          `INSERT OR REPLACE INTO rooms (name, room_name, description, is_active, synced_at)
-           VALUES (?, ?, ?, ?, datetime('now'))`,
-          [r.name, r.room_name, r.description || null, r.is_active ? 1 : 0]
+          `INSERT OR REPLACE INTO rooms (name, room_name, description, is_active, branch, synced_at)
+           VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+          [r.name, r.room_name, r.description || null, r.is_active ? 1 : 0, r.branch || null]
         )
       }
       counts.rooms = rooms.length
     } catch {
       counts.rooms = 0
+    }
+
+    // Sync modifier groups, modifiers, and item assignments from ERPNext
+    // All modifier data is managed in ERPNext — clear and rebuild on each sync
+    try {
+      const modifierGroups = await client.getModifierGroups()
+
+      // Clear all existing modifier data and rebuild from ERPNext
+      db.run('DELETE FROM item_modifier_groups')
+      db.run('DELETE FROM modifiers')
+      db.run('DELETE FROM modifier_groups')
+
+      const groupIdMap: Record<string, string> = {} // erpnext_name → local id
+
+      for (const group of modifierGroups) {
+        const groupId = uuidv4()
+        groupIdMap[group.group_name] = groupId
+        db.run(
+          `INSERT INTO modifier_groups (id, group_name, selection_type, is_required, max_selections, erpnext_name)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [groupId, group.group_name, group.selection_type || 'Single', group.is_required ? 1 : 0, group.max_selections || 0, group.name]
+        )
+
+        if (group.modifiers) {
+          for (const mod of group.modifiers) {
+            db.run(
+              'INSERT INTO modifiers (id, modifier_group_id, modifier_name, price, is_default) VALUES (?, ?, ?, ?, ?)',
+              [uuidv4(), groupId, mod.modifier_name, mod.price || 0, mod.is_default ? 1 : 0]
+            )
+          }
+        }
+      }
+      counts.modifier_groups = modifierGroups.length
+
+      // Sync item-level modifier assignments
+      const allItems = db.prepare('SELECT item_code FROM items')
+      const itemCodes: string[] = []
+      while (allItems.step()) {
+        itemCodes.push((allItems.getAsObject() as any).item_code)
+      }
+      allItems.free()
+
+      let modifierAssignments = 0
+      for (const itemCode of itemCodes) {
+        try {
+          const itemModifiers = await client.getItemModifiers(itemCode)
+          if (itemModifiers && itemModifiers.length > 0) {
+            for (const img of itemModifiers) {
+              const localGroupId = groupIdMap[img.group_name]
+              if (localGroupId) {
+                db.run(
+                  'INSERT INTO item_modifier_groups (id, item_code, modifier_group_id, is_required, display_order) VALUES (?, ?, ?, ?, ?)',
+                  [uuidv4(), itemCode, localGroupId, img.is_required ? 1 : 0, img.display_order || 0]
+                )
+                modifierAssignments++
+              }
+            }
+          }
+        } catch {
+          // Skip items where modifier fetch fails
+        }
+      }
+      counts.modifier_assignments = modifierAssignments
+    } catch {
+      // Modifier sync failed — servepos app may not have modifier API
+      counts.modifier_groups = 0
     }
 
     saveDatabase()

@@ -174,19 +174,10 @@ function UserManagement() {
   )
 }
 
-// ==================== Modifier Management ====================
+// ==================== Modifier Management (Read-only — synced from ERPNext) ====================
 function ModifierManagement() {
   const [groups, setGroups] = useState<any[]>([])
   const [modifiers, setModifiers] = useState<Record<string, any[]>>({})
-  const [showGroupForm, setShowGroupForm] = useState(false)
-  const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
-  const [groupName, setGroupName] = useState('')
-  const [selType, setSelType] = useState('Single')
-  const [isRequired, setIsRequired] = useState(false)
-  const [maxSel, setMaxSel] = useState(0)
-  const [showModForm, setShowModForm] = useState<string | null>(null) // groupId to add modifier to
-  const [modName, setModName] = useState('')
-  const [modPrice, setModPrice] = useState(0)
 
   useEffect(() => { loadGroups() }, [])
 
@@ -200,118 +191,20 @@ function ModifierManagement() {
     setModifiers(mods)
   }
 
-  function resetGroupForm() {
-    setShowGroupForm(false)
-    setEditingGroupId(null)
-    setGroupName('')
-    setSelType('Single')
-    setIsRequired(false)
-    setMaxSel(0)
-  }
-
-  async function handleSaveGroup() {
-    if (!groupName.trim()) return
-    if (editingGroupId) {
-      await window.api.modifiers.updateGroup(editingGroupId, {
-        groupName: groupName.trim(), selectionType: selType, isRequired, maxSelections: maxSel
-      })
-    } else {
-      await window.api.modifiers.createGroup({
-        groupName: groupName.trim(), selectionType: selType, isRequired, maxSelections: maxSel
-      })
-    }
-    resetGroupForm()
-    loadGroups()
-  }
-
-  function editGroup(g: any) {
-    setEditingGroupId(g.id)
-    setGroupName(g.group_name)
-    setSelType(g.selection_type)
-    setIsRequired(!!g.is_required)
-    setMaxSel(g.max_selections)
-    setShowGroupForm(true)
-  }
-
-  async function handleDeleteGroup(id: string) {
-    if (!confirm('Delete this modifier group and all its modifiers?')) return
-    await window.api.modifiers.deleteGroup(id)
-    loadGroups()
-  }
-
-  async function handleAddModifier() {
-    if (!modName.trim() || !showModForm) return
-    await window.api.modifiers.create({
-      modifierGroupId: showModForm, modifierName: modName.trim(), price: modPrice
-    })
-    setModName('')
-    setModPrice(0)
-    setShowModForm(null)
-    loadGroups()
-  }
-
-  async function handleDeleteModifier(id: string) {
-    await window.api.modifiers.delete(id)
-    loadGroups()
-  }
-
   return (
     <div className="max-w-2xl">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-xl font-bold">Modifier Groups</h2>
-        <button onClick={() => { resetGroupForm(); setShowGroupForm(true) }}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-          <Plus className="h-4 w-4" /> Add Group
-        </button>
+        <span className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700">Managed in ERPNext</span>
       </div>
 
-      {/* Group form */}
-      {showGroupForm && (
-        <div className="mb-4 rounded-xl border bg-white p-5">
-          <h3 className="mb-3 font-semibold">{editingGroupId ? 'Edit Group' : 'New Modifier Group'}</h3>
-          <div className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-500">Group Name</label>
-              <input type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)}
-                className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="e.g., Spice Level, Add-ons, Size" autoFocus />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-500">Selection Type</label>
-                <select value={selType} onChange={(e) => setSelType(e.target.value)}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
-                  <option value="Single">Single (pick one)</option>
-                  <option value="Multiple">Multiple (pick many)</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-500">Required?</label>
-                <label className="flex items-center gap-2 rounded-lg border border-input px-3 py-2 text-sm">
-                  <input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} />
-                  Required
-                </label>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-500">Max Selections</label>
-                <input type="number" value={maxSel} onChange={(e) => setMaxSel(parseInt(e.target.value) || 0)}
-                  className="w-full rounded-lg border border-input px-3 py-2 text-sm" min={0} placeholder="0 = unlimited" />
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button onClick={resetGroupForm} className="rounded-lg border border-input px-4 py-2 text-sm hover:bg-muted">Cancel</button>
-            <button onClick={handleSaveGroup} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-              {editingGroupId ? 'Update' : 'Create Group'}
-            </button>
-          </div>
-        </div>
-      )}
+      <p className="mb-4 text-sm text-muted-foreground">
+        Modifier groups and item assignments are synced from ERPNext. To add or edit modifiers, update them in ERPNext and sync.
+      </p>
 
-      {/* Groups list */}
       {groups.length === 0 ? (
         <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">
-          No modifier groups yet. Create groups like "Spice Level", "Add-ons", "Size".
+          No modifier groups synced yet. Create modifier groups in ERPNext and sync.
         </div>
       ) : (
         <div className="space-y-3">
@@ -324,52 +217,20 @@ function ModifierManagement() {
                   {g.is_required ? <span className="ml-1 rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600">Required</span> : null}
                   {g.max_selections > 0 && <span className="ml-1 text-xs text-muted-foreground">Max: {g.max_selections}</span>}
                 </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => setShowModForm(showModForm === g.id ? null : g.id)}
-                    className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/5">+ Add Modifier</button>
-                  <button onClick={() => editGroup(g)} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Edit3 className="h-3.5 w-3.5" /></button>
-                  <button onClick={() => handleDeleteGroup(g.id)} className="rounded p-1.5 text-red-400 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
-                </div>
+                {g.erpnext_name && <span className="text-[10px] text-muted-foreground">Synced</span>}
               </div>
 
-              {/* Add modifier form inline */}
-              {showModForm === g.id && (
-                <div className="flex items-end gap-2 border-b bg-muted/30 px-5 py-3">
-                  <div className="flex-1">
-                    <label className="mb-1 block text-xs font-semibold text-gray-500">Modifier Name</label>
-                    <input type="text" value={modName} onChange={(e) => setModName(e.target.value)}
-                      className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                      placeholder="e.g., Extra Cheese" autoFocus />
-                  </div>
-                  <div className="w-28">
-                    <label className="mb-1 block text-xs font-semibold text-gray-500">Price</label>
-                    <input type="number" value={modPrice || ''} onChange={(e) => setModPrice(parseFloat(e.target.value) || 0)}
-                      className="w-full rounded-lg border border-input px-3 py-2 text-sm" min={0} step={0.5} placeholder="0" />
-                  </div>
-                  <button onClick={handleAddModifier}
-                    className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Add</button>
-                  <button onClick={() => { setShowModForm(null); setModName(''); setModPrice(0) }}
-                    className="rounded-lg border border-input px-3 py-2 text-sm hover:bg-muted">Cancel</button>
-                </div>
-              )}
-
-              {/* Modifiers list */}
               <div className="p-3">
                 {(modifiers[g.id] || []).map((m) => (
                   <div key={m.id} className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-muted/50">
                     <span className="text-sm font-medium">{m.modifier_name}</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-semibold ${m.price > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
-                        {m.price > 0 ? `+${m.price.toFixed(2)}` : 'Free'}
-                      </span>
-                      <button onClick={() => handleDeleteModifier(m.id)} className="rounded p-1 text-red-300 hover:bg-red-50 hover:text-red-500">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
+                    <span className={`text-xs font-semibold ${m.price > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
+                      {m.price > 0 ? `+${m.price.toFixed(2)}` : 'Free'}
+                    </span>
                   </div>
                 ))}
                 {(modifiers[g.id] || []).length === 0 && (
-                  <p className="px-3 py-2 text-xs text-muted-foreground">No modifiers yet. Click "+ Add Modifier" above.</p>
+                  <p className="px-3 py-2 text-xs text-muted-foreground">No modifiers in this group.</p>
                 )}
               </div>
             </div>
@@ -388,8 +249,6 @@ function ItemVisibility() {
   const [modifierGroups, setModifierGroups] = useState<any[]>([])
   const [assigningItem, setAssigningItem] = useState<string | null>(null)
   const [itemModGroups, setItemModGroups] = useState<any[]>([])
-  const [selectedModGroup, setSelectedModGroup] = useState('')
-  const [modRequired, setModRequired] = useState(false)
 
   useEffect(() => { loadData() }, [])
 
@@ -418,25 +277,6 @@ function ItemVisibility() {
     setAssigningItem(itemCode)
     const assigned = await window.api.modifiers.getItemGroups(itemCode)
     setItemModGroups(assigned)
-    setSelectedModGroup('')
-    setModRequired(false)
-  }
-
-  async function handleAssignModifier() {
-    if (!assigningItem || !selectedModGroup) return
-    await window.api.modifiers.assignToItem(assigningItem, selectedModGroup, modRequired, itemModGroups.length)
-    const assigned = await window.api.modifiers.getItemGroups(assigningItem)
-    setItemModGroups(assigned)
-    setSelectedModGroup('')
-    setModRequired(false)
-  }
-
-  async function handleRemoveModifier(id: string) {
-    await window.api.modifiers.removeFromItem(id)
-    if (assigningItem) {
-      const assigned = await window.api.modifiers.getItemGroups(assigningItem)
-      setItemModGroups(assigned)
-    }
   }
 
   const filteredItems = selectedGroup ? items.filter((i) => i.item_group === selectedGroup) : items
@@ -510,69 +350,41 @@ function ItemVisibility() {
         </div>
       </div>
 
-      {/* Modifier assignment modal */}
+      {/* Modifier assignment modal (read-only — synced from ERPNext) */}
       {assigningItem && assigningItemData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-[500px] rounded-2xl bg-white shadow-2xl">
+          <div className="w-[450px] rounded-2xl bg-white shadow-2xl">
             <div className="border-b px-6 py-4">
               <h3 className="text-lg font-bold">Modifiers for {assigningItemData.item_name}</h3>
-              <p className="text-sm text-muted-foreground">Assign modifier groups that will show when this item is added to cart</p>
+              <p className="text-sm text-muted-foreground">Modifier assignments are managed in ERPNext</p>
             </div>
 
-            <div className="px-6 py-4">
-              {/* Currently assigned */}
-              {itemModGroups.length > 0 ? (
-                <div className="mb-4 space-y-2">
-                  <p className="text-xs font-semibold text-gray-500">Assigned Modifier Groups</p>
+            <div className="max-h-[400px] overflow-y-auto px-6 py-4">
+              {itemModGroups.length === 0 ? (
+                <p className="rounded-lg bg-muted/50 p-4 text-center text-sm text-muted-foreground">
+                  No modifier groups assigned. Assign modifiers to this item in ERPNext and sync.
+                </p>
+              ) : (
+                <div className="space-y-2">
                   {itemModGroups.map((img) => (
-                    <div key={img.id} className="flex items-center justify-between rounded-lg border px-4 py-2.5">
+                    <div key={img.id} className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
                       <div>
                         <span className="text-sm font-medium">{img.group_name}</span>
                         <span className="ml-2 rounded bg-muted px-2 py-0.5 text-[10px]">{img.selection_type}</span>
-                        {img.is_required ? <span className="ml-1 rounded bg-red-50 px-2 py-0.5 text-[10px] text-red-600">Required</span> : null}
                       </div>
-                      <button onClick={() => handleRemoveModifier(img.id)}
-                        className="rounded p-1.5 text-red-400 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <span className={`rounded px-2 py-0.5 text-[10px] font-medium ${img.is_required ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                        {img.is_required ? 'Required' : 'Optional'}
+                      </span>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p className="mb-4 rounded-lg bg-muted/50 p-4 text-center text-sm text-muted-foreground">
-                  No modifier groups assigned. Add one below.
-                </p>
               )}
-
-              {/* Add new assignment */}
-              <div className="rounded-lg border bg-muted/20 p-4">
-                <p className="mb-2 text-xs font-semibold text-gray-500">Add Modifier Group</p>
-                <div className="flex items-end gap-2">
-                  <div className="flex-1">
-                    <select value={selectedModGroup} onChange={(e) => setSelectedModGroup(e.target.value)}
-                      className="w-full rounded-lg border border-input bg-white px-3 py-2 text-sm">
-                      <option value="">Select a group...</option>
-                      {modifierGroups
-                        .filter((mg) => !itemModGroups.some((img) => img.modifier_group_id === mg.id))
-                        .map((mg) => (
-                          <option key={mg.id} value={mg.id}>{mg.group_name} ({mg.selection_type})</option>
-                        ))}
-                    </select>
-                  </div>
-                  <label className="flex items-center gap-1.5 rounded-lg border border-input bg-white px-3 py-2 text-sm">
-                    <input type="checkbox" checked={modRequired} onChange={(e) => setModRequired(e.target.checked)} />
-                    Required
-                  </label>
-                  <button onClick={handleAssignModifier} disabled={!selectedModGroup}
-                    className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                    Assign
-                  </button>
-                </div>
-              </div>
             </div>
 
             <div className="border-t px-6 py-3">
               <button onClick={() => setAssigningItem(null)}
                 className="w-full rounded-lg border border-input py-2.5 text-sm font-medium hover:bg-muted">
-                Done
+                Close
               </button>
             </div>
           </div>

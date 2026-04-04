@@ -4,7 +4,6 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase } from './database/schema'
 import { registerIpcHandlers } from './ipc/handlers'
 import { startAutoSync, stopAutoSync } from './sync/sync-engine'
-import { seedDefaultModifiers } from './database/queries'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -53,8 +52,7 @@ app.whenReady().then(async () => {
   // Initialize database (async for sql.js WASM loading)
   await initDatabase()
 
-  // Seed default modifier groups (only on first run)
-  seedDefaultModifiers()
+  // Modifiers are synced from ERPNext — no local seeding
 
   // Register IPC handlers
   registerIpcHandlers()

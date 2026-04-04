@@ -203,10 +203,23 @@ export function deleteUser(id: string): boolean {
 // ==================== Items ====================
 
 export function getItems(group?: string): any[] {
+  const posProfile = getConfig('pos_profile') || ''
   if (group) {
-    return queryAll('SELECT * FROM items WHERE item_group = ? AND is_visible = 1 AND is_available = 1 ORDER BY item_name', [group])
+    const items = queryAll('SELECT * FROM items WHERE item_group = ? AND is_visible = 1 AND is_available = 1 ORDER BY item_name', [group])
+    return filterByVisibleProfiles(items, posProfile)
   }
-  return queryAll('SELECT * FROM items WHERE is_visible = 1 AND is_available = 1 ORDER BY item_group, item_name')
+  const items = queryAll('SELECT * FROM items WHERE is_visible = 1 AND is_available = 1 ORDER BY item_group, item_name')
+  return filterByVisibleProfiles(items, posProfile)
+}
+
+// Filter items by visible_profiles: empty = visible everywhere, non-empty = only on listed profiles
+function filterByVisibleProfiles(items: any[], posProfile: string): any[] {
+  return items.filter((item) => {
+    if (!item.visible_profiles) return true // empty = visible on all profiles
+    const profiles = item.visible_profiles.split(',').map((p: string) => p.trim()).filter(Boolean)
+    if (profiles.length === 0) return true
+    return profiles.includes(posProfile)
+  })
 }
 
 export function getAllItems(): any[] {
@@ -228,6 +241,12 @@ export function setItemGroupVisibility(groupName: string, visible: boolean): voi
 // ==================== Item Groups ====================
 
 export function getItemGroups(): any[] {
+  // If any group has is_menu_group=1 (synced from ERPNext), only show menu groups
+  const hasMenuGroups = queryOne('SELECT COUNT(*) as count FROM item_groups WHERE is_menu_group = 1')
+  if (hasMenuGroups && hasMenuGroups.count > 0) {
+    return queryAll('SELECT * FROM item_groups WHERE is_visible = 1 AND is_menu_group = 1 ORDER BY name')
+  }
+  // Fallback: show all visible groups (backward compatible)
   return queryAll('SELECT * FROM item_groups WHERE is_visible = 1 ORDER BY name')
 }
 
@@ -238,10 +257,13 @@ export function getAllItemGroups(): any[] {
 // ==================== Tables & Rooms ====================
 
 export function getTables(room?: string): any[] {
+  const branch = getConfig('branch') || ''
   if (room) {
-    return queryAll('SELECT * FROM tables_list WHERE room = ? AND is_active = 1 ORDER BY table_name', [room])
+    const tables = queryAll('SELECT * FROM tables_list WHERE room = ? AND is_active = 1 ORDER BY table_name', [room])
+    return filterByBranch(tables, branch)
   }
-  return queryAll('SELECT * FROM tables_list WHERE is_active = 1 ORDER BY room, table_name')
+  const tables = queryAll('SELECT * FROM tables_list WHERE is_active = 1 ORDER BY room, table_name')
+  return filterByBranch(tables, branch)
 }
 
 export function updateTableStatus(name: string, status: string, orderId?: string | null): void {
@@ -249,7 +271,15 @@ export function updateTableStatus(name: string, status: string, orderId?: string
 }
 
 export function getRooms(): any[] {
-  return queryAll('SELECT * FROM rooms WHERE is_active = 1 ORDER BY room_name')
+  const branch = getConfig('branch') || ''
+  const rooms = queryAll('SELECT * FROM rooms WHERE is_active = 1 ORDER BY room_name')
+  return filterByBranch(rooms, branch)
+}
+
+// Filter tables/rooms by branch: if branch is set on POS Profile, only show matching or unassigned
+function filterByBranch(items: any[], branch: string): any[] {
+  if (!branch) return items
+  return items.filter((item) => !item.branch || item.branch === branch)
 }
 
 // ==================== Orders ====================

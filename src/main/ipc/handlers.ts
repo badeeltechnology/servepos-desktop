@@ -1,5 +1,6 @@
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, BrowserWindow } from 'electron'
 import * as db from '../database/queries'
+import { deleteDatabase, initDatabase } from '../database/schema'
 import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
 import { ERPNextClient } from '../sync/erpnext-client'
 import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute } from '../print/printer'
@@ -27,6 +28,18 @@ export function registerIpcHandlers(): void {
     } catch {
       return { hasUpdate: false, currentVersion: app.getVersion() }
     }
+  })
+
+  ipcMain.handle('app:deleteDatabase', async () => {
+    deleteDatabase()
+    // Reinitialize a fresh empty database
+    await initDatabase()
+    // Delay reload so IPC response reaches renderer first
+    setTimeout(() => {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win) win.webContents.reload()
+    }, 500)
+    return true
   })
 
   // ==================== Sync ====================

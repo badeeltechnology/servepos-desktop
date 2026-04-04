@@ -133,7 +133,7 @@ export class ERPNextClient {
       'stock_uom', 'image', 'has_variants', 'variant_of'
     ]
     const arabicFields = ['servepos_item_name_ar', 'servepos_description_ar']
-    const appFields = ['servepos_kitchen_station', 'servepos_preparation_time', 'servepos_is_available']
+    const appFields = ['servepos_kitchen_station', 'servepos_preparation_time', 'servepos_is_available', 'servepos_visible_profiles']
 
     // Try all fields first (full servepos app installed)
     try {
@@ -159,6 +159,14 @@ export class ERPNextClient {
   }
 
   async getItemGroups(): Promise<any[]> {
+    // Try with servepos fields first
+    try {
+      return await this.getList('Item Group', {
+        fields: ['name', 'parent_item_group', 'image', 'servepos_is_menu_group'],
+        limit: 0
+      })
+    } catch {}
+
     return this.getList('Item Group', {
       fields: ['name', 'parent_item_group', 'image'],
       limit: 0
@@ -171,6 +179,12 @@ export class ERPNextClient {
   }
 
   async getTables(): Promise<any[]> {
+    try {
+      return await this.getList('ServePOS Table', {
+        fields: ['name', 'table_name', 'room', 'capacity', 'is_active', 'branch'],
+        limit: 0
+      })
+    } catch {}
     return this.getList('ServePOS Table', {
       fields: ['name', 'table_name', 'room', 'capacity', 'is_active'],
       limit: 0
@@ -178,10 +192,24 @@ export class ERPNextClient {
   }
 
   async getRooms(): Promise<any[]> {
+    try {
+      return await this.getList('ServePOS Room', {
+        fields: ['name', 'room_name', 'description', 'is_active', 'branch'],
+        limit: 0
+      })
+    } catch {}
     return this.getList('ServePOS Room', {
       fields: ['name', 'room_name', 'description', 'is_active'],
       limit: 0
     })
+  }
+
+  async getModifierGroups(): Promise<any[]> {
+    return this.callMethod('servepos.api.pos_session.get_all_modifier_groups')
+  }
+
+  async getItemModifiers(itemCode: string): Promise<any[]> {
+    return this.callMethod('servepos.api.pos_session.get_item_modifiers', { item_code: itemCode })
   }
 
   async getTaxTemplates(company: string): Promise<any[]> {

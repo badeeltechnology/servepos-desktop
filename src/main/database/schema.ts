@@ -1,7 +1,7 @@
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js'
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs'
 
 let db: SqlJsDatabase | null = null
 let dbPath: string = ''
@@ -447,6 +447,29 @@ function runMigrations(): void {
   if (!hasColumn('sessions', 'remarks')) {
     database.run('ALTER TABLE sessions ADD COLUMN remarks TEXT')
   }
+
+  // Migration 5: Add visible_profiles to items for ERPNext visibility filtering
+  if (!hasColumn('items', 'visible_profiles')) {
+    database.run('ALTER TABLE items ADD COLUMN visible_profiles TEXT')
+  }
+
+  // Migration 6: Add is_menu_group to item_groups
+  if (!hasColumn('item_groups', 'is_menu_group')) {
+    database.run('ALTER TABLE item_groups ADD COLUMN is_menu_group INTEGER DEFAULT 0')
+  }
+
+  // Migration 7: Add branch to tables and rooms
+  if (!hasColumn('tables_list', 'branch')) {
+    database.run('ALTER TABLE tables_list ADD COLUMN branch TEXT')
+  }
+  if (!hasColumn('rooms', 'branch')) {
+    database.run('ALTER TABLE rooms ADD COLUMN branch TEXT')
+  }
+
+  // Migration 8: Add erpnext_name to modifier_groups for sync tracking
+  if (!hasColumn('modifier_groups', 'erpnext_name')) {
+    database.run('ALTER TABLE modifier_groups ADD COLUMN erpnext_name TEXT')
+  }
 }
 
 export function saveDatabase(): void {
@@ -475,5 +498,22 @@ export function closeDatabase(): void {
   if (db) {
     db.close()
     db = null
+  }
+}
+
+export function deleteDatabase(): boolean {
+  try {
+    if (saveTimer) clearTimeout(saveTimer)
+    if (db) {
+      db.close()
+      db = null
+    }
+    if (dbPath && existsSync(dbPath)) {
+      unlinkSync(dbPath)
+    }
+    return true
+  } catch (err) {
+    console.error('Failed to delete database:', err)
+    return false
   }
 }

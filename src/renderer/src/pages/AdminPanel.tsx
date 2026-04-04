@@ -686,6 +686,9 @@ function SystemSettings() {
   const [updateInfo, setUpdateInfo] = useState<any>(null)
   const [checking, setChecking] = useState(false)
   const [config, setConfig] = useState<Record<string, string>>({})
+  const [deleteStep, setDeleteStep] = useState(0) // 0=none, 1=first confirm, 2=type confirm
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -804,6 +807,84 @@ function SystemSettings() {
             <input type="text" value={config.terminal_number || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 font-mono text-sm" />
           </div>
         </div>
+      </div>
+
+      {/* Danger Zone — Delete Database */}
+      <div className="mb-6 rounded-xl border-2 border-red-200 bg-white p-6">
+        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-red-600">
+          Danger Zone
+        </h3>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Permanently delete the local database. This removes all orders, sessions, users, settings, and cached data. The app will restart fresh as if newly installed.
+        </p>
+
+        {deleteStep === 0 && (
+          <button
+            onClick={() => setDeleteStep(1)}
+            className="rounded-lg border-2 border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+          >
+            Delete Database
+          </button>
+        )}
+
+        {deleteStep === 1 && (
+          <div className="rounded-lg bg-red-50 p-4">
+            <p className="mb-3 text-sm font-medium text-red-800">
+              Are you sure? This action is <strong>irreversible</strong>. All local data will be permanently deleted.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDeleteStep(2)}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Yes, I want to delete
+              </button>
+              <button
+                onClick={() => setDeleteStep(0)}
+                className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {deleteStep === 2 && (
+          <div className="rounded-lg bg-red-50 p-4">
+            <p className="mb-2 text-sm font-medium text-red-800">
+              Type <strong>DELETE</strong> to confirm:
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                className="w-40 rounded-lg border border-red-300 px-3 py-2 text-center font-mono text-sm uppercase focus:outline-none focus:ring-2 focus:ring-red-500"
+                placeholder="DELETE"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') { setDeleteStep(0); setDeleteConfirmText('') }
+                }}
+              />
+              <button
+                onClick={async () => {
+                  setDeleting(true)
+                  await window.api.app.deleteDatabase()
+                }}
+                disabled={deleteConfirmText !== 'DELETE' || deleting}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40"
+              >
+                {deleting ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+              <button
+                onClick={() => { setDeleteStep(0); setDeleteConfirmText('') }}
+                className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

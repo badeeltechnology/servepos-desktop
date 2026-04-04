@@ -60,7 +60,11 @@ export default function Setup({ onComplete }: SetupProps) {
 
     try {
       setLoading(true)
-      await window.api.admin.create(adminUsername.trim(), adminPassword)
+      // Skip creation if admin already exists (user went back and forward)
+      const exists = await window.api.admin.exists()
+      if (!exists) {
+        await window.api.admin.create(adminUsername.trim(), adminPassword)
+      }
       setStep('connection')
     } catch (err: any) {
       setError(err.message || 'Failed to create admin account')
