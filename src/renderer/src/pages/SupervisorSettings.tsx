@@ -6,7 +6,7 @@ import {
   CheckCircle, XCircle, AlertCircle, ChevronDown, BarChart3, Clock
 } from 'lucide-react'
 
-type Tab = 'users' | 'modifiers' | 'items' | 'printers' | 'sync' | 'orders' | 'shifts' | 'reports'
+type Tab = 'users' | 'waiters' | 'modifiers' | 'items' | 'printers' | 'sync' | 'orders' | 'shifts' | 'reports'
 
 export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('users')
@@ -15,6 +15,7 @@ export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'reports', label: 'Dashboard', icon: <BarChart3 className="h-4 w-4" /> },
     { key: 'users', label: 'Cashiers', icon: <Users className="h-4 w-4" /> },
+    { key: 'waiters', label: 'Waiters', icon: <Users className="h-4 w-4" /> },
     { key: 'modifiers', label: 'Modifiers', icon: <Package className="h-4 w-4" /> },
     { key: 'items', label: 'Items & Modifiers', icon: <LayoutGrid className="h-4 w-4" /> },
     { key: 'printers', label: 'Printers', icon: <Printer className="h-4 w-4" /> },
@@ -53,6 +54,7 @@ export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
 
       <div className="flex-1 overflow-y-auto p-6">
         {activeTab === 'users' && <UserManagement />}
+        {activeTab === 'waiters' && <WaiterManagement />}
         {activeTab === 'modifiers' && <ModifierManagement />}
         {activeTab === 'items' && <ItemVisibility />}
         {activeTab === 'printers' && <PrinterManagement />}
@@ -164,6 +166,195 @@ function UserManagement() {
                   <button onClick={() => toggleActive(u.id, u.is_active)} className={`rounded p-1.5 ${u.is_active ? 'text-green-600 hover:bg-green-50' : 'text-red-400 hover:bg-red-50'}`}>
                     {u.is_active ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                   </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ==================== Waiter Management ====================
+function WaiterManagement() {
+  const [waiters, setWaiters] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [showAdd, setShowAdd] = useState(false)
+  const [wName, setWName] = useState('')
+  const [wPin, setWPin] = useState('')
+  const [wPhone, setWPhone] = useState('')
+  const [editingPin, setEditingPin] = useState<string | null>(null)
+  const [newPin, setNewPin] = useState('')
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  useEffect(() => { loadData() }, [])
+
+  async function loadData() {
+    setLoading(true)
+    try {
+      // Fetch waiters from ERPNext via sync test connection
+      const result = await window.api.sync.testConnection()
+      if (result.success) {
+        // Use a custom fetch — we need to call the ERPNext API
+        const config = await window.api.config.getAll()
+        const res = await fetch(`${config.erpnext_url}/api/method/servepos.api.waiter.get_waiters`, {
+          headers: { 'Authorization': `token ${config.api_key}:${config.api_secret}`, 'Content-Type': 'application/json' }
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setWaiters(data.message || [])
+        }
+      }
+    } catch {}
+    setLoading(false)
+  }
+
+  async function generateQR() {
+    const result = await window.api.app.generateWaiterQR()
+    if (result.dataUrl) setQrDataUrl(result.dataUrl)
+    else alert(result.error || 'Failed to generate QR code')
+  }
+
+  async function handleCreateWaiter() {
+    setError(''); setSuccess('')
+    if (!wName.trim()) { setError('Name is required'); return }
+    if (wPin.length < 4 || wPin.length > 8) { setError('PIN must be 4-8 digits'); return }
+    if (!/^\d+$/.test(wPin)) { setError('PIN must be numbers only'); return }
+
+    try {
+      const config = await window.api.config.getAll()
+      const res = await fetch(`${config.erpnext_url}/api/resource/ServePOS Waiter`, {
+        method: 'POST',
+        headers: { 'Authorization': `token ${config.api_key}:${config.api_secret}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ waiter_name: wName.trim(), pin: wPin, phone: wPhone.trim() || null, is_active: 1 })
+      })
+      if (!res.ok) { const t = await res.text(); setError(`Failed: ${t}`); return }
+      setShowAdd(false); setWName(''); setWPin(''); setWPhone('')
+      setSuccess('Waiter created')
+      loadData()
+    } catch (e: any) {
+      setError(e.message)
+    }
+  }
+
+  async function handleResetPin(waiterName: string) {
+    setError(''); setSuccess('')
+    if (newPin.length < 4 || newPin.length > 8) { setError('PIN must be 4-8 digits'); return }
+    if (!/^\d+$/.test(newPin)) { setError('PIN must be numbers only'); return }
+
+    try {
+      const config = await window.api.config.getAll()
+      const res = await fetch(`${config.erpnext_url}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `token ${config.api_key}:${config.api_secret}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: newPin })
+      })
+      if (!res.ok) { setError('Failed to update PIN'); return }
+      setEditingPin(null); setNewPin('')
+      setSuccess('PIN updated')
+    } catch (e: any) {
+      setError(e.message)
+    }
+  }
+
+  async function handleDeleteWaiter(waiterName: string) {
+    if (!confirm(`Delete waiter "${waiterName}"?`)) return
+    try {
+      const config = await window.api.config.getAll()
+      await fetch(`${config.erpnext_url}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `token ${config.api_key}:${config.api_secret}` }
+      })
+      loadData()
+    } catch {}
+  }
+
+  return (
+    <div className="max-w-2xl">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-xl font-bold">Waiter Management</h2>
+        <div className="flex gap-2">
+          <button onClick={generateQR} className="flex items-center gap-1.5 rounded-lg border-2 border-primary/30 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5">
+            QR Code
+          </button>
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            <Plus className="h-4 w-4" /> Add Waiter
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {success && <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">{success}</div>}
+
+      {/* QR Code Modal */}
+      {qrDataUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setQrDataUrl(null)}>
+          <div className="rounded-2xl bg-white p-8 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-2 text-center text-lg font-bold">Waiter App QR Code</h3>
+            <p className="mb-4 text-center text-sm text-muted-foreground">Scan this from the ServePOS Waiter app</p>
+            <img src={qrDataUrl} alt="QR Code" className="mx-auto h-64 w-64" />
+            <p className="mt-4 text-center text-xs text-muted-foreground">Contains server URL and API credentials</p>
+            <button onClick={() => setQrDataUrl(null)} className="mt-4 w-full rounded-lg border border-input py-2 text-sm hover:bg-muted">Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Waiter Form */}
+      {showAdd && (
+        <div className="mb-4 rounded-xl border bg-white p-5">
+          <h3 className="mb-3 font-semibold">New Waiter</h3>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium">Name</label>
+              <input type="text" value={wName} onChange={(e) => setWName(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="e.g., Ahmad" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium">PIN (4-8 digits)</label>
+              <input type="password" value={wPin} onChange={(e) => setWPin(e.target.value.replace(/\D/g, '').slice(0, 8))} className="w-full rounded-lg border border-input px-3 py-2 text-center font-mono text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-primary" placeholder="••••" inputMode="numeric" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium">Phone (optional)</label>
+              <input type="text" value={wPhone} onChange={(e) => setWPhone(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="+974..." />
+            </div>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button onClick={() => setShowAdd(false)} className="rounded-lg border border-input px-4 py-2 text-sm hover:bg-muted">Cancel</button>
+            <button onClick={handleCreateWaiter} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Create Waiter</button>
+          </div>
+        </div>
+      )}
+
+      {/* Waiters List */}
+      <div className="rounded-xl border bg-white">
+        {loading ? (
+          <p className="p-6 text-center text-sm text-muted-foreground">Loading waiters...</p>
+        ) : waiters.length === 0 ? (
+          <p className="p-6 text-center text-sm text-muted-foreground">No waiters yet. Create waiters so they can take orders from the mobile app.</p>
+        ) : (
+          <div className="divide-y">
+            {waiters.map((w) => (
+              <div key={w.name} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <span className="font-medium">{w.waiter_name}</span>
+                  {w.phone && <span className="ml-2 text-xs text-muted-foreground">{w.phone}</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  {editingPin === w.name ? (
+                    <div className="flex items-center gap-2">
+                      <input type="password" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                        className="w-24 rounded-lg border border-input px-2 py-1 text-center font-mono text-sm tracking-widest" placeholder="New PIN" inputMode="numeric" autoFocus />
+                      <button onClick={() => handleResetPin(w.name)} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/5">Save</button>
+                      <button onClick={() => { setEditingPin(null); setNewPin('') }} className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted">Cancel</button>
+                    </div>
+                  ) : (
+                    <>
+                      <button onClick={() => setEditingPin(w.name)} className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/5">Reset PIN</button>
+                      <button onClick={() => handleDeleteWaiter(w.name)} className="rounded p-1.5 text-red-400 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}

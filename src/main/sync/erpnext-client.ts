@@ -212,6 +212,16 @@ export class ERPNextClient {
     return this.callMethod('servepos.api.pos_session.get_item_modifiers', { item_code: itemCode })
   }
 
+  async getPendingWaiterOrders(branch?: string): Promise<any[]> {
+    const args: any = {}
+    if (branch) args.branch = branch
+    return this.callMethod('servepos.api.waiter.get_pending_orders', args)
+  }
+
+  async acceptWaiterOrder(orderName: string, posOrderId: string): Promise<any> {
+    return this.callMethod('servepos.api.waiter.accept_order', { order_name: orderName, pos_order_id: posOrderId })
+  }
+
   async getTaxTemplates(company: string): Promise<any[]> {
     return this.getList('Sales Taxes and Charges Template', {
       fields: ['name'],

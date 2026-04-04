@@ -1,4 +1,5 @@
 import { ipcMain, app, BrowserWindow } from 'electron'
+import QRCode from 'qrcode'
 import * as db from '../database/queries'
 import { deleteDatabase, initDatabase } from '../database/schema'
 import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
@@ -31,6 +32,16 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('app:clearTransactions', () => db.clearTransactions())
+
+  ipcMain.handle('app:generateWaiterQR', async () => {
+    const url = db.getConfig('erpnext_url') || ''
+    const apiKey = db.getConfig('api_key') || ''
+    const apiSecret = db.getConfig('api_secret') || ''
+    if (!url || !apiKey || !apiSecret) return { error: 'ERPNext connection not configured' }
+    const qrData = `${url}|${apiKey}|${apiSecret}`
+    const dataUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2 })
+    return { dataUrl }
+  })
 
   ipcMain.handle('app:deleteDatabase', async () => {
     deleteDatabase()

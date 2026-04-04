@@ -6,7 +6,8 @@ const api = {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
     checkForUpdate: () => ipcRenderer.invoke('app:checkForUpdate'),
     deleteDatabase: () => ipcRenderer.invoke('app:deleteDatabase'),
-    clearTransactions: () => ipcRenderer.invoke('app:clearTransactions')
+    clearTransactions: () => ipcRenderer.invoke('app:clearTransactions'),
+    generateWaiterQR: () => ipcRenderer.invoke('app:generateWaiterQR')
   },
 
   // Config
