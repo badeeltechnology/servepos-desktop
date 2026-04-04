@@ -86,25 +86,24 @@ function generateReceiptClassic(data: ReceiptData, config: Record<string, string
     return currPos === 'before' ? `${currSym} ${num}` : `${num} ${currSym}`
   }
 
-  const lines: string[] = [CMD.INIT]
+  const lines: string[] = [CMD.INIT, CMD.ALIGN_CENTER]
 
   // Header
-  lines.push(CMD.ALIGN_CENTER)
   if (showArabic && config.restaurant_name_ar) {
-    lines.push(CMD.BOLD_ON, config.restaurant_name_ar, CMD.BOLD_OFF)
+    lines.push(CMD.BOLD_ON + config.restaurant_name_ar + CMD.BOLD_OFF)
   }
   if (config.restaurant_name) {
-    lines.push(CMD.BOLD_ON, config.restaurant_name, CMD.BOLD_OFF)
+    lines.push(CMD.BOLD_ON + config.restaurant_name + CMD.BOLD_OFF)
   }
   lines.push(getDashLine())
-
   if (config.address_line_1) lines.push(config.address_line_1)
   if (showArabic && config.address_line_1_ar) lines.push(config.address_line_1_ar)
   if (config.address_line_2) lines.push(config.address_line_2)
   if (config.phone) lines.push(`Tel: ${config.phone}`)
   if (showCr) lines.push(`CR: ${config.cr_number}`)
   if (showVat) lines.push(`VAT: ${config.vat_number}`)
-
+  lines.push(getSeparatorLine())
+  lines.push(CMD.BOLD_ON + 'TAX INVOICE' + CMD.BOLD_OFF)
   lines.push(getSeparatorLine())
 
   // Order info
@@ -229,14 +228,12 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
 
   // Header — restaurant name large and centered
   lines.push(CMD.ALIGN_CENTER)
-  lines.push('')
   if (showArabic && config.restaurant_name_ar) {
-    lines.push(CMD.DOUBLE_BOTH, config.restaurant_name_ar, CMD.NORMAL_SIZE)
+    lines.push(CMD.DOUBLE_BOTH + config.restaurant_name_ar + CMD.NORMAL_SIZE)
   }
   if (config.restaurant_name) {
-    lines.push(CMD.DOUBLE_BOTH, config.restaurant_name, CMD.NORMAL_SIZE)
+    lines.push(CMD.DOUBLE_BOTH + config.restaurant_name + CMD.NORMAL_SIZE)
   }
-  lines.push('')
 
   // Address and details — compact centered block
   if (config.address_line_1) lines.push(config.address_line_1)
@@ -252,7 +249,7 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
 
   lines.push(getSeparatorLine())
   lines.push(CMD.ALIGN_CENTER)
-  lines.push(CMD.BOLD_ON, `TAX INVOICE`, CMD.BOLD_OFF)
+  lines.push(CMD.BOLD_ON + 'TAX INVOICE' + CMD.BOLD_OFF)
   lines.push(getSeparatorLine())
 
   // Order info — two-column style
@@ -271,7 +268,7 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
   for (const item of data.items) {
     itemNum++
     // Item name on its own line, bold
-    lines.push(CMD.BOLD_ON, `${itemNum}. ${item.itemName}`, CMD.BOLD_OFF)
+    lines.push(CMD.BOLD_ON + `${itemNum}. ${item.itemName}` + CMD.BOLD_OFF)
 
     // Arabic name
     if (showArabicItems && item.itemNameAr) {
@@ -328,9 +325,9 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
 
   // Grand total — large bold
   lines.push(CMD.ALIGN_CENTER)
-  lines.push(CMD.DOUBLE_BOTH, CMD.BOLD_ON)
+  lines.push(CMD.DOUBLE_BOTH + CMD.BOLD_ON)
   lines.push(`TOTAL: ${fmtAmt(data.grandTotal)}`)
-  lines.push(CMD.NORMAL_SIZE, CMD.BOLD_OFF)
+  lines.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF)
 
   lines.push(getDashLine())
 
@@ -340,7 +337,7 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
     lines.push(formatLine(`  ${p.method}`, fmtAmt(p.amount)))
   }
   if (data.change > 0) {
-    lines.push(CMD.BOLD_ON, formatLine('  Change', fmtAmt(data.change)), CMD.BOLD_OFF)
+    lines.push(CMD.BOLD_ON + formatLine('  Change', fmtAmt(data.change)) + CMD.BOLD_OFF)
   }
 
   lines.push('')
@@ -395,9 +392,9 @@ export function generateWaiterCopy(data: WaiterCopyData): string {
   const lines: string[] = [CMD.INIT]
 
   lines.push(CMD.ALIGN_CENTER)
-  lines.push(CMD.BOLD_ON, CMD.DOUBLE_BOTH)
+  lines.push(CMD.BOLD_ON + CMD.DOUBLE_BOTH)
   lines.push('WAITER COPY')
-  lines.push(CMD.NORMAL_SIZE, CMD.BOLD_OFF)
+  lines.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF)
   lines.push(getSeparatorLine())
 
   // Order info
@@ -412,7 +409,7 @@ export function generateWaiterCopy(data: WaiterCopyData): string {
   lines.push(getSeparatorLine())
 
   // Items
-  lines.push(CMD.BOLD_ON, formatLine('Qty  Item', 'Amount'), CMD.BOLD_OFF)
+  lines.push(CMD.BOLD_ON + formatLine('Qty  Item', 'Amount') + CMD.BOLD_OFF)
   lines.push(getDashLine())
 
   for (const item of data.items) {
@@ -441,9 +438,9 @@ export function generateWaiterCopy(data: WaiterCopyData): string {
 
   // Total
   lines.push(CMD.ALIGN_CENTER)
-  lines.push(CMD.BOLD_ON, CMD.DOUBLE_BOTH)
+  lines.push(CMD.BOLD_ON + CMD.DOUBLE_BOTH)
   lines.push(`TOTAL: ${fmtAmt(data.grandTotal)}`)
-  lines.push(CMD.NORMAL_SIZE, CMD.BOLD_OFF)
+  lines.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF)
 
   lines.push(getSeparatorLine())
   lines.push(CMD.ALIGN_CENTER)
@@ -482,16 +479,13 @@ export function generateKot(data: KotData): string {
   const showArabicItems = config.kot_show_arabic_items === '1'
   const largeFont = config.kot_font_size === 'large'
 
-  const lines: string[] = [CMD.INIT]
-
-  lines.push(CMD.ALIGN_CENTER)
-  lines.push(getSeparatorLine())
+  const lines: string[] = [CMD.INIT, CMD.ALIGN_CENTER, getSeparatorLine()]
 
   if (data.isAmendment) {
-    lines.push(CMD.DOUBLE_BOTH, '** AMENDMENT **', CMD.NORMAL_SIZE)
+    lines.push(CMD.DOUBLE_BOTH + '** AMENDMENT **' + CMD.NORMAL_SIZE)
   }
 
-  lines.push(CMD.BOLD_ON, `*** KOT #${String(data.kotNumber).padStart(4, '0')} ***`, CMD.BOLD_OFF)
+  lines.push(CMD.BOLD_ON + `*** KOT #${String(data.kotNumber).padStart(4, '0')} ***` + CMD.BOLD_OFF)
   if (showRestName && config.restaurant_name) {
     lines.push(config.restaurant_name)
   }
@@ -511,12 +505,12 @@ export function generateKot(data: KotData): string {
   if (data.isAmendment && data.amendmentActions) {
     for (const action of data.amendmentActions) {
       const prefix = action.action === 'item_added' ? ' ADD: ' : action.action === 'item_removed' ? ' CANCEL: ' : ' CHG: '
-      lines.push(CMD.BOLD_ON, `${prefix}${action.itemName}`, CMD.BOLD_OFF)
+      lines.push(CMD.BOLD_ON + `${prefix}${action.itemName}` + CMD.BOLD_OFF)
       if (action.detail) lines.push(`     ${action.detail}`)
     }
   } else {
     for (const item of data.items) {
-      lines.push(CMD.BOLD_ON, ` ${item.qty}x  ${item.itemName.toUpperCase()}`, CMD.BOLD_OFF)
+      lines.push(CMD.BOLD_ON + ` ${item.qty}x  ${item.itemName.toUpperCase()}` + CMD.BOLD_OFF)
       if (showArabicItems && item.itemNameAr) {
         lines.push(`     ${item.itemNameAr}`)
       }
@@ -538,9 +532,9 @@ export function generateKot(data: KotData): string {
   if (showOrderNum) lines.push(` Order: ${data.orderNumber}`)
   lines.push(` Cashier: ${data.cashierName}`)
   lines.push(getSeparatorLine())
-  lines.push(CMD.ALIGN_CENTER, '** END OF KOT **')
+  lines.push(CMD.ALIGN_CENTER + '** END OF KOT **')
   lines.push(getSeparatorLine())
-  lines.push(CMD.FEED_3, CMD.PARTIAL_CUT)
+  lines.push(CMD.FEED_3 + CMD.PARTIAL_CUT)
 
   return lines.join(LF)
 }

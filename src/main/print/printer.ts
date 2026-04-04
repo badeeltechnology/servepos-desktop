@@ -9,10 +9,11 @@ import { v4 as uuidv4 } from 'uuid'
 // ESC/POS command constants
 const ESC = '\x1B'
 const GS = '\x1D'
+const FS = '\x1C'
 const LF = '\x0A'
 
 export const CMD = {
-  INIT: `${ESC}@`,
+  INIT: `${ESC}@${FS}.`,  // ESC@ = init, FS. = enable UTF-8 multibyte mode
   BOLD_ON: `${ESC}E\x01`,
   BOLD_OFF: `${ESC}E\x00`,
   ALIGN_CENTER: `${ESC}a\x01`,
