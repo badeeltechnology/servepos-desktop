@@ -424,7 +424,7 @@ function PrinterManagement() {
     const devices = await window.api.printers.discoverUsb()
     setUsbDevices(devices)
     if (devices.length === 1) {
-      setPAddress(devices[0].port)
+      setPAddress(devices[0].name) // Use printer name for Windows spooler API
       if (!pName.trim()) setPName(devices[0].name)
     }
     setDetecting(false)
@@ -503,8 +503,8 @@ function PrinterManagement() {
                   {usbDevices.length > 0 && (
                     <div className="mb-2 space-y-1">
                       {usbDevices.map((d, i) => (
-                        <button key={i} onClick={() => { setPAddress(d.port); if (!pName.trim()) setPName(d.name) }}
-                          className={`block w-full rounded-lg border px-3 py-2 text-left text-xs ${pAddress === d.port ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
+                        <button key={i} onClick={() => { setPAddress(d.name); if (!pName.trim()) setPName(d.name) }}
+                          className={`block w-full rounded-lg border px-3 py-2 text-left text-xs ${pAddress === d.name ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
                           <span className="font-medium">{d.name}</span>
                           <span className="ml-2 text-muted-foreground">Port: {d.port}</span>
                         </button>
@@ -516,9 +516,9 @@ function PrinterManagement() {
                   )}
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-medium">Printer Port / Name</label>
-                  <input type="text" value={pAddress} onChange={(e) => setPAddress(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm" placeholder="e.g., USB001 or POS-80C" />
-                  <p className="mt-1 text-[10px] text-muted-foreground">Windows: use port name (USB001) from Printer Properties → Ports tab</p>
+                  <label className="mb-1 block text-xs font-medium">Printer Name</label>
+                  <input type="text" value={pAddress} onChange={(e) => setPAddress(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm" placeholder="e.g., POS-80C" />
+                  <p className="mt-1 text-[10px] text-muted-foreground">Use the exact printer name as shown in Windows Settings → Printers</p>
                 </div>
               </>
             )}

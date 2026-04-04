@@ -49,6 +49,13 @@ interface ReceiptData {
 
 export function generateReceipt(data: ReceiptData): string {
   const config = getAllReceiptConfig()
+  const design = config.receipt_design || 'classic'
+  if (design === 'modern') return generateReceiptModern(data, config)
+  return generateReceiptClassic(data, config)
+}
+
+// ==================== Design A: Classic ====================
+function generateReceiptClassic(data: ReceiptData, config: Record<string, string>): string {
   const showArabic = config.show_arabic === '1'
   const showCashier = config.show_cashier_name !== '0'
   const showCr = config.show_cr_number === '1' && config.cr_number
@@ -175,6 +182,160 @@ export function generateReceipt(data: ReceiptData): string {
   if (showArabic && config.footer_message_ar) lines.push(config.footer_message_ar)
   if (config.footer_message) lines.push(config.footer_message)
   lines.push(CMD.LINE)
+
+  lines.push(CMD.FEED_5)
+  lines.push(CMD.PARTIAL_CUT)
+  lines.push(CMD.OPEN_DRAWER)
+
+  return lines.join(LF)
+}
+
+// ==================== Design B: Modern ====================
+function generateReceiptModern(data: ReceiptData, config: Record<string, string>): string {
+  const showArabic = config.show_arabic === '1'
+  const showCashier = config.show_cashier_name !== '0'
+  const showCr = config.show_cr_number === '1' && config.cr_number
+  const showVat = config.show_vat_number === '1' && config.vat_number
+  const currSym = config.currency_symbol || 'QAR'
+  const currPos = config.currency_position || 'after'
+  const decimals = parseInt(config.currency_decimals || '2')
+  const showDescEn = config.show_description_on_receipt === '1'
+  const showDescAr = config.show_description_ar_on_receipt === '1'
+  const showArabicItems = config.show_arabic_items === '1'
+
+  const fmtAmt = (n: number) => {
+    const num = n.toFixed(decimals)
+    return currPos === 'before' ? `${currSym} ${num}` : `${num} ${currSym}`
+  }
+
+  const lines: string[] = [CMD.INIT]
+
+  // Header — restaurant name large and centered
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push('')
+  if (showArabic && config.restaurant_name_ar) {
+    lines.push(CMD.DOUBLE_BOTH, config.restaurant_name_ar, CMD.NORMAL_SIZE)
+  }
+  if (config.restaurant_name) {
+    lines.push(CMD.DOUBLE_BOTH, config.restaurant_name, CMD.NORMAL_SIZE)
+  }
+  lines.push('')
+
+  // Address and details — compact centered block
+  if (config.address_line_1) lines.push(config.address_line_1)
+  if (showArabic && config.address_line_1_ar) lines.push(config.address_line_1_ar)
+  if (config.address_line_2) lines.push(config.address_line_2)
+  if (config.phone) lines.push(`Tel: ${config.phone}`)
+
+  // CR and VAT on one line if both exist
+  const taxInfo: string[] = []
+  if (showCr) taxInfo.push(`CR: ${config.cr_number}`)
+  if (showVat) taxInfo.push(`VAT: ${config.vat_number}`)
+  if (taxInfo.length > 0) lines.push(taxInfo.join('  |  '))
+
+  lines.push(CMD.LINE)
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push(CMD.BOLD_ON, `TAX INVOICE`, CMD.BOLD_OFF)
+  lines.push(CMD.LINE)
+
+  // Order info — two-column style
+  lines.push(CMD.ALIGN_LEFT)
+  lines.push(formatLine(`#${data.orderNumber}`, new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })))
+  lines.push(formatLine(data.orderType, new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })))
+  if (data.tableName) {
+    lines.push(formatLine(`Table: ${data.tableName}`, data.guests ? `Guests: ${data.guests}` : ''))
+  }
+  if (showCashier) lines.push(`Cashier: ${data.cashierName}`)
+
+  lines.push(CMD.LINE)
+
+  // Items — with item number, cleaner layout
+  let itemNum = 0
+  for (const item of data.items) {
+    itemNum++
+    // Item name on its own line, bold
+    lines.push(CMD.BOLD_ON, `${itemNum}. ${item.itemName}`, CMD.BOLD_OFF)
+
+    // Arabic name
+    if (showArabicItems && item.itemNameAr) {
+      lines.push(`   ${item.itemNameAr}`)
+    }
+
+    // Qty x Rate = Amount on next line, right-aligned amount
+    const qtyLine = `   ${item.qty} x ${item.rate.toFixed(decimals)}`
+    lines.push(formatLine(qtyLine, item.amount.toFixed(decimals)))
+
+    // Descriptions
+    if (showDescEn && item.description) {
+      const desc = item.description
+      const maxLen = 29
+      for (let i = 0; i < desc.length; i += maxLen) {
+        lines.push(`   ${desc.slice(i, i + maxLen)}`)
+      }
+    }
+    if (showDescAr && item.descriptionAr) {
+      const desc = item.descriptionAr
+      const maxLen = 29
+      for (let i = 0; i < desc.length; i += maxLen) {
+        lines.push(`   ${desc.slice(i, i + maxLen)}`)
+      }
+    }
+
+    // Modifiers
+    if (item.modifiers) {
+      for (const mod of item.modifiers) {
+        if (mod.price > 0) {
+          lines.push(formatLine(`   + ${mod.name}`, `+${mod.price.toFixed(decimals)}`))
+        } else {
+          lines.push(`   + ${mod.name}`)
+        }
+      }
+    }
+    if (item.specialInstructions) {
+      lines.push(`   * ${item.specialInstructions}`)
+    }
+  }
+
+  lines.push(CMD.LINE)
+
+  // Totals — right-aligned with clear labels
+  lines.push(formatLine('  Subtotal', fmtAmt(data.subtotal)))
+  if (data.discountAmount > 0) {
+    lines.push(formatLine('  Discount', `-${fmtAmt(data.discountAmount)}`))
+  }
+  if (data.taxTotal > 0) {
+    lines.push(formatLine(`  ${data.taxLabel} ${data.taxRate}%`, fmtAmt(data.taxTotal)))
+  }
+
+  lines.push(CMD.DASH_LINE)
+
+  // Grand total — large bold
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push(CMD.DOUBLE_BOTH, CMD.BOLD_ON)
+  lines.push(`TOTAL: ${fmtAmt(data.grandTotal)}`)
+  lines.push(CMD.NORMAL_SIZE, CMD.BOLD_OFF)
+
+  lines.push(CMD.DASH_LINE)
+
+  // Payments
+  lines.push(CMD.ALIGN_LEFT)
+  for (const p of data.payments) {
+    lines.push(formatLine(`  ${p.method}`, fmtAmt(p.amount)))
+  }
+  if (data.change > 0) {
+    lines.push(CMD.BOLD_ON, formatLine('  Change', fmtAmt(data.change)), CMD.BOLD_OFF)
+  }
+
+  lines.push('')
+  lines.push(CMD.LINE)
+
+  // Footer
+  lines.push(CMD.ALIGN_CENTER)
+  if (showArabic && config.footer_message_ar) lines.push('', config.footer_message_ar)
+  if (config.footer_message) lines.push(config.footer_message)
+  lines.push('')
+  lines.push(`${new Date().toLocaleDateString('en-GB')}  ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`)
+  lines.push('')
 
   lines.push(CMD.FEED_5)
   lines.push(CMD.PARTIAL_CUT)

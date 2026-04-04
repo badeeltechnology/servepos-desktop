@@ -55,34 +55,78 @@ export async function sendToPrinter(printer: PrinterConfig, data: string): Promi
 function sendToUsbPrinter(printer: PrinterConfig, data: string): Promise<{ success: boolean; error?: string }> {
   return new Promise((resolve) => {
     try {
-      const printerName = printer.address // Store printer name/port in address field for USB
+      const printerName = printer.address
       if (!printerName) {
-        resolve({ success: false, error: 'Printer name is required. Use "Detect USB Printers" to find available printers.' })
+        resolve({ success: false, error: 'Printer name is required. Use "Detect Printers" to find available printers.' })
         return
       }
 
-      // Write data to temp file
       const tempFile = join(tmpdir(), `servepos-print-${Date.now()}.bin`)
       writeFileSync(tempFile, Buffer.from(data, 'binary'))
 
       try {
         if (process.platform === 'win32') {
-          // Windows: send raw data to printer using the printer share name or port
-          // Try direct port write first (e.g., USB001), then fall back to printer name
+          // Windows: send raw ESC/POS data through the print spooler using WritePrinter Win32 API
+          const psFile = join(tmpdir(), 'servepos-rawprint-' + Date.now() + '.ps1')
+          const filePath = tempFile.replace(/\\/g, '\\\\')
+          const psScript = [
+            'Add-Type -TypeDefinition @"',
+            'using System;',
+            'using System.Runtime.InteropServices;',
+            'public class RawPrint {',
+            '  [StructLayout(LayoutKind.Sequential)] public struct DOCINFOA {',
+            '    [MarshalAs(UnmanagedType.LPStr)] public string pDocName;',
+            '    [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;',
+            '    [MarshalAs(UnmanagedType.LPStr)] public string pDatatype;',
+            '  }',
+            '  [DllImport("winspool.drv",CharSet=CharSet.Ansi,SetLastError=true)]',
+            '  public static extern bool OpenPrinter(string p, out IntPtr h, IntPtr d);',
+            '  [DllImport("winspool.drv",SetLastError=true)]',
+            '  public static extern bool StartDocPrinter(IntPtr h, int l, ref DOCINFOA di);',
+            '  [DllImport("winspool.drv",SetLastError=true)]',
+            '  public static extern bool StartPagePrinter(IntPtr h);',
+            '  [DllImport("winspool.drv",SetLastError=true)]',
+            '  public static extern bool WritePrinter(IntPtr h, IntPtr b, int c, out int w);',
+            '  [DllImport("winspool.drv",SetLastError=true)]',
+            '  public static extern bool EndPagePrinter(IntPtr h);',
+            '  [DllImport("winspool.drv",SetLastError=true)]',
+            '  public static extern bool EndDocPrinter(IntPtr h);',
+            '  [DllImport("winspool.drv",SetLastError=true)]',
+            '  public static extern bool ClosePrinter(IntPtr h);',
+            '  public static bool Send(string name, byte[] data) {',
+            '    IntPtr h;',
+            '    if (!OpenPrinter(name, out h, IntPtr.Zero)) return false;',
+            '    var di = new DOCINFOA { pDocName = "ServePOS", pDatatype = "RAW" };',
+            '    StartDocPrinter(h, 1, ref di);',
+            '    StartPagePrinter(h);',
+            '    IntPtr ptr = Marshal.AllocCoTaskMem(data.Length);',
+            '    Marshal.Copy(data, 0, ptr, data.Length);',
+            '    int w;',
+            '    bool ok = WritePrinter(h, ptr, data.Length, out w);',
+            '    Marshal.FreeCoTaskMem(ptr);',
+            '    EndPagePrinter(h);',
+            '    EndDocPrinter(h);',
+            '    ClosePrinter(h);',
+            '    return ok && w == data.Length;',
+            '  }',
+            '}',
+            '"@',
+            '$bytes = [System.IO.File]::ReadAllBytes(\'' + filePath + '\')',
+            '$result = [RawPrint]::Send(\'' + printerName + '\', $bytes)',
+            'if ($result) { exit 0 } else { Write-Error "WritePrinter failed for printer: ' + printerName + '"; exit 1 }'
+          ].join('\r\n')
+          writeFileSync(psFile, psScript)
           try {
-            execSync(`copy /b "${tempFile}" "\\\\.\\${printerName}"`, { windowsHide: true, timeout: 10000 })
-          } catch {
-            // Fall back to printing via printer name using PowerShell raw print
-            execSync(
-              `powershell -Command "& { $bytes = [System.IO.File]::ReadAllBytes('${tempFile.replace(/'/g, "''")}'); $printer = [System.Drawing.Printing.PrintDocument]::new(); $printer.PrinterSettings.PrinterName = '${printerName.replace(/'/g, "''")}'; $port = $printer.PrinterSettings.PrinterName; Copy-Item -Path '${tempFile.replace(/'/g, "''")}' -Destination ('\\\\.\\' + '${printerName.replace(/'/g, "''")}') }"`,
-              { windowsHide: true, timeout: 10000 }
-            )
+            execSync('powershell -NoProfile -ExecutionPolicy Bypass -File "' + psFile + '"', {
+              windowsHide: true,
+              timeout: 15000
+            })
+          } finally {
+            try { unlinkSync(psFile) } catch {}
           }
         } else if (process.platform === 'darwin') {
-          // macOS: use lp command
           execSync(`lp -d "${printerName}" -o raw "${tempFile}"`, { timeout: 10000 })
         } else {
-          // Linux: use lp command
           execSync(`lp -d "${printerName}" -o raw "${tempFile}"`, { timeout: 10000 })
         }
         resolve({ success: true })
@@ -92,7 +136,7 @@ function sendToUsbPrinter(printer: PrinterConfig, data: string): Promise<{ succe
         try { unlinkSync(tempFile) } catch {}
       }
     } catch (err: any) {
-      resolve({ success: false, error: `USB error: ${err.message}` })
+      resolve({ success: false, error: `Print error: ${err.message}` })
     }
   })
 }

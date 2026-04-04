@@ -381,6 +381,79 @@ export default function AdminPanel() {
               </div>
             </div>
 
+            {/* Receipt Design Selector */}
+            <div className="mb-6 rounded-xl border bg-white p-6">
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Receipt Design
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Classic Design Preview */}
+                <button
+                  onClick={() => updateField('receipt_design', 'classic')}
+                  className={`rounded-xl border-2 p-3 text-left transition-all ${(receiptConfig.receipt_design || 'classic') === 'classic' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-200 hover:border-gray-300'}`}
+                >
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-bold">Classic</span>
+                    {(receiptConfig.receipt_design || 'classic') === 'classic' && <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-white">Active</span>}
+                  </div>
+                  <div className="rounded-lg bg-white border p-3 font-mono text-[8px] leading-tight text-gray-600">
+                    <div className="text-center font-bold text-[9px]">Restaurant Name</div>
+                    <div className="my-1 border-t border-dashed border-gray-300" />
+                    <div className="text-center text-[7px]">Address Line 1</div>
+                    <div className="text-center text-[7px]">Tel: +974 1234 5678</div>
+                    <div className="my-1 border-t-2 border-gray-400" />
+                    <div>Receipt: POS-T01-001</div>
+                    <div>Date: 04 Apr 2026  14:30</div>
+                    <div>Cashier: Ahmad</div>
+                    <div className="my-1 border-t border-dashed border-gray-300" />
+                    <div className="flex justify-between font-bold"><span>Qty  Item</span><span>Amt</span></div>
+                    <div className="my-0.5 border-t border-dashed border-gray-300" />
+                    <div className="flex justify-between"><span> 2   Cappuccino</span><span>52.00</span></div>
+                    <div className="flex justify-between"><span> 1   Croissant</span><span>18.00</span></div>
+                    <div className="my-1 border-t border-dashed border-gray-300" />
+                    <div className="flex justify-between"><span>Subtotal:</span><span>70.00</span></div>
+                    <div className="my-0.5 border-t border-dashed border-gray-300" />
+                    <div className="flex justify-between font-bold"><span>TOTAL:</span><span>70.00 QAR</span></div>
+                    <div className="my-1 border-t-2 border-gray-400" />
+                    <div className="text-center text-[7px]">Thank you!</div>
+                  </div>
+                </button>
+
+                {/* Modern Design Preview */}
+                <button
+                  onClick={() => updateField('receipt_design', 'modern')}
+                  className={`rounded-xl border-2 p-3 text-left transition-all ${receiptConfig.receipt_design === 'modern' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-200 hover:border-gray-300'}`}
+                >
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-bold">Modern</span>
+                    {receiptConfig.receipt_design === 'modern' && <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-white">Active</span>}
+                  </div>
+                  <div className="rounded-lg bg-white border p-3 font-mono text-[8px] leading-tight text-gray-600">
+                    <div className="text-center font-bold text-[10px]">RESTAURANT NAME</div>
+                    <div className="text-center text-[7px]">Address Line 1</div>
+                    <div className="text-center text-[7px]">CR: 12345 | VAT: 67890</div>
+                    <div className="my-1 border-t-2 border-gray-400" />
+                    <div className="text-center font-bold text-[8px]">TAX INVOICE</div>
+                    <div className="my-1 border-t-2 border-gray-400" />
+                    <div className="flex justify-between"><span>#POS-T01-001</span><span>04 Apr 2026</span></div>
+                    <div className="flex justify-between"><span>Dine In</span><span>14:30</span></div>
+                    <div className="my-1 border-t-2 border-gray-400" />
+                    <div className="font-bold">1. Cappuccino</div>
+                    <div className="flex justify-between pl-2"><span>2 x 26.00</span><span>52.00</span></div>
+                    <div className="font-bold">2. Croissant</div>
+                    <div className="flex justify-between pl-2"><span>1 x 18.00</span><span>18.00</span></div>
+                    <div className="my-1 border-t-2 border-gray-400" />
+                    <div className="flex justify-between"><span>  Subtotal</span><span>70.00</span></div>
+                    <div className="my-0.5 border-t border-dashed border-gray-300" />
+                    <div className="text-center font-bold text-[10px]">TOTAL: 70.00 QAR</div>
+                    <div className="my-0.5 border-t border-dashed border-gray-300" />
+                    <div className="my-1 border-t-2 border-gray-400" />
+                    <div className="text-center text-[7px]">Thank you!</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
             {/* Receipt & KOT Options */}
             <div className="mb-6 rounded-xl border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
