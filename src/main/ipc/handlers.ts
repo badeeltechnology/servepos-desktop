@@ -3,7 +3,7 @@ import * as db from '../database/queries'
 import { deleteDatabase, initDatabase } from '../database/schema'
 import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
 import { ERPNextClient } from '../sync/erpnext-client'
-import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute } from '../print/printer'
+import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute, discoverUsbPrinters } from '../print/printer'
 import { printReceipt, printKots, printAmendmentKot } from '../print/print-engine'
 
 export function registerIpcHandlers(): void {
@@ -150,6 +150,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('printers:update', (_e, id: string, data: any) => updatePrinter(id, data))
   ipcMain.handle('printers:delete', (_e, id: string) => deletePrinter(id))
   ipcMain.handle('printers:test', (_e, printer: any) => testPrinter(printer))
+  ipcMain.handle('printers:discoverUsb', () => discoverUsbPrinters())
 
   // ==================== Print Routes ====================
   ipcMain.handle('printRoutes:get', () => getPrintRoutes())

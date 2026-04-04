@@ -1,4 +1,5 @@
 import * as net from 'net'
+import { getDeviceList, findByIds } from 'usb'
 import { getDb, saveDatabase } from '../database/schema'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -34,14 +35,126 @@ export interface PrinterConfig {
   address: string | null
   port: number
   paper_width: number
+  usb_vendor_id: string | null
+  usb_product_id: string | null
 }
 
 export async function sendToPrinter(printer: PrinterConfig, data: string): Promise<{ success: boolean; error?: string }> {
   if (printer.connection_type === 'network' && printer.address) {
     return sendToNetworkPrinter(printer.address, printer.port, data)
   }
-  // USB printing — use system print dialog as fallback
-  return { success: false, error: 'USB printing requires driver setup. Use network printer.' }
+  if (printer.connection_type === 'usb') {
+    return sendToUsbPrinter(printer, data)
+  }
+  return { success: false, error: 'Unsupported printer connection type' }
+}
+
+function sendToUsbPrinter(printer: PrinterConfig, data: string): Promise<{ success: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    try {
+      const vendorId = printer.usb_vendor_id ? parseInt(printer.usb_vendor_id, 16) : 0
+      const productId = printer.usb_product_id ? parseInt(printer.usb_product_id, 16) : 0
+
+      if (!vendorId || !productId) {
+        resolve({ success: false, error: 'USB Vendor ID and Product ID are required. Use "Detect USB Printers" to find them.' })
+        return
+      }
+
+      const device = findByIds(vendorId, productId)
+      if (!device) {
+        resolve({ success: false, error: `USB device not found (VID: ${printer.usb_vendor_id}, PID: ${printer.usb_product_id}). Check connection.` })
+        return
+      }
+
+      device.open()
+
+      // Try to detach kernel driver if attached (Linux/Mac)
+      const iface = device.interfaces?.[0]
+      if (!iface) {
+        device.close()
+        resolve({ success: false, error: 'No USB interface found on device' })
+        return
+      }
+
+      try {
+        if (iface.isKernelDriverActive()) {
+          iface.detachKernelDriver()
+        }
+      } catch {
+        // Kernel driver detach not supported on all platforms — continue
+      }
+
+      iface.claim()
+
+      // Find the OUT endpoint (bulk transfer)
+      const outEndpoint = iface.endpoints.find((ep) => ep.direction === 'out')
+      if (!outEndpoint) {
+        iface.release(() => device.close())
+        resolve({ success: false, error: 'No OUT endpoint found on USB printer' })
+        return
+      }
+
+      const buffer = Buffer.from(data, 'binary')
+      ;(outEndpoint as any).transfer(buffer, (err: Error | null) => {
+        try {
+          iface.release(() => {
+            try { device.close() } catch {}
+          })
+        } catch {}
+
+        if (err) {
+          resolve({ success: false, error: `USB write failed: ${err.message}` })
+        } else {
+          resolve({ success: true })
+        }
+      })
+    } catch (err: any) {
+      resolve({ success: false, error: `USB error: ${err.message}` })
+    }
+  })
+}
+
+// Discover USB printers (devices with printer class 7)
+export function discoverUsbPrinters(): { vendorId: string; productId: string; name: string }[] {
+  try {
+    const devices = getDeviceList()
+    const printers: { vendorId: string; productId: string; name: string }[] = []
+
+    for (const device of devices) {
+      const desc = device.deviceDescriptor
+      // Check if device or any interface has printer class (0x07)
+      let isPrinter = desc.bDeviceClass === 7
+
+      if (!isPrinter) {
+        try {
+          device.open()
+          for (const iface of device.interfaces || []) {
+            if (iface.descriptor.bInterfaceClass === 7) {
+              isPrinter = true
+              break
+            }
+          }
+          device.close()
+        } catch {
+          // Can't open device — skip
+        }
+      }
+
+      if (isPrinter) {
+        const vid = desc.idVendor.toString(16).padStart(4, '0')
+        const pid = desc.idProduct.toString(16).padStart(4, '0')
+        printers.push({
+          vendorId: vid,
+          productId: pid,
+          name: `USB Printer (VID: ${vid}, PID: ${pid})`
+        })
+      }
+    }
+
+    return printers
+  } catch {
+    return []
+  }
 }
 
 function sendToNetworkPrinter(address: string, port: number, data: string): Promise<{ success: boolean; error?: string }> {
@@ -116,9 +229,9 @@ export function addPrinter(data: Omit<PrinterConfig, 'id'>): string {
   const db = getDb()
   const id = uuidv4()
   db.run(
-    `INSERT INTO printers (id, printer_name, connection_type, address, port, paper_width)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, data.printer_name, data.connection_type, data.address, data.port || 9100, data.paper_width || 80]
+    `INSERT INTO printers (id, printer_name, connection_type, address, port, paper_width, usb_vendor_id, usb_product_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, data.printer_name, data.connection_type, data.address, data.port || 9100, data.paper_width || 80, data.usb_vendor_id || null, data.usb_product_id || null]
   )
   saveDatabase()
   return id
@@ -132,6 +245,8 @@ export function updatePrinter(id: string, data: Partial<PrinterConfig>): void {
   if (data.connection_type) { sets.push('connection_type = ?'); vals.push(data.connection_type) }
   if (data.address !== undefined) { sets.push('address = ?'); vals.push(data.address) }
   if (data.port) { sets.push('port = ?'); vals.push(data.port) }
+  if (data.usb_vendor_id !== undefined) { sets.push('usb_vendor_id = ?'); vals.push(data.usb_vendor_id) }
+  if (data.usb_product_id !== undefined) { sets.push('usb_product_id = ?'); vals.push(data.usb_product_id) }
   if (sets.length === 0) return
   vals.push(id)
   db.run(`UPDATE printers SET ${sets.join(', ')} WHERE id = ?`, vals)

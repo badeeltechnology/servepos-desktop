@@ -403,20 +403,50 @@ function PrinterManagement() {
   const [pType, setPType] = useState<'network' | 'usb'>('network')
   const [pAddress, setPAddress] = useState('')
   const [pPort, setPPort] = useState(9100)
+  const [pVendorId, setPVendorId] = useState('')
+  const [pProductId, setPProductId] = useState('')
+  const [usbDevices, setUsbDevices] = useState<any[]>([])
+  const [detecting, setDetecting] = useState(false)
+  const [showRouteForm, setShowRouteForm] = useState(false)
+  const [routeType, setRouteType] = useState<'receipt' | 'kot'>('receipt')
+  const [routePrinter, setRoutePrinter] = useState('')
+  const [routeItemGroup, setRouteItemGroup] = useState('')
+  const [itemGroups, setItemGroups] = useState<any[]>([])
 
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
     setPrinters(await window.api.printers.get())
     setRoutes(await window.api.printRoutes.get())
+    setItemGroups(await window.api.itemGroups.getAll())
+  }
+
+  async function handleDetectUsb() {
+    setDetecting(true)
+    const devices = await window.api.printers.discoverUsb()
+    setUsbDevices(devices)
+    if (devices.length === 1) {
+      setPVendorId(devices[0].vendorId)
+      setPProductId(devices[0].productId)
+    }
+    setDetecting(false)
   }
 
   async function handleAddPrinter() {
     if (!pName.trim()) return
-    await window.api.printers.add({ printer_name: pName, connection_type: pType, address: pAddress || null, port: pPort, paper_width: 80 })
+    await window.api.printers.add({
+      printer_name: pName, connection_type: pType,
+      address: pType === 'network' ? pAddress || null : null,
+      port: pPort, paper_width: 80,
+      usb_vendor_id: pType === 'usb' ? pVendorId || null : null,
+      usb_product_id: pType === 'usb' ? pProductId || null : null
+    })
     setShowForm(false)
     setPName('')
     setPAddress('')
+    setPVendorId('')
+    setPProductId('')
+    setUsbDevices([])
     loadData()
   }
 
@@ -467,6 +497,37 @@ function PrinterManagement() {
                 </div>
               </>
             )}
+            {pType === 'usb' && (
+              <>
+                <div className="col-span-2">
+                  <button onClick={handleDetectUsb} disabled={detecting}
+                    className="mb-2 rounded-lg border-2 border-dashed border-primary/30 px-4 py-2 text-xs font-medium text-primary hover:bg-primary/5 disabled:opacity-50">
+                    {detecting ? 'Detecting...' : 'Detect USB Printers'}
+                  </button>
+                  {usbDevices.length > 0 && (
+                    <div className="mb-2 space-y-1">
+                      {usbDevices.map((d, i) => (
+                        <button key={i} onClick={() => { setPVendorId(d.vendorId); setPProductId(d.productId) }}
+                          className={`block w-full rounded-lg border px-3 py-2 text-left text-xs ${pVendorId === d.vendorId && pProductId === d.productId ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
+                          {d.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {usbDevices.length === 0 && detecting === false && pVendorId === '' && (
+                    <p className="text-xs text-muted-foreground">Click detect or enter Vendor/Product IDs manually.</p>
+                  )}
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium">Vendor ID (hex)</label>
+                  <input type="text" value={pVendorId} onChange={(e) => setPVendorId(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm" placeholder="e.g., 0483" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium">Product ID (hex)</label>
+                  <input type="text" value={pProductId} onChange={(e) => setPProductId(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm" placeholder="e.g., 5740" />
+                </div>
+              </>
+            )}
           </div>
           <div className="mt-3 flex gap-2">
             <button onClick={() => setShowForm(false)} className="rounded-lg border border-input px-4 py-2 text-sm hover:bg-muted">Cancel</button>
@@ -486,6 +547,7 @@ function PrinterManagement() {
                   <span className="font-medium">{p.printer_name}</span>
                   <span className="ml-2 rounded bg-muted px-2 py-0.5 text-[10px]">{p.connection_type}</span>
                   {p.address && <span className="ml-2 font-mono text-xs text-muted-foreground">{p.address}:{p.port}</span>}
+                  {p.usb_vendor_id && <span className="ml-2 font-mono text-xs text-muted-foreground">VID:{p.usb_vendor_id} PID:{p.usb_product_id}</span>}
                 </div>
                 <div className="flex items-center gap-1">
                   {p.test_status === 'ok' && <CheckCircle className="h-4 w-4 text-green-500" />}
@@ -499,17 +561,73 @@ function PrinterManagement() {
         )}
       </div>
 
-      <h3 className="mb-3 font-semibold">Print Routes</h3>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="font-semibold">Print Routes</h3>
+        {printers.length > 0 && (
+          <button onClick={() => { setShowRouteForm(true); setRoutePrinter(printers[0]?.id || '') }}
+            className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">
+            <Plus className="h-3.5 w-3.5" /> Add Route
+          </button>
+        )}
+      </div>
+
+      {showRouteForm && (
+        <div className="mb-4 rounded-xl border bg-white p-4">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium">Print Type</label>
+              <select value={routeType} onChange={(e) => setRouteType(e.target.value as any)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+                <option value="receipt">Receipt</option>
+                <option value="kot">KOT</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium">Printer</label>
+              <select value={routePrinter} onChange={(e) => setRoutePrinter(e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+                {printers.map((p) => <option key={p.id} value={p.id}>{p.printer_name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium">Item Group (KOT only)</label>
+              <select value={routeItemGroup} onChange={(e) => setRouteItemGroup(e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" disabled={routeType === 'receipt'}>
+                <option value="">All Items</option>
+                {itemGroups.map((g) => <option key={g.name} value={g.name}>{g.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button onClick={() => { setShowRouteForm(false); setRouteItemGroup('') }}
+              className="rounded-lg border border-input px-4 py-2 text-sm hover:bg-muted">Cancel</button>
+            <button onClick={async () => {
+              if (!routePrinter) return
+              await window.api.printRoutes.add({
+                printType: routeType,
+                itemGroup: routeType === 'kot' ? routeItemGroup || null : null,
+                printerId: routePrinter
+              })
+              setShowRouteForm(false)
+              setRouteItemGroup('')
+              loadData()
+            }} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Add Route</button>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border bg-white">
         {routes.length === 0 ? (
-          <p className="p-6 text-center text-sm text-muted-foreground">No print routes configured. Add printers first, then set up routing.</p>
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            {printers.length === 0 ? 'Add a printer first, then set up routing.' : 'No routes configured. Add a route for Receipt and KOT printing.'}
+          </p>
         ) : (
           <div className="divide-y">
             {routes.map((r) => (
-              <div key={r.id} className="flex items-center justify-between px-5 py-2">
+              <div key={r.id} className="flex items-center justify-between px-5 py-2.5">
                 <span className="text-sm">
-                  <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium uppercase">{r.print_type}</span>
-                  <span className="ml-2">{r.item_group || r.kitchen_station || 'All'}</span>
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-medium uppercase ${r.print_type === 'receipt' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>{r.print_type}</span>
+                  <span className="ml-2">{r.item_group || r.kitchen_station || 'All Items'}</span>
                   <span className="ml-2 text-muted-foreground">→</span>
                   <span className="ml-2 font-medium">{r.printer_name}</span>
                 </span>

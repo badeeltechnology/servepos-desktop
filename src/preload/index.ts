@@ -129,7 +129,8 @@ const api = {
     add: (data: any) => ipcRenderer.invoke('printers:add', data),
     update: (id: string, data: any) => ipcRenderer.invoke('printers:update', id, data),
     delete: (id: string) => ipcRenderer.invoke('printers:delete', id),
-    test: (printer: any) => ipcRenderer.invoke('printers:test', printer)
+    test: (printer: any) => ipcRenderer.invoke('printers:test', printer),
+    discoverUsb: () => ipcRenderer.invoke('printers:discoverUsb')
   },
 
   // Print Routes
