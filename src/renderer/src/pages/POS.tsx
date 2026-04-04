@@ -138,11 +138,16 @@ export default function POS() {
       }
 
       // Print KOT
-      try { await window.api.print.kots(order.id) } catch (e) { console.warn('KOT print failed:', e) }
+      let kotResult: any
+      try { kotResult = await window.api.print.kots(order.id) } catch (e: any) { kotResult = { success: false, errors: [e.message] } }
 
       setActiveOrderId(order.id)
       setIsOrderPlaced(true)
-      setToast({ type: 'success', message: `Order ${order.order_number} placed — KOT sent to kitchen` })
+      if (kotResult?.success === false || (kotResult?.errors && kotResult.errors.length > 0)) {
+        setToast({ type: 'error', message: `Order placed but KOT print failed: ${kotResult?.errors?.join(', ') || 'Unknown error'}` })
+      } else {
+        setToast({ type: 'success', message: `Order ${order.order_number} placed — KOT printed` })
+      }
     } catch (err: any) {
       setToast({ type: 'error', message: `Failed: ${err.message}` })
     } finally {
@@ -171,7 +176,10 @@ export default function POS() {
           // Quick Pay — create order now
           order = await saveCartAsOrder('Open')
           orderId = order.id
-          try { await window.api.print.kots(order.id) } catch {}
+          try {
+            const kotRes = await window.api.print.kots(order.id)
+            if (kotRes?.success === false) setToast({ type: 'error', message: `KOT print failed: ${kotRes?.errors?.join(', ') || 'Check printer'}` })
+          } catch {}
         }
 
         if (!order) throw new Error('Order not found')
@@ -199,14 +207,19 @@ export default function POS() {
         }
 
         // Print receipt
-        try { await window.api.print.receipt(orderId!) } catch {}
+        let receiptResult: any
+        try { receiptResult = await window.api.print.receipt(orderId!) } catch (e: any) { receiptResult = { success: false, error: e.message } }
 
         const completedOrderId = orderId
         cart.clearCart(); setIsOrderPlaced(false)
         setShowPayment(false)
         setActiveOrderId(null)
         setReceiptPreviewId(completedOrderId)
-        setToast({ type: 'success', message: `Order ${order.order_number} completed!` })
+        if (receiptResult?.success === false) {
+          setToast({ type: 'error', message: `Order completed but receipt print failed: ${receiptResult?.error || 'Check printer'}` })
+        } else {
+          setToast({ type: 'success', message: `Order ${order.order_number} completed — receipt printed` })
+        }
       } catch (err: any) {
         setToast({ type: 'error', message: `Payment failed: ${err.message}` })
       } finally {
@@ -229,7 +242,10 @@ export default function POS() {
       } else {
         // Not saved yet — create as Hold + print KOT so kitchen starts
         order = await saveCartAsOrder('Hold')
-        try { await window.api.print.kots(order.id) } catch {}
+        try {
+          const kotRes = await window.api.print.kots(order.id)
+          if (kotRes?.success === false) setToast({ type: 'error', message: `KOT print failed: ${kotRes?.errors?.join(', ') || 'Check printer'}` })
+        } catch {}
       }
 
       cart.clearCart(); setIsOrderPlaced(false)

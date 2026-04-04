@@ -246,7 +246,10 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
               {isOrderPlaced ? `Payment — ${grandTotal.toFixed(2)}` : `Quick Pay — ${grandTotal.toFixed(2)}`}
             </button>
             {isOrderPlaced && activeOrderId && (
-              <button onClick={() => window.api.print.kots(activeOrderId)}
+              <button onClick={async () => {
+                const res = await window.api.print.kots(activeOrderId)
+                alert(res?.success ? 'KOT reprinted successfully' : `KOT reprint failed: ${res?.errors?.join(', ') || 'Check printer'}`)
+              }}
                 className="w-full rounded-xl border-2 border-orange-200 px-4 py-2.5 text-xs font-semibold text-orange-600 hover:bg-orange-50 hover:border-orange-300">
                 Reprint KOT
               </button>

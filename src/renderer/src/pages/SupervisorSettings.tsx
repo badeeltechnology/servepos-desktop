@@ -691,10 +691,16 @@ function OrderHistory() {
                   <span className="text-xs text-muted-foreground">{o.cashier_name}</span>
                   {(o.status === 'Completed' || o.status === 'Hold' || o.status === 'Open') && (
                     <div className="flex gap-1">
-                      <button onClick={() => window.api.print.kots(o.id)} className="rounded px-2 py-1 text-xs text-orange-600 hover:bg-orange-50">Reprint KOT</button>
+                      <button onClick={async () => {
+                        const res = await window.api.print.kots(o.id)
+                        alert(res?.success ? 'KOT reprinted' : `KOT failed: ${res?.errors?.join(', ') || 'Check printer'}`)
+                      }} className="rounded px-2 py-1 text-xs text-orange-600 hover:bg-orange-50">Reprint KOT</button>
                       {o.status === 'Completed' && (
                         <>
-                          <button onClick={() => window.api.print.receipt(o.id)} className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/5">Reprint Receipt</button>
+                          <button onClick={async () => {
+                            const res = await window.api.print.receipt(o.id)
+                            alert(res?.success ? 'Receipt reprinted' : `Receipt failed: ${res?.error || 'Check printer'}`)
+                          }} className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/5">Reprint Receipt</button>
                           <button onClick={() => voidOrder(o.id)} className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50">Void</button>
                         </>
                       )}
