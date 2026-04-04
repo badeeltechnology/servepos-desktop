@@ -882,13 +882,33 @@ function SystemSettings() {
         </div>
       </div>
 
+      {/* Clear Transactions */}
+      <div className="mb-6 rounded-xl border-2 border-orange-200 bg-white p-6">
+        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-orange-600">
+          Clear Transactions
+        </h3>
+        <p className="mb-2 text-sm text-muted-foreground">
+          Delete all orders, sessions, shifts, and print logs. Items, modifiers, printers, users, and settings are kept.
+        </p>
+        <button
+          onClick={async () => {
+            if (!confirm('Clear all orders and transaction data? This cannot be undone.\n\nItems, printers, users, and settings will NOT be affected.')) return
+            const result = await window.api.app.clearTransactions()
+            alert(`Cleared ${result.orders} orders and ${result.sessions} sessions.`)
+          }}
+          className="rounded-lg border-2 border-orange-300 px-4 py-2 text-sm font-medium text-orange-600 hover:bg-orange-50"
+        >
+          Clear All Transactions
+        </button>
+      </div>
+
       {/* Danger Zone — Delete Database */}
       <div className="mb-6 rounded-xl border-2 border-red-200 bg-white p-6">
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-red-600">
           Danger Zone
         </h3>
         <p className="mb-4 text-sm text-muted-foreground">
-          Permanently delete the local database. This removes all orders, sessions, users, settings, and cached data. The app will restart fresh as if newly installed.
+          Permanently delete the entire database. This removes everything including users, settings, and cached data. The app will restart fresh.
         </p>
 
         {deleteStep === 0 && (

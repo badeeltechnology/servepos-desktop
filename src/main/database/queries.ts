@@ -776,6 +776,35 @@ export function getSessions(limit = 10): any[] {
   return queryAll('SELECT * FROM sessions ORDER BY opened_at DESC LIMIT ?', [limit])
 }
 
+// ==================== Clear Transactions ====================
+
+export function clearTransactions(): { orders: number; sessions: number } {
+  const db = getDb()
+
+  // Count before deleting
+  const orderCount = queryOne('SELECT COUNT(*) as count FROM orders')?.count || 0
+  const sessionCount = queryOne('SELECT COUNT(*) as count FROM sessions')?.count || 0
+
+  // Delete transaction data (cascades handle order_items, order_payments, order_edit_log)
+  db.run('DELETE FROM order_payments')
+  db.run('DELETE FROM order_edit_log')
+  db.run('DELETE FROM order_items')
+  db.run('DELETE FROM orders')
+  db.run('DELETE FROM sessions')
+  db.run('DELETE FROM sync_queue')
+  db.run('DELETE FROM print_log')
+  db.run('DELETE FROM print_queue')
+
+  // Reset table statuses back to Available
+  db.run("UPDATE tables_list SET status = 'Available', current_order_id = NULL")
+
+  // Reset order sequence
+  db.run("DELETE FROM config WHERE key IN ('order_seq_date', 'order_seq_number', 'kot_seq_date', 'kot_seq_number')")
+
+  saveDatabase()
+  return { orders: orderCount, sessions: sessionCount }
+}
+
 // ==================== Setup Check ====================
 
 export function isSetupComplete(): boolean {

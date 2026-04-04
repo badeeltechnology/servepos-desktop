@@ -5,7 +5,8 @@ const api = {
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
     checkForUpdate: () => ipcRenderer.invoke('app:checkForUpdate'),
-    deleteDatabase: () => ipcRenderer.invoke('app:deleteDatabase')
+    deleteDatabase: () => ipcRenderer.invoke('app:deleteDatabase'),
+    clearTransactions: () => ipcRenderer.invoke('app:clearTransactions')
   },
 
   // Config

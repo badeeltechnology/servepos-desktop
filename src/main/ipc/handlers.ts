@@ -30,6 +30,8 @@ export function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle('app:clearTransactions', () => db.clearTransactions())
+
   ipcMain.handle('app:deleteDatabase', async () => {
     deleteDatabase()
     // Reinitialize a fresh empty database
