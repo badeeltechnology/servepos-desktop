@@ -32,10 +32,14 @@ export default function POS() {
   const [showCloseShift, setShowCloseShift] = useState(false)
   const [currentTime, setCurrentTime] = useState(new Date())
   const [nextSyncIn, setNextSyncIn] = useState<number | null>(null)
+  const [waiterOrderCount, setWaiterOrderCount] = useState(0)
+  const [showWaiterOrders, setShowWaiterOrders] = useState(false)
+  const [waiterOrders, setWaiterOrders] = useState<any[]>([])
+  const [woProcessing, setWoProcessing] = useState<string | null>(null)
 
   useEffect(() => { loadTaxConfig(); checkSession() }, [])
 
-  // Clock + sync countdown ticker (every second)
+  // Clock + sync countdown + waiter orders poll
   useEffect(() => {
     const timer = setInterval(async () => {
       setCurrentTime(new Date())
@@ -44,8 +48,21 @@ export default function POS() {
         setNextSyncIn(status.nextSyncIn ?? null)
       } catch {}
     }, 1000)
-    return () => clearInterval(timer)
-  }, [])
+
+    // Poll waiter orders every 15 seconds
+    const woTimer = setInterval(async () => {
+      try {
+        const orders = await window.api.waiterOrders.getPending()
+        setWaiterOrderCount(orders?.length || 0)
+        if (showWaiterOrders) setWaiterOrders(orders || [])
+      } catch {}
+    }, 15000)
+
+    // Initial load
+    window.api.waiterOrders.getPending().then((o: any) => setWaiterOrderCount(o?.length || 0)).catch(() => {})
+
+    return () => { clearInterval(timer); clearInterval(woTimer) }
+  }, [showWaiterOrders])
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -397,6 +414,20 @@ export default function POS() {
             Close Shift
           </button>
 
+          {/* Waiter Orders */}
+          <button onClick={async () => {
+            const orders = await window.api.waiterOrders.getPending()
+            setWaiterOrders(orders || [])
+            setShowWaiterOrders(true)
+          }}
+            className={`relative flex items-center gap-1.5 rounded-xl border-2 px-4 py-2 text-xs font-semibold transition-colors ${waiterOrderCount > 0 ? 'border-orange-300 bg-orange-50 text-orange-700 animate-pulse' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
+            <Users className="h-4 w-4" />
+            Waiter
+            {waiterOrderCount > 0 && (
+              <span className="ml-1 rounded-full bg-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{waiterOrderCount}</span>
+            )}
+          </button>
+
           {/* Orders History */}
           <button onClick={() => setShowOrderHistory(true)}
             className="flex items-center gap-1.5 rounded-xl border-2 border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 hover:bg-gray-50 transition-colors">
@@ -448,6 +479,97 @@ export default function POS() {
       {/* Payment dialog */}
       {showPayment && (
         <PaymentDialog grandTotal={cart.getGrandTotal(taxRate)} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />
+      )}
+
+      {/* Waiter Orders Panel */}
+      {showWaiterOrders && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="max-h-[80vh] w-[600px] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b bg-white px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold">Waiter Orders</h2>
+                <p className="text-xs text-muted-foreground">{waiterOrders.length} pending order(s)</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={async () => {
+                  const orders = await window.api.waiterOrders.getPending()
+                  setWaiterOrders(orders || [])
+                }} className="rounded-lg border px-3 py-1.5 text-xs hover:bg-muted">Refresh</button>
+                <button onClick={() => setShowWaiterOrders(false)} className="rounded-lg p-2 hover:bg-muted">
+                  <span className="text-lg leading-none">&times;</span>
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              {waiterOrders.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">No pending waiter orders</p>
+              ) : (
+                <div className="space-y-3">
+                  {waiterOrders.map((wo: any) => (
+                    <div key={wo.name} className="rounded-xl border-2 border-orange-200 bg-white overflow-hidden">
+                      <div className="flex items-center justify-between bg-orange-50 px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-orange-100 px-2 py-0.5 text-xs font-bold text-orange-700">{wo.name}</span>
+                          <span className="text-sm font-semibold">{wo.waiter_name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{wo.order_type}</span>
+                          {wo.table && <span className="rounded bg-blue-50 px-2 py-0.5 font-medium text-blue-700">Table: {wo.table}</span>}
+                          {wo.guests > 0 && <span>Guests: {wo.guests}</span>}
+                        </div>
+                      </div>
+                      <div className="px-4 py-2">
+                        {(wo.items || []).map((item: any, i: number) => (
+                          <div key={i} className="flex justify-between py-0.5 text-sm">
+                            <span>{item.qty}x {item.item_name}</span>
+                            <span className="font-medium">{((item.rate + (item.modifier_total || 0)) * item.qty).toFixed(2)}</span>
+                          </div>
+                        ))}
+                        <div className="mt-1 flex justify-between border-t pt-1 font-bold">
+                          <span>Total</span>
+                          <span className="text-primary">{(wo.items || []).reduce((s: number, i: any) => s + ((i.rate + (i.modifier_total || 0)) * i.qty), 0).toFixed(2)} QAR</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 border-t bg-gray-50 px-4 py-2.5">
+                        <button
+                          onClick={async () => {
+                            setWoProcessing(wo.name)
+                            const res = await window.api.waiterOrders.accept(wo.name)
+                            if (res.success) {
+                              setToast({ type: 'success', message: `Waiter order accepted — KOT printed` })
+                              const orders = await window.api.waiterOrders.getPending()
+                              setWaiterOrders(orders || [])
+                              setWaiterOrderCount(orders?.length || 0)
+                            } else {
+                              setToast({ type: 'error', message: `Failed: ${res.error}` })
+                            }
+                            setWoProcessing(null)
+                          }}
+                          disabled={woProcessing === wo.name}
+                          className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {woProcessing === wo.name ? 'Processing...' : 'Accept & Print KOT'}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Reject this order?')) return
+                            await window.api.waiterOrders.reject(wo.name)
+                            const orders = await window.api.waiterOrders.getPending()
+                            setWaiterOrders(orders || [])
+                            setWaiterOrderCount(orders?.length || 0)
+                          }}
+                          className="rounded-lg border-2 border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Order History Panel */}

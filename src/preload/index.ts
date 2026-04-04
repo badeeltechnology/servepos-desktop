@@ -150,6 +150,13 @@ const api = {
     waiterCopy: (orderId: string) => ipcRenderer.invoke('print:waiterCopy', orderId)
   },
 
+  // Waiter Orders
+  waiterOrders: {
+    getPending: () => ipcRenderer.invoke('waiterOrders:getPending'),
+    accept: (name: string) => ipcRenderer.invoke('waiterOrders:accept', name),
+    reject: (name: string) => ipcRenderer.invoke('waiterOrders:reject', name)
+  },
+
   // Sync
   sync: {
     run: () => ipcRenderer.invoke('sync:run'),

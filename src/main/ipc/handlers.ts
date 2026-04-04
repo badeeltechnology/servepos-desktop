@@ -171,6 +171,74 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('printRoutes:delete', (_e, id: string) => deletePrintRoute(id))
 
   // ==================== Printing ====================
+  // ==================== Waiter Orders ====================
+  ipcMain.handle('waiterOrders:getPending', async () => {
+    const client = new ERPNextClient()
+    const branch = db.getConfig('branch') || undefined
+    return client.getPendingWaiterOrders(branch)
+  })
+
+  ipcMain.handle('waiterOrders:accept', async (_e, waiterOrderName: string) => {
+    try {
+      const client = new ERPNextClient()
+      // Fetch the full waiter order
+      const wo = await client.getDoc('ServePOS Waiter Order', waiterOrderName)
+      const dbRef = (await import('../database/schema')).getDb()
+
+      // Get active session
+      const sessionStmt = dbRef.prepare("SELECT id, user_id, user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
+      const session = sessionStmt.step() ? sessionStmt.getAsObject() as any : null
+      sessionStmt.free()
+
+      // Create local order
+      const order = db.createOrder({
+        orderType: wo.order_type || 'Dine In',
+        tableName: wo.table || undefined,
+        room: wo.room || undefined,
+        guests: wo.guests || 1,
+        cashierId: session?.user_id || 'waiter',
+        cashierName: `Waiter: ${wo.waiter_name || 'Unknown'}`,
+        sessionId: session?.id || undefined
+      })
+
+      // Add items
+      let subtotal = 0
+      for (const item of (wo.items || [])) {
+        const amount = ((item.rate || 0) + (item.modifier_total || 0)) * (item.qty || 1)
+        db.addOrderItem({
+          orderId: order.id, itemCode: item.item_code, itemName: item.item_name,
+          qty: item.qty || 1, rate: item.rate || 0, amount,
+          modifiers: item.modifiers || undefined, modifierTotal: item.modifier_total || 0,
+          specialInstructions: item.special_instructions || undefined
+        })
+        subtotal += amount
+      }
+
+      dbRef.run('UPDATE orders SET subtotal = ?, grand_total = ?, kot_printed = 1 WHERE id = ?', [subtotal, subtotal, order.id])
+      ;(await import('../database/schema')).saveDatabase()
+
+      // Accept in ERPNext
+      await client.acceptWaiterOrder(waiterOrderName, order.id)
+
+      // Print KOT
+      try { await printKots(order.id) } catch {}
+
+      return { success: true, orderId: order.id, orderNumber: order.order_number }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('waiterOrders:reject', async (_e, waiterOrderName: string) => {
+    try {
+      const client = new ERPNextClient()
+      await client.callMethod('servepos.api.waiter.update_order_status', { order_name: waiterOrderName, status: 'Cancelled' })
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
   ipcMain.handle('print:receipt', (_e, orderId: string) => printReceipt(orderId))
   ipcMain.handle('print:kots', (_e, orderId: string) => printKots(orderId))
   ipcMain.handle('print:amendmentKot', (_e, orderId: string, amendments: any[]) => printAmendmentKot(orderId, amendments))

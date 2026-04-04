@@ -6,7 +6,7 @@ import {
   CheckCircle, XCircle, AlertCircle, ChevronDown, BarChart3, Clock
 } from 'lucide-react'
 
-type Tab = 'users' | 'waiters' | 'modifiers' | 'items' | 'printers' | 'sync' | 'orders' | 'shifts' | 'reports'
+type Tab = 'users' | 'waiters' | 'waiter-orders' | 'modifiers' | 'items' | 'printers' | 'sync' | 'orders' | 'shifts' | 'reports'
 
 export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('users')
@@ -16,6 +16,7 @@ export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
     { key: 'reports', label: 'Dashboard', icon: <BarChart3 className="h-4 w-4" /> },
     { key: 'users', label: 'Cashiers', icon: <Users className="h-4 w-4" /> },
     { key: 'waiters', label: 'Waiters', icon: <Users className="h-4 w-4" /> },
+    { key: 'waiter-orders', label: 'Waiter Orders', icon: <ClipboardList className="h-4 w-4" /> },
     { key: 'modifiers', label: 'Modifiers', icon: <Package className="h-4 w-4" /> },
     { key: 'items', label: 'Items & Modifiers', icon: <LayoutGrid className="h-4 w-4" /> },
     { key: 'printers', label: 'Printers', icon: <Printer className="h-4 w-4" /> },
@@ -55,6 +56,7 @@ export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
       <div className="flex-1 overflow-y-auto p-6">
         {activeTab === 'users' && <UserManagement />}
         {activeTab === 'waiters' && <WaiterManagement />}
+        {activeTab === 'waiter-orders' && <WaiterOrders />}
         {activeTab === 'modifiers' && <ModifierManagement />}
         {activeTab === 'items' && <ItemVisibility />}
         {activeTab === 'printers' && <PrinterManagement />}
@@ -361,6 +363,139 @@ function WaiterManagement() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ==================== Waiter Orders ====================
+function WaiterOrders() {
+  const [orders, setOrders] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [processing, setProcessing] = useState<string | null>(null)
+
+  useEffect(() => { loadOrders() }, [])
+
+  // Poll every 10 seconds
+  useEffect(() => {
+    const timer = setInterval(loadOrders, 10000)
+    return () => clearInterval(timer)
+  }, [])
+
+  async function loadOrders() {
+    try {
+      const data = await window.api.waiterOrders.getPending()
+      setOrders(data || [])
+    } catch {}
+    setLoading(false)
+  }
+
+  async function handleAccept(name: string) {
+    setProcessing(name)
+    const result = await window.api.waiterOrders.accept(name)
+    if (result.success) {
+      loadOrders()
+    } else {
+      alert('Failed to accept: ' + (result.error || 'Unknown error'))
+    }
+    setProcessing(null)
+  }
+
+  async function handleReject(name: string) {
+    if (!confirm('Reject this waiter order?')) return
+    setProcessing(name)
+    const result = await window.api.waiterOrders.reject(name)
+    if (result.success) {
+      loadOrders()
+    } else {
+      alert('Failed to reject: ' + (result.error || 'Unknown error'))
+    }
+    setProcessing(null)
+  }
+
+  return (
+    <div className="max-w-3xl">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-xl font-bold">Waiter Orders</h2>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Auto-refreshes every 10s</span>
+          <button onClick={loadOrders} className="flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:bg-muted">
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">Loading...</div>
+      ) : orders.length === 0 ? (
+        <div className="rounded-xl border bg-white p-8 text-center">
+          <ClipboardList className="mx-auto mb-3 h-12 w-12 text-gray-200" />
+          <p className="text-sm text-muted-foreground">No pending waiter orders</p>
+          <p className="text-xs text-muted-foreground">Orders from the waiter app will appear here</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {orders.map((wo: any) => (
+            <div key={wo.name} className="rounded-xl border-2 border-orange-200 bg-white overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between bg-orange-50 px-5 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">{wo.name}</span>
+                  <span className="text-sm font-semibold">Waiter: {wo.waiter_name}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{wo.order_type}</span>
+                  {wo.table && <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">Table: {wo.table}</span>}
+                  {wo.guests > 0 && <span className="text-xs text-muted-foreground">Guests: {wo.guests}</span>}
+                </div>
+              </div>
+
+              {/* Items */}
+              <div className="px-5 py-3">
+                <div className="mb-2 flex justify-between text-xs font-semibold text-gray-500">
+                  <span>Qty  Item</span>
+                  <span>Amount</span>
+                </div>
+                {(wo.items || []).map((item: any, i: number) => (
+                  <div key={i} className="flex justify-between py-1 text-sm">
+                    <div>
+                      <span className="font-medium">{item.qty}x  {item.item_name}</span>
+                      {item.special_instructions && (
+                        <p className="text-xs text-gray-500 italic">"{item.special_instructions}"</p>
+                      )}
+                    </div>
+                    <span className="font-medium">{((item.rate + (item.modifier_total || 0)) * item.qty).toFixed(2)}</span>
+                  </div>
+                ))}
+                <div className="mt-2 flex justify-between border-t pt-2">
+                  <span className="font-bold">Total</span>
+                  <span className="font-bold text-primary">
+                    {(wo.items || []).reduce((s: number, i: any) => s + ((i.rate + (i.modifier_total || 0)) * i.qty), 0).toFixed(2)} QAR
+                  </span>
+                </div>
+                {wo.notes && <p className="mt-2 text-xs text-gray-500">Notes: {wo.notes}</p>}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 border-t bg-gray-50 px-5 py-3">
+                <button
+                  onClick={() => handleAccept(wo.name)}
+                  disabled={processing === wo.name}
+                  className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {processing === wo.name ? 'Processing...' : 'Accept & Print KOT'}
+                </button>
+                <button
+                  onClick={() => handleReject(wo.name)}
+                  disabled={processing === wo.name}
+                  className="rounded-lg border-2 border-red-200 px-6 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
