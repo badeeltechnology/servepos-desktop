@@ -62,7 +62,7 @@ function sendToUsbPrinter(printer: PrinterConfig, data: string): Promise<{ succe
       }
 
       const tempFile = join(tmpdir(), `servepos-print-${Date.now()}.bin`)
-      writeFileSync(tempFile, Buffer.from(data, 'binary'))
+      writeFileSync(tempFile, Buffer.from(data, 'utf8'))
 
       try {
         if (process.platform === 'win32') {
@@ -183,7 +183,7 @@ function sendToNetworkPrinter(address: string, port: number, data: string): Prom
     }, 5000)
 
     socket.connect(port, address, () => {
-      socket.write(Buffer.from(data, 'binary'), () => {
+      socket.write(Buffer.from(data, 'utf8'), () => {
         clearTimeout(timeout)
         socket.end()
         resolve({ success: true })

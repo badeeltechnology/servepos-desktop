@@ -37,32 +37,12 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
     setAllItems(lookup)
   }
 
-  function handlePrint() {
-    if (receiptRef.current) {
-      const printWindow = window.open('', '_blank', 'width=350,height=600')
-      if (printWindow) {
-        printWindow.document.write(`
-          <html><head><title>Receipt</title>
-          <style>
-            @page { size: 80mm auto; margin: 0; }
-            body { font-family: 'Courier New', monospace; font-size: 12px; width: 80mm; margin: 0 auto; padding: 5mm; }
-            .center { text-align: center; }
-            .bold { font-weight: bold; }
-            .right { text-align: right; }
-            .rtl { direction: rtl; text-align: right; }
-            .line { border-top: 1px dashed #000; margin: 4px 0; }
-            .dline { border-top: 2px solid #000; margin: 4px 0; }
-            .row { display: flex; justify-content: space-between; }
-            .small { font-size: 10px; }
-            .big { font-size: 16px; }
-            .mod { padding-left: 15px; font-size: 10px; color: #555; }
-          </style></head><body>
-          ${receiptRef.current.innerHTML}
-          <script>window.print(); window.close();</script>
-          </body></html>
-        `)
-        printWindow.document.close()
-      }
+  async function handlePrint() {
+    const result = await window.api.print.receipt(orderId)
+    if (result?.success) {
+      onClose()
+    } else {
+      alert('Print failed: ' + (result?.error || 'Check printer configuration'))
     }
   }
 

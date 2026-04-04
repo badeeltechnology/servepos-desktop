@@ -454,6 +454,29 @@ export default function AdminPanel() {
               </div>
             </div>
 
+            {/* Paper Width */}
+            <div className="mb-6 rounded-xl border bg-white p-6">
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Paper Size
+              </h3>
+              <div className="flex gap-4">
+                {[
+                  { value: '80', label: '80mm (standard)' },
+                  { value: '58', label: '58mm (compact)' }
+                ].map(({ value, label }) => (
+                  <label key={value} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="paper_width"
+                      checked={(receiptConfig.paper_width || '80') === value}
+                      onChange={() => updateField('paper_width', value)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {/* Receipt & KOT Options */}
             <div className="mb-6 rounded-xl border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
