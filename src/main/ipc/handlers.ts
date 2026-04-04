@@ -1,7 +1,7 @@
 import { ipcMain, app, BrowserWindow } from 'electron'
 import QRCode from 'qrcode'
 import * as db from '../database/queries'
-import { deleteDatabase, initDatabase } from '../database/schema'
+import { getDb, saveDatabase, deleteDatabase, initDatabase } from '../database/schema'
 import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
 import { ERPNextClient } from '../sync/erpnext-client'
 import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute, discoverUsbPrinters } from '../print/printer'
@@ -189,7 +189,7 @@ export function registerIpcHandlers(): void {
       const client = new ERPNextClient()
       // Fetch the full waiter order
       const wo = await client.getDoc('ServePOS Waiter Order', waiterOrderName)
-      const dbRef = (await import('../database/schema')).getDb()
+      const dbRef = getDb()
 
       // Get active session
       const sessionStmt = dbRef.prepare("SELECT id, user_id, user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
@@ -221,7 +221,7 @@ export function registerIpcHandlers(): void {
       }
 
       dbRef.run('UPDATE orders SET subtotal = ?, grand_total = ?, kot_printed = 1 WHERE id = ?', [subtotal, subtotal, order.id])
-      ;(await import('../database/schema')).saveDatabase()
+      ;saveDatabase()
 
       // Accept in ERPNext
       await client.acceptWaiterOrder(waiterOrderName, order.id)

@@ -10,8 +10,8 @@ import ReceiptPreview from '../components/ReceiptPreview'
 import OpenShift from '../components/OpenShift'
 import CloseShift from '../components/CloseShift'
 import {
-  LogOut, User, PauseCircle, Settings, CheckCircle, AlertCircle, Wifi, WifiOff,
-  ClipboardList, X, RotateCcw, Printer, DoorOpen
+  LogOut, User, Users, PauseCircle, Settings, CheckCircle, AlertCircle, Wifi, WifiOff,
+  ClipboardList, X, RotateCcw, Printer, DoorOpen, RefreshCw
 } from 'lucide-react'
 import { useAppStore } from '../stores/app'
 
