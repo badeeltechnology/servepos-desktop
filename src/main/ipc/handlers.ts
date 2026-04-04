@@ -173,9 +173,15 @@ export function registerIpcHandlers(): void {
   // ==================== Printing ====================
   // ==================== Waiter Orders ====================
   ipcMain.handle('waiterOrders:getPending', async () => {
-    const client = new ERPNextClient()
-    const branch = db.getConfig('branch') || undefined
-    return client.getPendingWaiterOrders(branch)
+    try {
+      const erpnextUrl = db.getConfig('erpnext_url')
+      if (!erpnextUrl) return []
+      const client = new ERPNextClient()
+      const branch = db.getConfig('branch') || undefined
+      return await client.getPendingWaiterOrders(branch)
+    } catch {
+      return []
+    }
   })
 
   ipcMain.handle('waiterOrders:accept', async (_e, waiterOrderName: string) => {
