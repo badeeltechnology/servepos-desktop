@@ -30,8 +30,22 @@ export default function POS() {
   const [activeSession, setActiveSession] = useState<any>(null)
   const [sessionLoading, setSessionLoading] = useState(true)
   const [showCloseShift, setShowCloseShift] = useState(false)
+  const [currentTime, setCurrentTime] = useState(new Date())
+  const [nextSyncIn, setNextSyncIn] = useState<number | null>(null)
 
   useEffect(() => { loadTaxConfig(); checkSession() }, [])
+
+  // Clock + sync countdown ticker (every second)
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      setCurrentTime(new Date())
+      try {
+        const status = await window.api.sync.status()
+        setNextSyncIn(status.nextSyncIn ?? null)
+      } catch {}
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -317,13 +331,28 @@ export default function POS() {
       <header className="flex items-center justify-between border-b bg-white px-5 py-2.5 shadow-sm">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-black tracking-tight text-primary">ServePOS</h1>
-          <div className="flex items-center gap-1.5">
-            {isOnline ? (
-              <Wifi className="h-3.5 w-3.5 text-emerald-500" />
-            ) : (
-              <WifiOff className="h-3.5 w-3.5 text-red-400" />
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              {isOnline ? (
+                <Wifi className="h-3.5 w-3.5 text-emerald-500" />
+              ) : (
+                <WifiOff className="h-3.5 w-3.5 text-red-400" />
+              )}
+              <span className="text-[11px] text-gray-400">{isOnline ? 'Online' : 'Offline'}</span>
+            </div>
+            <div className="h-4 w-px bg-gray-200" />
+            <div className="text-[11px] text-gray-400">
+              <span className="font-medium text-gray-600">{currentTime.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+              <span className="ml-1.5">{currentTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+            </div>
+            {nextSyncIn !== null && (
+              <>
+                <div className="h-4 w-px bg-gray-200" />
+                <span className="text-[10px] text-gray-400">
+                  Sync in {nextSyncIn > 60 ? `${Math.floor(nextSyncIn / 60)}m ${nextSyncIn % 60}s` : `${nextSyncIn}s`}
+                </span>
+              </>
             )}
-            <span className="text-[11px] text-gray-400">{isOnline ? 'Online' : 'Offline'}</span>
           </div>
         </div>
 

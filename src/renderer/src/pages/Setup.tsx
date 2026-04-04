@@ -543,7 +543,7 @@ export default function Setup({ onComplete }: SetupProps) {
                 and create cashier accounts.
               </p>
               <button
-                onClick={onComplete}
+                onClick={async () => { await window.api.sync.startAuto(); onComplete() }}
                 className="rounded-lg bg-primary px-8 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >
                 Go to Login

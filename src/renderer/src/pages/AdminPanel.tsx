@@ -770,7 +770,7 @@ function SystemSettings() {
             <label className="mb-1 block text-sm font-medium">Auto-sync Interval</label>
             <select
               value={config.auto_sync_interval || '5'}
-              onChange={(e) => saveConfig('auto_sync_interval', e.target.value)}
+              onChange={async (e) => { await saveConfig('auto_sync_interval', e.target.value); await window.api.sync.startAuto() }}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
             >
               <option value="1">Every 1 minute</option>

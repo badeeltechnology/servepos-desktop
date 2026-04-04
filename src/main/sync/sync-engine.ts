@@ -4,10 +4,12 @@ import { syncUp } from './sync-up'
 
 let syncInterval: ReturnType<typeof setInterval> | null = null
 let isSyncing = false
+let nextSyncAt: number | null = null // timestamp of next scheduled sync
 
 export interface SyncStatus {
   isSyncing: boolean
   lastSyncAt: string | null
+  nextSyncIn: number | null // seconds until next sync
   lastResult: {
     down?: { success: boolean; counts?: Record<string, number>; error?: string }
     up?: { success: boolean; synced: number; failed: number; errors: string[] }
@@ -20,6 +22,7 @@ export function getSyncStatus(): SyncStatus {
   return {
     isSyncing,
     lastSyncAt: getConfig('last_sync_at'),
+    nextSyncIn: nextSyncAt ? Math.max(0, Math.round((nextSyncAt - Date.now()) / 1000)) : null,
     lastResult
   }
 }
@@ -43,6 +46,10 @@ export async function runSync(): Promise<SyncStatus['lastResult']> {
     console.log('[Sync] Up:', upResult.synced, 'synced,', upResult.failed, 'failed')
 
     lastResult = { down: downResult, up: upResult }
+
+    // Ensure auto-sync is running (may not have started if setup wasn't done at boot)
+    if (!syncInterval) startAutoSync()
+
     return lastResult
   } catch (err: any) {
     console.error('[Sync] Error:', err.message)
@@ -72,14 +79,19 @@ export function startAutoSync(): void {
   const intervalMs = intervalMinutes * 60 * 1000
   console.log(`[Sync] Auto-sync started: every ${intervalMinutes} minutes`)
 
+  function scheduleNext(): void {
+    nextSyncAt = Date.now() + intervalMs
+  }
+
   // Run first sync after 15 seconds (give app time to load)
+  nextSyncAt = Date.now() + 15000
   setTimeout(() => {
-    runSync().catch(console.error)
+    runSync().then(() => scheduleNext()).catch(() => scheduleNext())
   }, 15000)
 
   // Then run on interval
   syncInterval = setInterval(() => {
-    runSync().catch(console.error)
+    runSync().then(() => scheduleNext()).catch(() => scheduleNext())
   }, intervalMs)
 }
 
@@ -87,6 +99,7 @@ export function stopAutoSync(): void {
   if (syncInterval) {
     clearInterval(syncInterval)
     syncInterval = null
+    nextSyncAt = null
     console.log('[Sync] Auto-sync stopped')
   }
 }
