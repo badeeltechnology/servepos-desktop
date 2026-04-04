@@ -403,8 +403,6 @@ function PrinterManagement() {
   const [pType, setPType] = useState<'network' | 'usb'>('network')
   const [pAddress, setPAddress] = useState('')
   const [pPort, setPPort] = useState(9100)
-  const [pVendorId, setPVendorId] = useState('')
-  const [pProductId, setPProductId] = useState('')
   const [usbDevices, setUsbDevices] = useState<any[]>([])
   const [detecting, setDetecting] = useState(false)
   const [showRouteForm, setShowRouteForm] = useState(false)
@@ -426,26 +424,24 @@ function PrinterManagement() {
     const devices = await window.api.printers.discoverUsb()
     setUsbDevices(devices)
     if (devices.length === 1) {
-      setPVendorId(devices[0].vendorId)
-      setPProductId(devices[0].productId)
+      setPAddress(devices[0].port)
+      if (!pName.trim()) setPName(devices[0].name)
     }
     setDetecting(false)
   }
 
   async function handleAddPrinter() {
     if (!pName.trim()) return
+    if (pType === 'usb' && !pAddress.trim()) return
     await window.api.printers.add({
       printer_name: pName, connection_type: pType,
-      address: pType === 'network' ? pAddress || null : null,
+      address: pAddress || null,
       port: pPort, paper_width: 80,
-      usb_vendor_id: pType === 'usb' ? pVendorId || null : null,
-      usb_product_id: pType === 'usb' ? pProductId || null : null
+      usb_vendor_id: null, usb_product_id: null
     })
     setShowForm(false)
     setPName('')
     setPAddress('')
-    setPVendorId('')
-    setPProductId('')
     setUsbDevices([])
     loadData()
   }
@@ -502,29 +498,27 @@ function PrinterManagement() {
                 <div className="col-span-2">
                   <button onClick={handleDetectUsb} disabled={detecting}
                     className="mb-2 rounded-lg border-2 border-dashed border-primary/30 px-4 py-2 text-xs font-medium text-primary hover:bg-primary/5 disabled:opacity-50">
-                    {detecting ? 'Detecting...' : 'Detect USB Printers'}
+                    {detecting ? 'Detecting...' : 'Detect Printers'}
                   </button>
                   {usbDevices.length > 0 && (
                     <div className="mb-2 space-y-1">
                       {usbDevices.map((d, i) => (
-                        <button key={i} onClick={() => { setPVendorId(d.vendorId); setPProductId(d.productId) }}
-                          className={`block w-full rounded-lg border px-3 py-2 text-left text-xs ${pVendorId === d.vendorId && pProductId === d.productId ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
-                          {d.name}
+                        <button key={i} onClick={() => { setPAddress(d.port); if (!pName.trim()) setPName(d.name) }}
+                          className={`block w-full rounded-lg border px-3 py-2 text-left text-xs ${pAddress === d.port ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
+                          <span className="font-medium">{d.name}</span>
+                          <span className="ml-2 text-muted-foreground">Port: {d.port}</span>
                         </button>
                       ))}
                     </div>
                   )}
-                  {usbDevices.length === 0 && detecting === false && pVendorId === '' && (
-                    <p className="text-xs text-muted-foreground">Click detect or enter Vendor/Product IDs manually.</p>
+                  {usbDevices.length === 0 && !detecting && !pAddress && (
+                    <p className="text-xs text-muted-foreground">Click detect to find installed printers, or enter the port name manually.</p>
                   )}
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium">Vendor ID (hex)</label>
-                  <input type="text" value={pVendorId} onChange={(e) => setPVendorId(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm" placeholder="e.g., 0483" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium">Product ID (hex)</label>
-                  <input type="text" value={pProductId} onChange={(e) => setPProductId(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm" placeholder="e.g., 5740" />
+                <div className="col-span-2">
+                  <label className="mb-1 block text-xs font-medium">Printer Port / Name</label>
+                  <input type="text" value={pAddress} onChange={(e) => setPAddress(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm" placeholder="e.g., USB001 or POS-80C" />
+                  <p className="mt-1 text-[10px] text-muted-foreground">Windows: use port name (USB001) from Printer Properties → Ports tab</p>
                 </div>
               </>
             )}
@@ -546,8 +540,8 @@ function PrinterManagement() {
                 <div>
                   <span className="font-medium">{p.printer_name}</span>
                   <span className="ml-2 rounded bg-muted px-2 py-0.5 text-[10px]">{p.connection_type}</span>
-                  {p.address && <span className="ml-2 font-mono text-xs text-muted-foreground">{p.address}:{p.port}</span>}
-                  {p.usb_vendor_id && <span className="ml-2 font-mono text-xs text-muted-foreground">VID:{p.usb_vendor_id} PID:{p.usb_product_id}</span>}
+                  {p.connection_type === 'network' && p.address && <span className="ml-2 font-mono text-xs text-muted-foreground">{p.address}:{p.port}</span>}
+                  {p.connection_type === 'usb' && p.address && <span className="ml-2 font-mono text-xs text-muted-foreground">Port: {p.address}</span>}
                 </div>
                 <div className="flex items-center gap-1">
                   {p.test_status === 'ok' && <CheckCircle className="h-4 w-4 text-green-500" />}

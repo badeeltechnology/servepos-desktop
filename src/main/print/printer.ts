@@ -1,5 +1,8 @@
 import * as net from 'net'
-import { getDeviceList, findByIds } from 'usb'
+import { execSync } from 'child_process'
+import { writeFileSync, unlinkSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
 import { getDb, saveDatabase } from '../database/schema'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -52,106 +55,76 @@ export async function sendToPrinter(printer: PrinterConfig, data: string): Promi
 function sendToUsbPrinter(printer: PrinterConfig, data: string): Promise<{ success: boolean; error?: string }> {
   return new Promise((resolve) => {
     try {
-      const vendorId = printer.usb_vendor_id ? parseInt(printer.usb_vendor_id, 16) : 0
-      const productId = printer.usb_product_id ? parseInt(printer.usb_product_id, 16) : 0
-
-      if (!vendorId || !productId) {
-        resolve({ success: false, error: 'USB Vendor ID and Product ID are required. Use "Detect USB Printers" to find them.' })
+      const printerName = printer.address // Store printer name/port in address field for USB
+      if (!printerName) {
+        resolve({ success: false, error: 'Printer name is required. Use "Detect USB Printers" to find available printers.' })
         return
       }
 
-      const device = findByIds(vendorId, productId)
-      if (!device) {
-        resolve({ success: false, error: `USB device not found (VID: ${printer.usb_vendor_id}, PID: ${printer.usb_product_id}). Check connection.` })
-        return
-      }
-
-      device.open()
-
-      // Try to detach kernel driver if attached (Linux/Mac)
-      const iface = device.interfaces?.[0]
-      if (!iface) {
-        device.close()
-        resolve({ success: false, error: 'No USB interface found on device' })
-        return
-      }
+      // Write data to temp file
+      const tempFile = join(tmpdir(), `servepos-print-${Date.now()}.bin`)
+      writeFileSync(tempFile, Buffer.from(data, 'binary'))
 
       try {
-        if (iface.isKernelDriverActive()) {
-          iface.detachKernelDriver()
-        }
-      } catch {
-        // Kernel driver detach not supported on all platforms — continue
-      }
-
-      iface.claim()
-
-      // Find the OUT endpoint (bulk transfer)
-      const outEndpoint = iface.endpoints.find((ep) => ep.direction === 'out')
-      if (!outEndpoint) {
-        iface.release(() => device.close())
-        resolve({ success: false, error: 'No OUT endpoint found on USB printer' })
-        return
-      }
-
-      const buffer = Buffer.from(data, 'binary')
-      ;(outEndpoint as any).transfer(buffer, (err: Error | null) => {
-        try {
-          iface.release(() => {
-            try { device.close() } catch {}
-          })
-        } catch {}
-
-        if (err) {
-          resolve({ success: false, error: `USB write failed: ${err.message}` })
+        if (process.platform === 'win32') {
+          // Windows: send raw data to printer using the printer share name or port
+          // Try direct port write first (e.g., USB001), then fall back to printer name
+          try {
+            execSync(`copy /b "${tempFile}" "\\\\.\\${printerName}"`, { windowsHide: true, timeout: 10000 })
+          } catch {
+            // Fall back to printing via printer name using PowerShell raw print
+            execSync(
+              `powershell -Command "& { $bytes = [System.IO.File]::ReadAllBytes('${tempFile.replace(/'/g, "''")}'); $printer = [System.Drawing.Printing.PrintDocument]::new(); $printer.PrinterSettings.PrinterName = '${printerName.replace(/'/g, "''")}'; $port = $printer.PrinterSettings.PrinterName; Copy-Item -Path '${tempFile.replace(/'/g, "''")}' -Destination ('\\\\.\\' + '${printerName.replace(/'/g, "''")}') }"`,
+              { windowsHide: true, timeout: 10000 }
+            )
+          }
+        } else if (process.platform === 'darwin') {
+          // macOS: use lp command
+          execSync(`lp -d "${printerName}" -o raw "${tempFile}"`, { timeout: 10000 })
         } else {
-          resolve({ success: true })
+          // Linux: use lp command
+          execSync(`lp -d "${printerName}" -o raw "${tempFile}"`, { timeout: 10000 })
         }
-      })
+        resolve({ success: true })
+      } catch (err: any) {
+        resolve({ success: false, error: `Print failed: ${err.message}` })
+      } finally {
+        try { unlinkSync(tempFile) } catch {}
+      }
     } catch (err: any) {
       resolve({ success: false, error: `USB error: ${err.message}` })
     }
   })
 }
 
-// Discover USB printers (devices with printer class 7)
-export function discoverUsbPrinters(): { vendorId: string; productId: string; name: string }[] {
+// Discover printers installed on the OS
+export function discoverUsbPrinters(): { name: string; port: string }[] {
   try {
-    const devices = getDeviceList()
-    const printers: { vendorId: string; productId: string; name: string }[] = []
-
-    for (const device of devices) {
-      const desc = device.deviceDescriptor
-      // Check if device or any interface has printer class (0x07)
-      let isPrinter = desc.bDeviceClass === 7
-
-      if (!isPrinter) {
-        try {
-          device.open()
-          for (const iface of device.interfaces || []) {
-            if (iface.descriptor.bInterfaceClass === 7) {
-              isPrinter = true
-              break
-            }
-          }
-          device.close()
-        } catch {
-          // Can't open device — skip
-        }
-      }
-
-      if (isPrinter) {
-        const vid = desc.idVendor.toString(16).padStart(4, '0')
-        const pid = desc.idProduct.toString(16).padStart(4, '0')
-        printers.push({
-          vendorId: vid,
-          productId: pid,
-          name: `USB Printer (VID: ${vid}, PID: ${pid})`
-        })
-      }
+    if (process.platform === 'win32') {
+      // Windows: list printers with their port names using PowerShell
+      const output = execSync(
+        'powershell -Command "Get-WmiObject -Query \\"SELECT Name,PortName FROM Win32_Printer\\" | ForEach-Object { $_.Name + \'||\' + $_.PortName }"',
+        { encoding: 'utf8', windowsHide: true, timeout: 10000 }
+      )
+      return output.trim().split('\n').filter(Boolean).map((line) => {
+        const [name, port] = line.trim().split('||')
+        return { name: name || '', port: port || '' }
+      }).filter((p) => p.name)
+    } else if (process.platform === 'darwin') {
+      // macOS: use lpstat
+      const output = execSync('lpstat -a 2>/dev/null || true', { encoding: 'utf8', timeout: 10000 })
+      return output.trim().split('\n').filter(Boolean).map((line) => {
+        const name = line.split(' ')[0]
+        return { name, port: name }
+      })
+    } else {
+      // Linux: use lpstat
+      const output = execSync('lpstat -a 2>/dev/null || true', { encoding: 'utf8', timeout: 10000 })
+      return output.trim().split('\n').filter(Boolean).map((line) => {
+        const name = line.split(' ')[0]
+        return { name, port: name }
+      })
     }
-
-    return printers
   } catch {
     return []
   }
