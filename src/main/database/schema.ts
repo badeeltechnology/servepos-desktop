@@ -489,6 +489,83 @@ function runMigrations(): void {
       synced_at TEXT
     )
   `)
+
+  // Migration 11: Add coordinator role to users (SQLite can't alter CHECK constraints,
+  // so recreate table with new constraint)
+  try {
+    const testStmt = database.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'coordinator'")
+    testStmt.step()
+    testStmt.free()
+  } catch {
+    // CHECK constraint blocks coordinator role — recreate table
+    database.run(`CREATE TABLE IF NOT EXISTS users_new (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      full_name TEXT,
+      pin_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('supervisor', 'cashier', 'coordinator')),
+      erpnext_user TEXT,
+      max_discount_pct REAL DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`)
+    database.run('INSERT INTO users_new SELECT * FROM users')
+    database.run('DROP TABLE users')
+    database.run('ALTER TABLE users_new RENAME TO users')
+  }
+
+  // Migration 12: Expand order status CHECK constraint to support new statuses
+  if (!hasColumn('orders', 'waiter_name')) {
+    // Already migrated in migration 9 — use as marker that we've been through recent migrations
+  }
+  try {
+    // Test if new statuses are allowed
+    database.run("UPDATE orders SET status = status WHERE 1=0 AND status = 'Preparing'")
+  } catch {
+    // Need to recreate orders table with expanded CHECK
+    database.run(`CREATE TABLE IF NOT EXISTS orders_new (
+      id TEXT PRIMARY KEY,
+      order_number TEXT NOT NULL UNIQUE,
+      order_type TEXT NOT NULL CHECK(order_type IN ('Dine In', 'Takeaway', 'Delivery')),
+      table_name TEXT,
+      room TEXT,
+      guests INTEGER,
+      cashier_id TEXT,
+      cashier_name TEXT,
+      waiter_id TEXT,
+      waiter_name TEXT,
+      subtotal REAL DEFAULT 0,
+      tax_total REAL DEFAULT 0,
+      discount_amount REAL DEFAULT 0,
+      discount_percent REAL DEFAULT 0,
+      discount_reason TEXT,
+      grand_total REAL DEFAULT 0,
+      status TEXT DEFAULT 'Open' CHECK(status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced', 'Completed', 'Void', 'Returned')),
+      void_reason TEXT,
+      kot_printed INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT,
+      sync_status TEXT DEFAULT 'pending' CHECK(sync_status IN ('pending', 'synced', 'failed')),
+      sync_error TEXT,
+      erpnext_docname TEXT,
+      session_id TEXT
+    )`)
+    database.run(`INSERT INTO orders_new SELECT
+      id, order_number, order_type, table_name, room, guests, cashier_id, cashier_name,
+      waiter_id, waiter_name, subtotal, tax_total, discount_amount, discount_percent,
+      discount_reason, grand_total, status, void_reason, kot_printed, created_at,
+      completed_at, sync_status, sync_error, erpnext_docname, session_id
+    FROM orders`)
+    database.run('DROP TABLE orders')
+    database.run('ALTER TABLE orders_new RENAME TO orders')
+    // Recreate indexes
+    database.run('CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)')
+    database.run('CREATE INDEX IF NOT EXISTS idx_orders_sync ON orders(sync_status)')
+    database.run('CREATE INDEX IF NOT EXISTS idx_orders_cashier ON orders(cashier_id)')
+    database.run('CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(created_at)')
+  }
 }
 
 export function saveDatabase(): void {

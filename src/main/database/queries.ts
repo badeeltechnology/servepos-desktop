@@ -121,7 +121,7 @@ export interface User {
   id: string
   name: string
   full_name: string | null
-  role: 'supervisor' | 'cashier'
+  role: 'supervisor' | 'cashier' | 'coordinator'
   erpnext_user: string | null
   max_discount_pct: number
   is_active: number
@@ -133,7 +133,7 @@ export interface User {
 export function createUser(
   name: string,
   pin: string,
-  role: 'supervisor' | 'cashier',
+  role: 'supervisor' | 'cashier' | 'coordinator',
   options?: {
     fullName?: string
     erpnextUser?: string

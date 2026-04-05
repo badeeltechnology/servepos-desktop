@@ -75,14 +75,16 @@ function UserManagement() {
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [pin, setPin] = useState('')
+  const [userRole, setUserRole] = useState<'cashier' | 'coordinator'>('cashier')
   const [maxDiscount, setMaxDiscount] = useState(0)
   const [editingId, setEditingId] = useState<string | null>(null)
 
   useEffect(() => { loadUsers() }, [])
 
   async function loadUsers() {
-    const data = await window.api.users.getAll('cashier')
-    setUsers(data)
+    const cashiers = await window.api.users.getAll('cashier')
+    const coordinators = await window.api.users.getAll('coordinator')
+    setUsers([...cashiers, ...coordinators])
   }
 
   async function handleSave() {
@@ -92,7 +94,7 @@ function UserManagement() {
       if (pin) updates.pin = pin
       await window.api.users.update(editingId, updates)
     } else {
-      await window.api.users.create(name.trim(), pin, 'cashier', { maxDiscountPct: maxDiscount })
+      await window.api.users.create(name.trim(), pin, userRole, { maxDiscountPct: userRole === 'cashier' ? maxDiscount : 0 })
     }
     resetForm()
     loadUsers()
@@ -107,6 +109,7 @@ function UserManagement() {
     setEditingId(u.id)
     setName(u.name)
     setPin('')
+    setUserRole(u.role === 'coordinator' ? 'coordinator' : 'cashier')
     setMaxDiscount(u.max_discount_pct)
     setShowForm(true)
   }
@@ -116,34 +119,44 @@ function UserManagement() {
     setEditingId(null)
     setName('')
     setPin('')
+    setUserRole('cashier')
     setMaxDiscount(0)
   }
 
   return (
     <div className="max-w-2xl">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Cashier Management</h2>
+        <h2 className="text-xl font-bold">User Management</h2>
         <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-          <Plus className="h-4 w-4" /> Add Cashier
+          <Plus className="h-4 w-4" /> Add User
         </button>
       </div>
 
       {showForm && (
         <div className="mb-4 rounded-xl border bg-white p-5">
-          <h3 className="mb-3 font-semibold">{editingId ? 'Edit Cashier' : 'New Cashier'}</h3>
-          <div className="grid grid-cols-3 gap-3">
+          <h3 className="mb-3 font-semibold">{editingId ? 'Edit User' : 'New User'}</h3>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div>
               <label className="mb-1 block text-xs font-medium">Name</label>
               <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
             <div>
+              <label className="mb-1 block text-xs font-medium">Role</label>
+              <select value={userRole} onChange={(e) => setUserRole(e.target.value as any)} className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="cashier">Cashier</option>
+                <option value="coordinator">Coordinator</option>
+              </select>
+            </div>
+            <div>
               <label className="mb-1 block text-xs font-medium">PIN (6-8 digits){editingId ? ' — leave blank to keep' : ''}</label>
               <input type="password" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))} className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" inputMode="numeric" />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Max Discount %</label>
-              <input type="number" value={maxDiscount} onChange={(e) => setMaxDiscount(parseFloat(e.target.value) || 0)} className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" min={0} max={100} />
-            </div>
+            {userRole === 'cashier' && (
+              <div>
+                <label className="mb-1 block text-xs font-medium">Max Discount %</label>
+                <input type="number" value={maxDiscount} onChange={(e) => setMaxDiscount(parseFloat(e.target.value) || 0)} className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" min={0} max={100} />
+              </div>
+            )}
           </div>
           <div className="mt-3 flex gap-2">
             <button onClick={resetForm} className="rounded-lg border border-input px-4 py-2 text-sm hover:bg-muted">Cancel</button>
@@ -154,14 +167,15 @@ function UserManagement() {
 
       <div className="rounded-xl border bg-white">
         {users.length === 0 ? (
-          <p className="p-6 text-center text-sm text-muted-foreground">No cashiers yet. Add one above.</p>
+          <p className="p-6 text-center text-sm text-muted-foreground">No users yet. Add one above.</p>
         ) : (
           <div className="divide-y">
             {users.map((u) => (
               <div key={u.id} className="flex items-center justify-between px-5 py-3">
                 <div>
                   <span className={`font-medium ${!u.is_active ? 'text-muted-foreground line-through' : ''}`}>{u.name}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">Max disc: {u.max_discount_pct}%</span>
+                  <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${u.role === 'coordinator' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{u.role}</span>
+                  {u.role === 'cashier' && <span className="ml-2 text-xs text-muted-foreground">Max disc: {u.max_discount_pct}%</span>}
                 </div>
                 <div className="flex items-center gap-1">
                   <button onClick={() => editUser(u)} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><Edit3 className="h-3.5 w-3.5" /></button>

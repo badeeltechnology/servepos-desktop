@@ -4,6 +4,7 @@ import Setup from './pages/Setup'
 import Login from './pages/Login'
 import AdminPanel from './pages/AdminPanel'
 import POS from './pages/POS'
+import CoordinatorScreen from './pages/CoordinatorScreen'
 
 function App() {
   const [loading, setLoading] = useState(true)
@@ -81,7 +82,12 @@ function App() {
     return <Login />
   }
 
-  // Logged in — show POS
+  // Coordinator role → coordinator screen
+  if (user.role === 'coordinator') {
+    return <CoordinatorScreen />
+  }
+
+  // Cashier / Supervisor → POS
   return <POS />
 }
 

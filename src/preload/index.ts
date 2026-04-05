@@ -157,6 +157,12 @@ const api = {
     list: () => ipcRenderer.invoke('waiters:list')
   },
 
+  // Coordinator
+  coordinator: {
+    getActiveOrders: () => ipcRenderer.invoke('coordinator:getActiveOrders'),
+    updateStatus: (orderId: string, status: string, userRole: string) => ipcRenderer.invoke('coordinator:updateStatus', orderId, status, userRole)
+  },
+
   // Waiter Orders
   waiterOrders: {
     getPending: () => ipcRenderer.invoke('waiterOrders:getPending'),

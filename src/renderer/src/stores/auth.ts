@@ -4,7 +4,7 @@ interface User {
   id: string
   name: string
   full_name: string | null
-  role: 'supervisor' | 'cashier'
+  role: 'supervisor' | 'cashier' | 'coordinator'
   max_discount_pct: number
 }
 

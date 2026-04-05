@@ -91,7 +91,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('admin:updatePassword', (_e, username: string, newPassword: string) => db.updateAdminPassword(username, newPassword))
 
   // ==================== Users ====================
-  ipcMain.handle('users:create', (_e, name: string, pin: string, role: string, options?: any) => db.createUser(name, pin, role as 'supervisor' | 'cashier', options))
+  ipcMain.handle('users:create', (_e, name: string, pin: string, role: string, options?: any) => db.createUser(name, pin, role as 'supervisor' | 'cashier' | 'coordinator', options))
   ipcMain.handle('users:verifyPin', (_e, pin: string) => db.verifyPin(pin))
   ipcMain.handle('users:getAll', (_e, role?: string) => db.getUsers(role))
   ipcMain.handle('users:update', (_e, id: string, updates: any) => db.updateUser(id, updates))
@@ -256,4 +256,38 @@ export function registerIpcHandlers(): void {
 
   // Waiters
   ipcMain.handle('waiters:list', () => db.getWaiters())
+
+  // Coordinator — get active orders (not Completed/Void/Returned)
+  ipcMain.handle('coordinator:getActiveOrders', () => {
+    const database = getDb()
+    const stmt = database.prepare(
+      `SELECT o.*, GROUP_CONCAT(oi.item_name || ' x' || oi.qty, ', ') as items_summary,
+              COUNT(oi.id) as item_count
+       FROM orders o
+       LEFT JOIN order_items oi ON oi.order_id = o.id
+       WHERE o.status NOT IN ('Completed', 'Void', 'Returned')
+       GROUP BY o.id
+       ORDER BY o.created_at DESC`
+    )
+    const rows: any[] = []
+    while (stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
+
+  // Coordinator — update order status (restricted statuses)
+  ipcMain.handle('coordinator:updateStatus', (_e, orderId: string, status: string, userRole: string) => {
+    const allowedByCoordinator = ['Preparing', 'Ready to Serve']
+    const allowedByCashier = ['Preparing', 'Ready to Serve', 'Invoiced', 'Completed']
+
+    if (userRole === 'coordinator' && !allowedByCoordinator.includes(status)) {
+      return { success: false, error: 'Coordinators can only mark as Preparing or Ready to Serve' }
+    }
+    if (userRole === 'cashier' && !allowedByCashier.includes(status)) {
+      return { success: false, error: 'Invalid status' }
+    }
+
+    db.updateOrder(orderId, { status })
+    return { success: true }
+  })
 }

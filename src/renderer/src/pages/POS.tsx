@@ -6,12 +6,13 @@ import Cart from '../components/Cart'
 import PaymentDialog from '../components/PaymentDialog'
 import OrdersBar from '../components/OrdersBar'
 import SupervisorSettings from './SupervisorSettings'
+import CoordinatorScreen from './CoordinatorScreen'
 import ReceiptPreview from '../components/ReceiptPreview'
 import OpenShift from '../components/OpenShift'
 import CloseShift from '../components/CloseShift'
 import {
   LogOut, User, Users, PauseCircle, Settings, CheckCircle, AlertCircle, Wifi, WifiOff,
-  ClipboardList, X, RotateCcw, Printer, DoorOpen, RefreshCw
+  ClipboardList, X, RotateCcw, Printer, DoorOpen, RefreshCw, ChefHat
 } from 'lucide-react'
 import { useAppStore } from '../stores/app'
 
@@ -337,9 +338,14 @@ export default function POS() {
 
   const [showOrderHistory, setShowOrderHistory] = useState(false)
   const [receiptPreviewId, setReceiptPreviewId] = useState<string | null>(null)
+  const [showCoordinator, setShowCoordinator] = useState(false)
 
   if (showSettings && user?.role === 'supervisor') {
     return <SupervisorSettings onBack={() => { setShowSettings(false); loadTaxConfig() }} />
+  }
+
+  if (showCoordinator) {
+    return <CoordinatorScreen onBack={() => setShowCoordinator(false)} />
   }
 
   // Show loading while checking session
@@ -428,6 +434,13 @@ export default function POS() {
             {waiterOrderCount > 0 && (
               <span className="ml-1 rounded-full bg-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{waiterOrderCount}</span>
             )}
+          </button>
+
+          {/* Coordinator View */}
+          <button onClick={() => setShowCoordinator(true)}
+            className="flex items-center gap-1.5 rounded-xl border-2 border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 hover:bg-gray-50 transition-colors">
+            <ChefHat className="h-4 w-4" />
+            Kitchen
           </button>
 
           {/* Orders History */}
