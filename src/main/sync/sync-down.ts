@@ -105,9 +105,18 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       counts.payment_methods = payments.length
     }
 
+    // Check if there are any pending (unsynced) orders — if so, skip table/room deletion
+    const pendingOrdersStmt = db.prepare("SELECT COUNT(*) as c FROM orders WHERE status NOT IN ('Completed', 'Void', 'Returned') OR sync_status IN ('pending', 'failed')")
+    const hasPending = pendingOrdersStmt.step()
+    const pendingCount = hasPending ? (pendingOrdersStmt.getAsObject() as any).c : 0
+    pendingOrdersStmt.free()
+    const canDeleteStaleData = pendingCount === 0
+
     // Sync tables
     try {
       const tables = await client.getTables()
+      const remoteTableNames = new Set(tables.map((t: any) => t.name))
+
       for (const t of tables) {
         const existingTable = db.prepare('SELECT status, current_order_id FROM tables_list WHERE name = ?')
         existingTable.bind([t.name])
@@ -122,6 +131,31 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
           [t.name, t.table_name, t.room || null, t.capacity || 4, currentStatus, currentOrder, t.is_active ? 1 : 0, t.branch || null]
         )
       }
+
+      // Delete local tables that no longer exist in ERPNext (only when no pending orders)
+      if (canDeleteStaleData) {
+        const localTablesStmt = db.prepare('SELECT name FROM tables_list')
+        const localNames: string[] = []
+        while (localTablesStmt.step()) {
+          localNames.push((localTablesStmt.getAsObject() as any).name)
+        }
+        localTablesStmt.free()
+
+        for (const localName of localNames) {
+          if (!remoteTableNames.has(localName)) {
+            // Check no order references this table before deleting
+            const orderRefStmt = db.prepare("SELECT COUNT(*) as c FROM orders WHERE table_name = ? AND status NOT IN ('Completed', 'Void', 'Returned')")
+            orderRefStmt.bind([localName])
+            const refCount = orderRefStmt.step() ? (orderRefStmt.getAsObject() as any).c : 0
+            orderRefStmt.free()
+
+            if (refCount === 0) {
+              db.run('DELETE FROM tables_list WHERE name = ?', [localName])
+            }
+          }
+        }
+      }
+
       counts.tables = tables.length
     } catch {
       // Tables doctype may not exist yet
@@ -131,6 +165,8 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
     // Sync rooms
     try {
       const rooms = await client.getRooms()
+      const remoteRoomNames = new Set(rooms.map((r: any) => r.name))
+
       for (const r of rooms) {
         db.run(
           `INSERT OR REPLACE INTO rooms (name, room_name, description, is_active, branch, synced_at)
@@ -138,6 +174,31 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
           [r.name, r.room_name, r.description || null, r.is_active ? 1 : 0, r.branch || null]
         )
       }
+
+      // Delete local rooms that no longer exist in ERPNext
+      if (canDeleteStaleData) {
+        const localRoomsStmt = db.prepare('SELECT name FROM rooms')
+        const localRoomNames: string[] = []
+        while (localRoomsStmt.step()) {
+          localRoomNames.push((localRoomsStmt.getAsObject() as any).name)
+        }
+        localRoomsStmt.free()
+
+        for (const localName of localRoomNames) {
+          if (!remoteRoomNames.has(localName)) {
+            // Only delete if no tables reference this room
+            const tableRefStmt = db.prepare("SELECT COUNT(*) as c FROM tables_list WHERE room = ?")
+            tableRefStmt.bind([localName])
+            const refCount = tableRefStmt.step() ? (tableRefStmt.getAsObject() as any).c : 0
+            tableRefStmt.free()
+
+            if (refCount === 0) {
+              db.run('DELETE FROM rooms WHERE name = ?', [localName])
+            }
+          }
+        }
+      }
+
       counts.rooms = rooms.length
     } catch {
       counts.rooms = 0
