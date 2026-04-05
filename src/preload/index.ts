@@ -158,6 +158,11 @@ const api = {
     list: () => ipcRenderer.invoke('waiters:list')
   },
 
+  // Touch keyboard
+  keyboard: {
+    show: () => ipcRenderer.invoke('keyboard:show')
+  },
+
   // Coordinator
   coordinator: {
     getActiveOrders: () => ipcRenderer.invoke('coordinator:getActiveOrders'),

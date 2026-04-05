@@ -1,5 +1,6 @@
-import { app, shell, BrowserWindow, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, ipcMain } from 'electron'
 import { join } from 'path'
+import { execSync } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase } from './database/schema'
 import { registerIpcHandlers } from './ipc/handlers'
@@ -56,6 +57,20 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers
   registerIpcHandlers()
+
+  // Windows touch keyboard support
+  if (process.platform === 'win32') {
+    ipcMain.handle('keyboard:show', () => {
+      try {
+        execSync('powershell -Command "& {$null = (New-Object -ComObject Shell.Application).ToggleDesktop; Start-Process -FilePath \\"C:\\Program Files\\Common Files\\microsoft shared\\ink\\TabTip.exe\\"}"', { windowsHide: true, timeout: 3000 })
+      } catch {
+        try {
+          execSync('start "" "C:\\Windows\\System32\\osk.exe"', { windowsHide: true, timeout: 3000 })
+        } catch { /* touch keyboard not available */ }
+      }
+      return { success: true }
+    })
+  }
 
   // Start auto-sync if configured
   startAutoSync()

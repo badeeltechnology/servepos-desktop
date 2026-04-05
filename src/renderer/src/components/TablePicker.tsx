@@ -56,12 +56,12 @@ export default function TablePicker({ onSelect, onCancel, currentTable }: Props)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[640px] max-h-[80vh] flex flex-col rounded-2xl bg-white shadow-2xl">
+      <div className="w-[90vw] max-w-[900px] max-h-[85vh] flex flex-col rounded-2xl bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b px-6 py-4">
+        <div className="flex items-center justify-between border-b px-5 py-3">
           <div>
-            <h2 className="text-xl font-bold">Select Table</h2>
-            <p className="text-sm text-muted-foreground">Choose a table for this order</p>
+            <h2 className="text-lg font-bold">Select Table</h2>
+            <p className="text-xs text-muted-foreground">{filteredTables.length} tables</p>
           </div>
           <button onClick={onCancel} className="rounded-lg p-2 text-muted-foreground hover:bg-muted">
             <X className="h-5 w-5" />
@@ -69,10 +69,10 @@ export default function TablePicker({ onSelect, onCancel, currentTable }: Props)
         </div>
 
         {/* Room tabs */}
-        <div className="flex gap-2 border-b px-6 py-3">
+        <div className="flex flex-wrap gap-1.5 border-b px-5 py-2">
           <button
             onClick={() => setActiveRoom(null)}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
               !activeRoom ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -82,7 +82,7 @@ export default function TablePicker({ onSelect, onCancel, currentTable }: Props)
             <button
               key={r.name}
               onClick={() => setActiveRoom(r.name)}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 activeRoom === r.name ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -92,18 +92,18 @@ export default function TablePicker({ onSelect, onCancel, currentTable }: Props)
         </div>
 
         {/* Status legend */}
-        <div className="flex items-center gap-4 px-6 py-2 text-xs">
+        <div className="flex items-center gap-4 px-5 py-1.5 text-[10px]">
           {['Available', 'Occupied', 'Reserved', 'Blocked'].map((s) => (
-            <span key={s} className="flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${statusDot[s]}`} />
+            <span key={s} className="flex items-center gap-1">
+              <span className={`h-1.5 w-1.5 rounded-full ${statusDot[s]}`} />
               {s}
             </span>
           ))}
         </div>
 
-        {/* Table grid */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          <div className="grid grid-cols-4 gap-3">
+        {/* Table grid — compact cards */}
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          <div className="grid grid-cols-6 gap-2 sm:grid-cols-7 md:grid-cols-8 lg:grid-cols-10">
             {filteredTables.map((table) => {
               const isAvailable = table.status === 'Available'
               const isCurrent = table.name === currentTable
@@ -112,22 +112,17 @@ export default function TablePicker({ onSelect, onCancel, currentTable }: Props)
                   key={table.name}
                   onClick={() => isAvailable && onSelect(table.name, table.room)}
                   disabled={!isAvailable && !isCurrent}
-                  className={`relative flex flex-col items-center justify-center rounded-xl border-2 p-5 transition-all ${
+                  className={`relative flex flex-col items-center justify-center rounded-lg border-2 px-1 py-2 transition-all ${
                     isCurrent
                       ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
                       : statusColors[table.status] || statusColors.Available
                   } ${isAvailable ? 'cursor-pointer active:scale-95' : 'cursor-not-allowed'}`}
                 >
-                  <span className="text-2xl font-bold">{table.table_name}</span>
-                  <div className="mt-1 flex items-center gap-1 text-xs opacity-70">
-                    <Users className="h-3 w-3" />
+                  <span className="text-sm font-bold leading-tight">{table.table_name}</span>
+                  <div className="flex items-center gap-0.5 text-[9px] opacity-60">
+                    <Users className="h-2.5 w-2.5" />
                     <span>{table.capacity}</span>
                   </div>
-                  {table.status !== 'Available' && (
-                    <span className="mt-1.5 rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium">
-                      {table.status}
-                    </span>
-                  )}
                 </button>
               )
             })}
@@ -138,8 +133,8 @@ export default function TablePicker({ onSelect, onCancel, currentTable }: Props)
         </div>
 
         {/* Footer */}
-        <div className="border-t px-6 py-3">
-          <button onClick={onCancel} className="w-full rounded-lg border border-input py-2.5 text-sm font-medium hover:bg-muted">
+        <div className="border-t px-5 py-2.5">
+          <button onClick={onCancel} className="w-full rounded-lg border border-input py-2 text-sm font-medium hover:bg-muted">
             Cancel
           </button>
         </div>

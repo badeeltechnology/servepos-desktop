@@ -15,6 +15,24 @@ function App() {
     checkSetup()
   }, [])
 
+  // Touch keyboard: trigger Windows on-screen keyboard when input/textarea gets focus
+  useEffect(() => {
+    let touchEnabled = false
+    // Detect if this is a touch device
+    const detectTouch = () => { touchEnabled = true; window.removeEventListener('touchstart', detectTouch) }
+    window.addEventListener('touchstart', detectTouch, { once: true })
+
+    const handleFocus = (e: FocusEvent) => {
+      if (!touchEnabled) return
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') {
+        try { (window.api as any).keyboard?.show?.() } catch {}
+      }
+    }
+    document.addEventListener('focusin', handleFocus)
+    return () => { document.removeEventListener('focusin', handleFocus) }
+  }, [])
+
   // Inactivity timeout
   useEffect(() => {
     if (!user) return
