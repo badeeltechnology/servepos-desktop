@@ -497,12 +497,19 @@ function runMigrations(): void {
 
   // Migration 11: Add coordinator role to users (SQLite can't alter CHECK constraints,
   // so recreate table with new constraint)
+  // Test by attempting an INSERT that would fail the old CHECK, then rollback
+  let needsUserMigration = false
   try {
-    const testStmt = database.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'coordinator'")
-    testStmt.step()
-    testStmt.free()
+    database.run('SAVEPOINT test_coordinator')
+    database.run("INSERT INTO users (id, name, pin_hash, role) VALUES ('__test__', '__test__', '__test__', 'coordinator')")
+    database.run("DELETE FROM users WHERE id = '__test__'")
+    database.run('RELEASE SAVEPOINT test_coordinator')
   } catch {
-    // CHECK constraint blocks coordinator role — recreate table
+    needsUserMigration = true
+    try { database.run('ROLLBACK TO SAVEPOINT test_coordinator') } catch {}
+    try { database.run('RELEASE SAVEPOINT test_coordinator') } catch {}
+  }
+  if (needsUserMigration) {
     database.run(`CREATE TABLE IF NOT EXISTS users_new (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -522,14 +529,18 @@ function runMigrations(): void {
   }
 
   // Migration 12: Expand order status CHECK constraint to support new statuses
-  if (!hasColumn('orders', 'waiter_name')) {
-    // Already migrated in migration 9 — use as marker that we've been through recent migrations
-  }
+  let needsOrderMigration = false
   try {
-    // Test if new statuses are allowed
-    database.run("UPDATE orders SET status = status WHERE 1=0 AND status = 'Preparing'")
+    database.run('SAVEPOINT test_order_status')
+    database.run("INSERT INTO orders (id, order_number, order_type, status) VALUES ('__test__', '__test_ord__', 'Dine In', 'Preparing')")
+    database.run("DELETE FROM orders WHERE id = '__test__'")
+    database.run('RELEASE SAVEPOINT test_order_status')
   } catch {
-    // Need to recreate orders table with expanded CHECK
+    needsOrderMigration = true
+    try { database.run('ROLLBACK TO SAVEPOINT test_order_status') } catch {}
+    try { database.run('RELEASE SAVEPOINT test_order_status') } catch {}
+  }
+  if (needsOrderMigration) {
     database.run(`CREATE TABLE IF NOT EXISTS orders_new (
       id TEXT PRIMARY KEY,
       order_number TEXT NOT NULL UNIQUE,
