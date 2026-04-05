@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { PauseCircle, Clock, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import { PauseCircle, Clock, Plus, ChevronLeft, ChevronRight, UserCheck } from 'lucide-react'
 
 interface OrderSummary {
   id: string
@@ -7,6 +7,7 @@ interface OrderSummary {
   status: string
   table_name: string | null
   order_type: string
+  waiter_name: string | null
   grand_total: number
   created_at: string
 }
@@ -51,16 +52,21 @@ export default function OrdersBar({ activeOrderId, onSelectOrder, onNewOrder }: 
                   ? 'bg-primary text-primary-foreground'
                   : order.status === 'Hold'
                     ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                    : 'bg-white text-foreground shadow-sm hover:bg-muted'
+                    : order.waiter_name
+                      ? 'bg-green-100 text-green-800 shadow-sm hover:bg-green-200'
+                      : 'bg-white text-foreground shadow-sm hover:bg-muted'
               }`}
             >
               {order.status === 'Hold' ? (
                 <PauseCircle className="h-3 w-3" />
+              ) : order.waiter_name ? (
+                <UserCheck className="h-3 w-3" />
               ) : (
                 <Clock className="h-3 w-3" />
               )}
               <span>{order.table_name || order.order_type}</span>
               <span className="opacity-50">#{order.order_number.split('-').pop()}</span>
+              {order.waiter_name && <span className="opacity-40 text-[9px]">{order.waiter_name}</span>}
             </button>
           ))}
         </div>
