@@ -425,10 +425,10 @@ export function removeOrderItem(id: string): boolean {
 
 // ==================== Order Payments ====================
 
-export function addOrderPayment(orderId: string, method: string, amount: number, reference?: string): string {
+export function addOrderPayment(orderId: string, method: string, amount: number, reference?: string, collectedByWaiter?: string): string {
   const id = uuidv4()
-  execute('INSERT INTO order_payments (id, order_id, payment_method, amount, reference) VALUES (?, ?, ?, ?, ?)',
-    [id, orderId, method, amount, reference ?? null])
+  execute('INSERT INTO order_payments (id, order_id, payment_method, amount, reference, collected_by_waiter) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, orderId, method, amount, reference ?? null, collectedByWaiter ?? null])
   return id
 }
 

@@ -191,7 +191,7 @@ export default function POS() {
 
   // Complete payment
   const handlePaymentComplete = useCallback(
-    async (payments: { method: string; amount: number; reference: string }[]) => {
+    async (payments: { method: string; amount: number; reference: string }[], collectedByWaiter: string | null) => {
       setProcessing(true)
       try {
         let orderId = activeOrderId
@@ -212,9 +212,9 @@ export default function POS() {
 
         if (!order) throw new Error('Order not found')
 
-        // Add payments
+        // Add payments with waiter collection tracking
         for (const p of payments) {
-          await window.api.orderPayments.add(orderId!, p.method, p.amount, p.reference || null)
+          await window.api.orderPayments.add(orderId!, p.method, p.amount, p.reference || null, collectedByWaiter || undefined)
         }
 
         // Complete the order
@@ -493,7 +493,7 @@ export default function POS() {
 
       {/* Payment dialog */}
       {showPayment && (
-        <PaymentDialog grandTotal={cart.getGrandTotal(taxRate)} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />
+        <PaymentDialog grandTotal={cart.getGrandTotal(taxRate)} orderWaiterName={cart.waiterName} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />
       )}
 
       {/* Waiter Orders Panel */}

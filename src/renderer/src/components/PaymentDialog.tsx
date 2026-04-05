@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Plus, Trash2, CreditCard, Banknote, Smartphone } from 'lucide-react'
+import { X, Plus, Trash2, CreditCard, Banknote, Smartphone, UserCheck } from 'lucide-react'
 
 interface PaymentEntry {
   method: string
@@ -9,7 +9,8 @@ interface PaymentEntry {
 
 interface Props {
   grandTotal: number
-  onComplete: (payments: PaymentEntry[]) => void
+  orderWaiterName?: string | null
+  onComplete: (payments: PaymentEntry[], collectedByWaiter: string | null) => void
   onCancel: () => void
 }
 
@@ -19,13 +20,16 @@ const methodIcons: Record<string, React.ReactNode> = {
   'Mobile Payment': <Smartphone className="h-5 w-5" />
 }
 
-export default function PaymentDialog({ grandTotal, onComplete, onCancel }: Props) {
+export default function PaymentDialog({ grandTotal, orderWaiterName, onComplete, onCancel }: Props) {
   const [paymentMethods, setPaymentMethods] = useState<{ name: string; mode_of_payment: string; is_default: number }[]>([])
   const [payments, setPayments] = useState<PaymentEntry[]>([])
   const [error, setError] = useState('')
+  const [waitersList, setWaitersList] = useState<{ name: string; waiter_name: string }[]>([])
+  const [collectedBy, setCollectedBy] = useState<string>(orderWaiterName || '')
 
   useEffect(() => {
     loadPaymentMethods()
+    loadWaiters()
   }, [])
 
   async function loadPaymentMethods() {
@@ -37,6 +41,13 @@ export default function PaymentDialog({ grandTotal, onComplete, onCancel }: Prop
     if (defaultMethod) {
       setPayments([{ method: defaultMethod.mode_of_payment, amount: grandTotal, reference: '' }])
     }
+  }
+
+  async function loadWaiters() {
+    try {
+      const list = await window.api.waiters.list()
+      setWaitersList(list || [])
+    } catch { /* ignore */ }
   }
 
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0)
@@ -77,7 +88,7 @@ export default function PaymentDialog({ grandTotal, onComplete, onCancel }: Prop
       setError(`Payment is short by ${(grandTotal - totalPaid).toFixed(2)}`)
       return
     }
-    onComplete(payments)
+    onComplete(payments, collectedBy || null)
   }
 
   // Quick cash amounts
@@ -185,6 +196,26 @@ export default function PaymentDialog({ grandTotal, onComplete, onCancel }: Prop
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Collected by waiter */}
+          {waitersList.length > 0 && (
+            <div className="mt-4">
+              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-gray-600">
+                <UserCheck className="h-3.5 w-3.5" />
+                Payment collected by
+              </label>
+              <select
+                value={collectedBy}
+                onChange={(e) => setCollectedBy(e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">-- Cashier (direct) --</option>
+                {waitersList.map((w) => (
+                  <option key={w.name} value={w.waiter_name}>{w.waiter_name}</option>
+                ))}
+              </select>
             </div>
           )}
 

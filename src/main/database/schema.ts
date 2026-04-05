@@ -490,6 +490,11 @@ function runMigrations(): void {
     )
   `)
 
+  // Migration 10b: Add payment_collected_by to order_payments
+  if (!hasColumn('order_payments', 'collected_by_waiter')) {
+    database.run('ALTER TABLE order_payments ADD COLUMN collected_by_waiter TEXT')
+  }
+
   // Migration 11: Add coordinator role to users (SQLite can't alter CHECK constraints,
   // so recreate table with new constraint)
   try {

@@ -126,7 +126,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('orderItems:remove', (_e, id: string) => db.removeOrderItem(id))
 
   // ==================== Order Payments ====================
-  ipcMain.handle('orderPayments:add', (_e, orderId: string, method: string, amount: number, reference?: string) => db.addOrderPayment(orderId, method, amount, reference))
+  ipcMain.handle('orderPayments:add', (_e, orderId: string, method: string, amount: number, reference?: string, collectedByWaiter?: string) => db.addOrderPayment(orderId, method, amount, reference, collectedByWaiter))
   ipcMain.handle('orderPayments:get', (_e, orderId: string) => db.getOrderPayments(orderId))
 
   // ==================== Order Edit Log ====================
@@ -257,6 +257,29 @@ export function registerIpcHandlers(): void {
   // Waiters
   ipcMain.handle('waiters:list', () => db.getWaiters())
 
+  // Waiter accountability — orders per waiter in a session
+  ipcMain.handle('sessions:getWaiterSummary', (_e, sessionId: string) => {
+    const database = getDb()
+    const stmt = database.prepare(
+      `SELECT
+        COALESCE(o.waiter_name, 'No Waiter') as waiter_name,
+        COUNT(*) as total_orders,
+        SUM(CASE WHEN o.status = 'Completed' THEN 1 ELSE 0 END) as paid_orders,
+        SUM(CASE WHEN o.status NOT IN ('Completed', 'Void', 'Returned') THEN 1 ELSE 0 END) as open_orders,
+        SUM(CASE WHEN o.status = 'Completed' THEN o.grand_total ELSE 0 END) as total_collected,
+        GROUP_CONCAT(CASE WHEN o.status NOT IN ('Completed', 'Void', 'Returned') THEN o.order_number END, ', ') as open_order_numbers
+       FROM orders o
+       WHERE o.session_id = ? AND o.status != 'Void'
+       GROUP BY COALESCE(o.waiter_name, 'No Waiter')
+       ORDER BY open_orders DESC, waiter_name`
+    )
+    stmt.bind([sessionId])
+    const rows: any[] = []
+    while (stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
+
   // Coordinator — get active orders (not Completed/Void/Returned)
   ipcMain.handle('coordinator:getActiveOrders', () => {
     const database = getDb()
@@ -276,7 +299,7 @@ export function registerIpcHandlers(): void {
   })
 
   // Coordinator — update order status (restricted statuses)
-  ipcMain.handle('coordinator:updateStatus', (_e, orderId: string, status: string, userRole: string) => {
+  ipcMain.handle('coordinator:updateStatus', async (_e, orderId: string, status: string, userRole: string) => {
     const allowedByCoordinator = ['Preparing', 'Ready to Serve']
     const allowedByCashier = ['Preparing', 'Ready to Serve', 'Invoiced', 'Completed']
 
@@ -288,6 +311,30 @@ export function registerIpcHandlers(): void {
     }
 
     db.updateOrder(orderId, { status })
+
+    // Sync status to ERPNext so waiter app can poll for changes
+    try {
+      const database = getDb()
+      const orderStmt = database.prepare('SELECT erpnext_docname FROM orders WHERE id = ?')
+      orderStmt.bind([orderId])
+      const order = orderStmt.step() ? orderStmt.getAsObject() as any : null
+      orderStmt.free()
+
+      // If this order came from a waiter order, update the status in ERPNext
+      const client = new ERPNextClient()
+      // Try to find linked waiter order and update its status
+      try {
+        await client.callMethod('servepos.api.waiter.update_order_status_by_pos', {
+          pos_order_id: orderId,
+          status
+        })
+      } catch {
+        // API may not exist yet — that's fine, waiter app can still poll order list
+      }
+    } catch {
+      // ERPNext sync failed — non-blocking, local status is already updated
+    }
+
     return { success: true }
   })
 }

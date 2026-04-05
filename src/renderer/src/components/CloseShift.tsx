@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Clock, CheckCircle, AlertTriangle, Banknote } from 'lucide-react'
+import { X, Clock, CheckCircle, AlertTriangle, Banknote, UserCheck } from 'lucide-react'
 
 interface Props {
   sessionId: string
@@ -20,6 +20,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
   const [totalSales, setTotalSales] = useState(0)
   const [openOrderCount, setOpenOrderCount] = useState(0)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
+  const [waiterSummary, setWaiterSummary] = useState<any[]>([])
 
   useEffect(() => { loadData() }, [sessionId])
 
@@ -55,6 +56,12 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
     }
 
     setExpected(expectedAmounts)
+
+    // Load waiter summary
+    try {
+      const ws = await window.api.sessions.getWaiterSummary(sessionId)
+      setWaiterSummary(ws || [])
+    } catch { /* ignore */ }
 
     // Pre-fill closing with expected
     const defaults: Record<string, number> = {}
@@ -191,6 +198,45 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
               </div>
               <p className="mt-1 text-xs text-gray-400">Electronic payments are tracked automatically from transactions.</p>
             </>
+          )}
+
+          {/* Waiter Accountability */}
+          {waiterSummary.length > 0 && (
+            <div className="mt-5">
+              <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-gray-500 uppercase">
+                <UserCheck className="h-4 w-4" />
+                Waiter Accountability
+              </h3>
+              <div className="rounded-xl border-2 border-gray-100 overflow-hidden">
+                <div className="grid grid-cols-4 gap-2 bg-gray-50 px-4 py-2 text-[11px] font-bold text-gray-500 uppercase">
+                  <span>Waiter</span>
+                  <span className="text-right">Paid</span>
+                  <span className="text-right">Open</span>
+                  <span className="text-right">Collected</span>
+                </div>
+                {waiterSummary.map((w: any) => (
+                  <div key={w.waiter_name} className={`grid grid-cols-4 gap-2 items-center border-t px-4 py-2.5 ${w.open_orders > 0 ? 'bg-amber-50' : ''}`}>
+                    <span className="text-sm font-semibold">{w.waiter_name}</span>
+                    <span className="text-right text-sm text-gray-600">{w.paid_orders}</span>
+                    <span className={`text-right text-sm font-bold ${w.open_orders > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                      {w.open_orders > 0 ? w.open_orders : '-'}
+                    </span>
+                    <span className="text-right font-mono text-sm font-semibold">{(w.total_collected || 0).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              {waiterSummary.some((w: any) => w.open_orders > 0) && (
+                <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  <span>
+                    <strong>Uncleared orders: </strong>
+                    {waiterSummary.filter((w: any) => w.open_orders > 0).map((w: any) =>
+                      `${w.waiter_name} (${w.open_order_numbers})`
+                    ).join('; ')}
+                  </span>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Remarks */}

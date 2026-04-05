@@ -85,7 +85,7 @@ const api = {
 
   // Order Payments
   orderPayments: {
-    add: (orderId: string, method: string, amount: number, reference?: string) => ipcRenderer.invoke('orderPayments:add', orderId, method, amount, reference),
+    add: (orderId: string, method: string, amount: number, reference?: string, collectedByWaiter?: string) => ipcRenderer.invoke('orderPayments:add', orderId, method, amount, reference, collectedByWaiter),
     get: (orderId: string) => ipcRenderer.invoke('orderPayments:get', orderId)
   },
 
@@ -122,6 +122,7 @@ const api = {
     getOrders: (sessionId: string) => ipcRenderer.invoke('sessions:getOrders', sessionId),
     getOpenOrders: (sessionId: string) => ipcRenderer.invoke('sessions:getOpenOrders', sessionId),
     getPendingSync: (sessionId: string) => ipcRenderer.invoke('sessions:getPendingSync', sessionId),
+    getWaiterSummary: (sessionId: string) => ipcRenderer.invoke('sessions:getWaiterSummary', sessionId),
     getAll: (limit?: number) => ipcRenderer.invoke('sessions:getAll', limit)
   },
 
