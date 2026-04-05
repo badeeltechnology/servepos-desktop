@@ -395,11 +395,16 @@ function WaiterOrders() {
     return () => clearInterval(timer)
   }, [])
 
+  const [fetchError, setFetchError] = useState('')
+
   async function loadOrders() {
     try {
+      setFetchError('')
       const data = await window.api.waiterOrders.getPending()
       setOrders(data || [])
-    } catch {}
+    } catch (e: any) {
+      setFetchError(e?.message || 'Failed to fetch waiter orders')
+    }
     setLoading(false)
   }
 
@@ -438,9 +443,15 @@ function WaiterOrders() {
         </div>
       </div>
 
+      {fetchError && (
+        <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <strong>Error:</strong> {fetchError}
+        </div>
+      )}
+
       {loading ? (
         <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">Loading...</div>
-      ) : orders.length === 0 ? (
+      ) : orders.length === 0 && !fetchError ? (
         <div className="rounded-xl border bg-white p-8 text-center">
           <ClipboardList className="mx-auto mb-3 h-12 w-12 text-gray-200" />
           <p className="text-sm text-muted-foreground">No pending waiter orders</p>
