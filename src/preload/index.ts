@@ -150,7 +150,8 @@ const api = {
     amendmentKot: (orderId: string, amendments: any[]) => ipcRenderer.invoke('print:amendmentKot', orderId, amendments),
     waiterCopy: (orderId: string) => ipcRenderer.invoke('print:waiterCopy', orderId),
     prepDoc: (orderId: string) => ipcRenderer.invoke('print:prepDoc', orderId),
-    invoice: (orderId: string) => ipcRenderer.invoke('print:invoice', orderId)
+    invoice: (orderId: string) => ipcRenderer.invoke('print:invoice', orderId),
+    pollReadyOrders: () => ipcRenderer.invoke('print:pollReadyOrders')
   },
 
   // Waiters

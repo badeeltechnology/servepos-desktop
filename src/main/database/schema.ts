@@ -479,6 +479,11 @@ function runMigrations(): void {
     database.run('ALTER TABLE orders ADD COLUMN waiter_name TEXT')
   }
 
+  // Migration 9b: Add invoice_printed flag to orders
+  if (!hasColumn('orders', 'invoice_printed')) {
+    database.run('ALTER TABLE orders ADD COLUMN invoice_printed INTEGER DEFAULT 0')
+  }
+
   // Migration 10: Add waiters table for locally cached waiter list
   database.run(`
     CREATE TABLE IF NOT EXISTS waiters (

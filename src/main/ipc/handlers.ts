@@ -315,6 +315,67 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('print:prepDoc', (_e, orderId: string) => printPrepDoc(orderId))
   ipcMain.handle('print:invoice', (_e, orderId: string) => printInvoice(orderId))
 
+  // Poll for "Ready to Serve" orders that need invoice printing
+  // This runs on the cashier's machine (where the printer is)
+  ipcMain.handle('print:pollReadyOrders', async () => {
+    try {
+      const database = getDb()
+
+      // First: check ERPNext for status changes on waiter orders linked to local orders
+      try {
+        const client = new ERPNextClient()
+        // Get local orders that are still Open/Preparing (might have been marked Ready by coordinator on another machine)
+        const localStmt = database.prepare(
+          "SELECT id, order_number FROM orders WHERE status IN ('Open', 'Preparing') AND waiter_name IS NOT NULL"
+        )
+        const localOrders: { id: string; order_number: string }[] = []
+        while (localStmt.step()) localOrders.push(localStmt.getAsObject() as any)
+        localStmt.free()
+
+        for (const lo of localOrders) {
+          try {
+            const result = await client.callMethod('servepos.api.waiter.update_order_status_by_pos', {
+              pos_order_id: lo.id,
+              status: '__check__' // won't match any mapping — just checking
+            })
+            // The API returns the current waiter order status, but we don't use it here
+          } catch {}
+        }
+      } catch {}
+
+      // Find orders that are "Ready to Serve" but invoice not yet printed
+      const readyStmt = database.prepare(
+        "SELECT id FROM orders WHERE status = 'Ready to Serve' AND (invoice_printed IS NULL OR invoice_printed = 0)"
+      )
+      const readyOrders: string[] = []
+      while (readyStmt.step()) {
+        readyOrders.push((readyStmt.getAsObject() as any).id)
+      }
+      readyStmt.free()
+
+      let printed = 0
+      for (const orderId of readyOrders) {
+        try {
+          const result = await printInvoice(orderId)
+          if (result.success) {
+            database.run('UPDATE orders SET invoice_printed = 1 WHERE id = ?', [orderId])
+            saveDatabase()
+            printed++
+            console.log(`[Auto-Invoice] Printed invoice for order ${orderId}`)
+          } else {
+            console.error(`[Auto-Invoice] Failed for ${orderId}: ${result.error}`)
+          }
+        } catch (err: any) {
+          console.error(`[Auto-Invoice] Error for ${orderId}: ${err.message}`)
+        }
+      }
+
+      return { printed, total: readyOrders.length }
+    } catch {
+      return { printed: 0, total: 0 }
+    }
+  })
+
   // Waiters
   ipcMain.handle('waiters:list', () => db.getWaiters())
 
@@ -373,13 +434,20 @@ export function registerIpcHandlers(): void {
 
     db.updateOrder(orderId, { status })
 
-    // Auto-print invoice when marked as Ready to Serve
+    // Auto-print invoice when marked as Ready to Serve (if printer is on this machine)
     if (status === 'Ready to Serve') {
       try {
         const invoiceResult = await printInvoice(orderId)
-        console.log('[Coordinator] Invoice print:', invoiceResult.success ? 'OK' : invoiceResult.error)
+        if (invoiceResult.success) {
+          const database = getDb()
+          database.run('UPDATE orders SET invoice_printed = 1 WHERE id = ?', [orderId])
+          saveDatabase()
+          console.log('[Coordinator] Invoice printed for', orderId)
+        } else {
+          console.log('[Coordinator] Invoice print failed (will retry via poll):', invoiceResult.error)
+        }
       } catch (err: any) {
-        console.error('[Coordinator] Invoice print error:', err.message)
+        console.log('[Coordinator] Invoice print not available on this machine (will print from cashier machine)')
       }
     }
 

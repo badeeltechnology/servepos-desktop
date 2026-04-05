@@ -59,10 +59,15 @@ export default function POS() {
       } catch {}
     }, 10000)
 
+    // Poll for ready orders that need invoice printing (every 10 seconds)
+    const invoiceTimer = setInterval(async () => {
+      try { await window.api.print.pollReadyOrders() } catch {}
+    }, 10000)
+
     // Initial load
     window.api.waiterOrders.getPending().then((o: any) => setWaiterOrderCount(o?.length || 0)).catch(() => {})
 
-    return () => { clearInterval(timer); clearInterval(woTimer) }
+    return () => { clearInterval(timer); clearInterval(woTimer); clearInterval(invoiceTimer) }
   }, [showWaiterOrders])
 
   // Auto-dismiss toast
