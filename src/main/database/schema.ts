@@ -508,6 +508,7 @@ function runMigrations(): void {
     schemaStmt.free()
 
     if (schemaSql && !schemaSql.includes('coordinator')) {
+      database.run('PRAGMA foreign_keys = OFF')
       database.run(`CREATE TABLE users_new (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -524,6 +525,7 @@ function runMigrations(): void {
       database.run('INSERT INTO users_new SELECT * FROM users')
       database.run('DROP TABLE users')
       database.run('ALTER TABLE users_new RENAME TO users')
+      database.run('PRAGMA foreign_keys = ON')
     }
   }
 
@@ -538,6 +540,8 @@ function runMigrations(): void {
     orderSchemaStmt.free()
 
     if (orderSchemaSql && !orderSchemaSql.includes('Preparing')) {
+    // Disable FK constraints during table recreation
+    database.run('PRAGMA foreign_keys = OFF')
     database.run(`CREATE TABLE orders_new (
       id TEXT PRIMARY KEY,
       order_number TEXT NOT NULL UNIQUE,
@@ -578,6 +582,7 @@ function runMigrations(): void {
     database.run('CREATE INDEX IF NOT EXISTS idx_orders_sync ON orders(sync_status)')
     database.run('CREATE INDEX IF NOT EXISTS idx_orders_cashier ON orders(cashier_id)')
     database.run('CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(created_at)')
+    database.run('PRAGMA foreign_keys = ON')
     }
   }
 }
