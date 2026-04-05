@@ -2,6 +2,7 @@ import { getDb, saveDatabase } from '../database/schema'
 import { getConfig, getAllReceiptConfig, getOrderItems, getOrderPayments } from '../database/queries'
 import { sendToPrinter, getPrinters, getPrintRoutes, PrinterConfig } from './printer'
 import { generateReceipt, generateKot, generateWaiterCopy } from './templates'
+import { processForPrinter } from './arabic-bitmap'
 import { v4 as uuidv4 } from 'uuid'
 
 // Get next KOT number
@@ -99,7 +100,8 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
   }
 
   const receipt = generateReceipt(receiptData)
-  const result = await sendToPrinter(printer, receipt)
+  const printBuffer = await processForPrinter(receipt, printer.paper_width || 80)
+  const result = await sendToPrinter(printer, printBuffer)
   logPrint(orderId, 'receipt', printer.id, result.success, result.error)
   return result
 }
@@ -178,7 +180,8 @@ export async function printKots(orderId: string): Promise<{ success: boolean; pr
     }
 
     const kot = generateKot(kotData)
-    const result = await sendToPrinter(group.printer, kot)
+    const kotBuffer = await processForPrinter(kot, group.printer.paper_width || 80)
+    const result = await sendToPrinter(group.printer, kotBuffer)
     logPrint(orderId, 'kot', group.printer.id, result.success, result.error)
 
     if (result.success) {
@@ -225,7 +228,8 @@ export async function printAmendmentKot(orderId: string, amendments: { action: s
     amendmentActions: amendments
   })
 
-  const result = await sendToPrinter(printer, kot)
+  const kotBuffer = await processForPrinter(kot, printer.paper_width || 80)
+  const result = await sendToPrinter(printer, kotBuffer)
   logPrint(orderId, 'kot_amendment', printer.id, result.success, result.error)
   return result
 }
@@ -279,7 +283,8 @@ export async function printWaiterCopy(orderId: string): Promise<{ success: boole
   }
 
   const copy = generateWaiterCopy(waiterData)
-  const result = await sendToPrinter(printer, copy)
+  const copyBuffer = await processForPrinter(copy, printer.paper_width || 80)
+  const result = await sendToPrinter(printer, copyBuffer)
   logPrint(orderId, 'waiter_copy', printer.id, result.success, result.error)
   return result
 }

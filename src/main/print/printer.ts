@@ -43,17 +43,18 @@ export interface PrinterConfig {
   usb_product_id: string | null
 }
 
-export async function sendToPrinter(printer: PrinterConfig, data: string): Promise<{ success: boolean; error?: string }> {
+export async function sendToPrinter(printer: PrinterConfig, data: string | Buffer): Promise<{ success: boolean; error?: string }> {
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8')
   if (printer.connection_type === 'network' && printer.address) {
-    return sendToNetworkPrinter(printer.address, printer.port, data)
+    return sendToNetworkPrinter(printer.address, printer.port, buffer)
   }
   if (printer.connection_type === 'usb') {
-    return sendToUsbPrinter(printer, data)
+    return sendToUsbPrinter(printer, buffer)
   }
   return { success: false, error: 'Unsupported printer connection type' }
 }
 
-function sendToUsbPrinter(printer: PrinterConfig, data: string): Promise<{ success: boolean; error?: string }> {
+function sendToUsbPrinter(printer: PrinterConfig, data: Buffer): Promise<{ success: boolean; error?: string }> {
   return new Promise((resolve) => {
     try {
       const printerName = printer.address
@@ -63,7 +64,7 @@ function sendToUsbPrinter(printer: PrinterConfig, data: string): Promise<{ succe
       }
 
       const tempFile = join(tmpdir(), `servepos-print-${Date.now()}.bin`)
-      writeFileSync(tempFile, Buffer.from(data, 'utf8'))
+      writeFileSync(tempFile, data)
 
       try {
         if (process.platform === 'win32') {
@@ -175,7 +176,7 @@ export function discoverUsbPrinters(): { name: string; port: string }[] {
   }
 }
 
-function sendToNetworkPrinter(address: string, port: number, data: string): Promise<{ success: boolean; error?: string }> {
+function sendToNetworkPrinter(address: string, port: number, data: Buffer): Promise<{ success: boolean; error?: string }> {
   return new Promise((resolve) => {
     const socket = new net.Socket()
     const timeout = setTimeout(() => {
@@ -184,7 +185,7 @@ function sendToNetworkPrinter(address: string, port: number, data: string): Prom
     }, 5000)
 
     socket.connect(port, address, () => {
-      socket.write(Buffer.from(data, 'utf8'), () => {
+      socket.write(data, () => {
         clearTimeout(timeout)
         socket.end()
         resolve({ success: true })
