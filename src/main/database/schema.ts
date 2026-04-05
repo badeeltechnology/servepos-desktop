@@ -585,6 +585,32 @@ function runMigrations(): void {
     database.run('PRAGMA foreign_keys = ON')
     }
   }
+
+  // Migration 13: Expand print_routes to support prep_doc, invoice types
+  {
+    const prSchemaStmt = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='print_routes'")
+    const hasPrSchema = prSchemaStmt.step()
+    const prSchemaSql = hasPrSchema ? (prSchemaStmt.getAsObject() as any).sql as string : ''
+    prSchemaStmt.free()
+
+    if (prSchemaSql && !prSchemaSql.includes('prep_doc')) {
+      database.run('PRAGMA foreign_keys = OFF')
+      try { database.run('DROP TABLE IF EXISTS print_routes_new') } catch {}
+      database.run(`CREATE TABLE print_routes_new (
+        id TEXT PRIMARY KEY,
+        print_type TEXT NOT NULL CHECK(print_type IN ('receipt', 'kot', 'prep_doc', 'invoice')),
+        item_group TEXT,
+        kitchen_station TEXT,
+        printer_id TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1,
+        FOREIGN KEY (printer_id) REFERENCES printers(id) ON DELETE CASCADE
+      )`)
+      database.run('INSERT INTO print_routes_new SELECT * FROM print_routes')
+      database.run('DROP TABLE print_routes')
+      database.run('ALTER TABLE print_routes_new RENAME TO print_routes')
+      database.run('PRAGMA foreign_keys = ON')
+    }
+  }
 }
 
 export function saveDatabase(): void {

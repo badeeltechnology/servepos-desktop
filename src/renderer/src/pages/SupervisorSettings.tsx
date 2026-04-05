@@ -912,8 +912,10 @@ function PrinterManagement() {
               <label className="mb-1 block text-xs font-medium">Print Type</label>
               <select value={routeType} onChange={(e) => setRouteType(e.target.value as any)}
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
-                <option value="receipt">Receipt</option>
                 <option value="kot">KOT</option>
+                <option value="prep_doc">Prep Doc</option>
+                <option value="invoice">Invoice</option>
+                <option value="receipt">Receipt</option>
               </select>
             </div>
             <div>
@@ -926,7 +928,7 @@ function PrinterManagement() {
             <div>
               <label className="mb-1 block text-xs font-medium">Item Group (KOT only)</label>
               <select value={routeItemGroup} onChange={(e) => setRouteItemGroup(e.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" disabled={routeType === 'receipt'}>
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" disabled={routeType !== 'kot'}>
                 <option value="">All Items</option>
                 {itemGroups.map((g) => <option key={g.name} value={g.name}>{g.name}</option>)}
               </select>
@@ -939,7 +941,7 @@ function PrinterManagement() {
               if (!routePrinter) return
               await window.api.printRoutes.add({
                 printType: routeType,
-                itemGroup: routeType === 'kot' ? routeItemGroup || null : null,
+                itemGroup: routeType === 'kot' && routeItemGroup ? routeItemGroup : null,
                 printerId: routePrinter
               })
               setShowRouteForm(false)
@@ -960,7 +962,12 @@ function PrinterManagement() {
             {routes.map((r) => (
               <div key={r.id} className="flex items-center justify-between px-5 py-2.5">
                 <span className="text-sm">
-                  <span className={`rounded px-2 py-0.5 text-[10px] font-medium uppercase ${r.print_type === 'receipt' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>{r.print_type}</span>
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-medium uppercase ${
+                    r.print_type === 'receipt' ? 'bg-green-50 text-green-700' :
+                    r.print_type === 'kot' ? 'bg-orange-50 text-orange-700' :
+                    r.print_type === 'prep_doc' ? 'bg-purple-50 text-purple-700' :
+                    r.print_type === 'invoice' ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-700'
+                  }`}>{r.print_type === 'prep_doc' ? 'PREP' : r.print_type}</span>
                   <span className="ml-2">{r.item_group || r.kitchen_station || 'All Items'}</span>
                   <span className="ml-2 text-muted-foreground">→</span>
                   <span className="ml-2 font-medium">{r.printer_name}</span>

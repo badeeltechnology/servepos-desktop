@@ -118,19 +118,14 @@ export async function printPrepDoc(orderId: string): Promise<{ success: boolean;
 
   const items = getOrderItems(orderId)
 
-  // Use prep_doc printer from config, fallback to receipt printer
-  const config = getAllReceiptConfig()
+  // Find printer: prep_doc route → receipt route → first printer
   const routes = getPrintRoutes()
   const printers = getPrinters()
 
-  let printer: any = null
-  if (config.prep_doc_printer_id) {
-    printer = printers.find((p) => p.id === config.prep_doc_printer_id)
-  }
-  if (!printer) {
-    const receiptRoute = routes.find((r) => r.print_type === 'receipt')
-    if (receiptRoute) printer = printers.find((p) => p.id === receiptRoute.printer_id)
-  }
+  const prepRoute = routes.find((r) => r.print_type === 'prep_doc')
+  const receiptRoute = routes.find((r) => r.print_type === 'receipt')
+  const route = prepRoute || receiptRoute
+  const printer = route ? printers.find((p) => p.id === route.printer_id) : printers[0]
   if (!printer) return { success: false, error: 'No printer configured for preparation document' }
 
   const prepData = {
@@ -173,18 +168,14 @@ export async function printInvoice(orderId: string): Promise<{ success: boolean;
 
   const items = getOrderItems(orderId)
 
-  const config = getAllReceiptConfig()
+  // Find printer: invoice route → receipt route → first printer
   const routes = getPrintRoutes()
   const printers = getPrinters()
 
-  let printer: any = null
-  if (config.invoice_printer_id) {
-    printer = printers.find((p) => p.id === config.invoice_printer_id)
-  }
-  if (!printer) {
-    const receiptRoute = routes.find((r) => r.print_type === 'receipt')
-    if (receiptRoute) printer = printers.find((p) => p.id === receiptRoute.printer_id)
-  }
+  const invoiceRoute = routes.find((r) => r.print_type === 'invoice')
+  const receiptRoute = routes.find((r) => r.print_type === 'receipt')
+  const route = invoiceRoute || receiptRoute
+  const printer = route ? printers.find((p) => p.id === route.printer_id) : printers[0]
   if (!printer) return { success: false, error: 'No printer configured for invoice' }
 
   const taxEnabled = config.tax_enabled === '1'
@@ -254,33 +245,51 @@ export async function printKots(orderId: string): Promise<{ success: boolean; pr
   const kotRoutes = routes.filter((r) => r.print_type === 'kot')
   if (kotRoutes.length === 0) return { success: false, printed: 0, errors: ['No KOT printers configured'] }
 
-  // Build printer -> items mapping
-  const printerItems: Record<string, { printer: PrinterConfig; station: string; items: any[] }> = {}
+  // Routes with a specific item_group filter
+  const specificRoutes = kotRoutes.filter((r) => r.item_group)
+  // Catch-all route: one without item_group, or fallback to first route
+  const catchAllRoute = kotRoutes.find((r) => !r.item_group && !r.kitchen_station) || kotRoutes[0]
+
+  // Build route -> items mapping (group by route, NOT by printer — separate KOTs per station)
+  const routeItems: Record<string, { printer: PrinterConfig; station: string; items: any[] }> = {}
 
   for (const item of items) {
-    // Find route for this item's group
-    let route = kotRoutes.find((r) => r.item_group === item.item_group)
+    // Lookup item_group from items table (order_items doesn't store it)
+    const groupStmt = db.prepare('SELECT item_group, kitchen_station FROM items WHERE item_code = ?')
+    groupStmt.bind([item.item_code])
+    const itemInfo = groupStmt.step() ? groupStmt.getAsObject() as any : {}
+    groupStmt.free()
+    const itemGroup = itemInfo.item_group || ''
+    const kitchenStation = itemInfo.kitchen_station || ''
+
+    // Find matching specific route for this item's group
+    let route = specificRoutes.find((r) => r.item_group === itemGroup)
     if (!route) {
       // Try kitchen_station
-      route = kotRoutes.find((r) => r.kitchen_station && r.kitchen_station === item.kitchen_station)
+      route = kotRoutes.find((r) => r.kitchen_station && r.kitchen_station === kitchenStation)
     }
     if (!route) {
-      // Use first KOT route as default
-      route = kotRoutes[0]
+      // No specific match — use catch-all route
+      route = catchAllRoute
     }
 
     const printer = printers.find((p) => p.id === route!.printer_id)
     if (!printer) continue
 
-    if (!printerItems[printer.id]) {
-      printerItems[printer.id] = {
+    // Group by route ID (not printer ID) so each item group gets its own KOT
+    const routeKey = route.id
+    if (!routeItems[routeKey]) {
+      routeItems[routeKey] = {
         printer,
         station: route.item_group || route.kitchen_station || 'Kitchen',
         items: []
       }
     }
-    printerItems[printer.id].items.push(item)
+    routeItems[routeKey].items.push(item)
   }
+
+  // Alias for the loop below
+  const printerItems = routeItems
 
   // Print KOT to each printer
   for (const [, group] of Object.entries(printerItems)) {
