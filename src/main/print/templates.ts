@@ -62,6 +62,7 @@ interface ReceiptData {
   grandTotal: number
   payments: { method: string; amount: number }[]
   change: number
+  waiterName?: string
 }
 
 export function generateReceipt(data: ReceiptData): string {
@@ -103,7 +104,7 @@ function generateReceiptClassic(data: ReceiptData, config: Record<string, string
   if (showCr) lines.push(`CR: ${config.cr_number}`)
   if (showVat) lines.push(`VAT: ${config.vat_number}`)
   lines.push(getSeparatorLine())
-  lines.push(CMD.BOLD_ON + 'TAX INVOICE' + CMD.BOLD_OFF)
+  lines.push(CMD.BOLD_ON + 'RECEIPT' + CMD.BOLD_OFF)
   lines.push(getSeparatorLine())
 
   // Order info
@@ -190,6 +191,9 @@ function generateReceiptClassic(data: ReceiptData, config: Record<string, string
   if (data.change > 0) {
     lines.push(formatLine('Change:', fmtAmt(data.change)))
   }
+  if (data.waiterName) {
+    lines.push(formatLine('Waiter:', data.waiterName))
+  }
 
   lines.push(getSeparatorLine())
 
@@ -249,7 +253,7 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
 
   lines.push(getSeparatorLine())
   lines.push(CMD.ALIGN_CENTER)
-  lines.push(CMD.BOLD_ON + 'TAX INVOICE' + CMD.BOLD_OFF)
+  lines.push(CMD.BOLD_ON + 'RECEIPT' + CMD.BOLD_OFF)
   lines.push(getSeparatorLine())
 
   // Order info — two-column style
@@ -338,6 +342,9 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
   }
   if (data.change > 0) {
     lines.push(CMD.BOLD_ON + formatLine('  Change', fmtAmt(data.change)) + CMD.BOLD_OFF)
+  }
+  if (data.waiterName) {
+    lines.push(formatLine('  Waiter', data.waiterName))
   }
 
   lines.push('')
@@ -535,6 +542,304 @@ export function generateKot(data: KotData): string {
   lines.push(CMD.ALIGN_CENTER + '** END OF KOT **')
   lines.push(getSeparatorLine())
   lines.push(CMD.FEED_3 + CMD.PARTIAL_CUT)
+
+  return lines.join(LF)
+}
+
+// ==================== Preparation Document ====================
+interface PrepDocData {
+  orderNumber: string
+  orderType: string
+  tableName?: string
+  guests?: number
+  waiterName?: string
+  cashierName: string
+  items: {
+    itemName: string
+    itemNameAr?: string
+    qty: number
+    modifiers?: { name: string }[]
+    specialInstructions?: string
+  }[]
+}
+
+export function generatePrepDoc(data: PrepDocData): string {
+  const config = getAllReceiptConfig()
+  const showArabicItems = config.show_arabic_items === '1'
+
+  const lines: string[] = [CMD.INIT]
+
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push(CMD.DOUBLE_BOTH + CMD.BOLD_ON)
+  lines.push('PREPARATION')
+  lines.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF)
+  lines.push(getSeparatorLine())
+
+  lines.push(CMD.ALIGN_LEFT)
+  lines.push(formatLine(`Order: #${data.orderNumber}`, data.orderType))
+  lines.push(`Date: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}  ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`)
+  if (data.tableName) {
+    lines.push(formatLine(`Table: ${data.tableName}`, data.guests ? `Guests: ${data.guests}` : ''))
+  }
+  if (data.waiterName) lines.push(`Waiter: ${data.waiterName}`)
+  lines.push(`Cashier: ${data.cashierName}`)
+
+  lines.push(getSeparatorLine())
+
+  for (const item of data.items) {
+    lines.push(CMD.BOLD_ON + ` ${item.qty}x  ${item.itemName}` + CMD.BOLD_OFF)
+    if (showArabicItems && item.itemNameAr) {
+      lines.push(`     ${item.itemNameAr}`)
+    }
+    if (item.modifiers) {
+      for (const mod of item.modifiers) {
+        lines.push(`     + ${mod.name}`)
+      }
+    }
+    if (item.specialInstructions) {
+      lines.push(`     !! ${item.specialInstructions}`)
+    }
+  }
+
+  lines.push(getSeparatorLine())
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push(CMD.BOLD_ON + '** NO AMOUNTS **' + CMD.BOLD_OFF)
+  lines.push(getSeparatorLine())
+
+  lines.push(CMD.FEED_3)
+  lines.push(CMD.PARTIAL_CUT)
+
+  return lines.join(LF)
+}
+
+// ==================== Invoice (pre-payment bill) ====================
+
+export function generateInvoice(data: ReceiptData): string {
+  const config = getAllReceiptConfig()
+  const design = config.receipt_design || 'classic'
+  if (design === 'modern') return generateInvoiceModern(data, config)
+  return generateInvoiceClassic(data, config)
+}
+
+function generateInvoiceClassic(data: ReceiptData, config: Record<string, string>): string {
+  const showArabic = config.show_arabic === '1'
+  const showCashier = config.show_cashier_name !== '0'
+  const showCr = config.show_cr_number === '1' && config.cr_number
+  const showVat = config.show_vat_number === '1' && config.vat_number
+  const currSym = config.currency_symbol || 'QAR'
+  const currPos = config.currency_position || 'after'
+  const decimals = parseInt(config.currency_decimals || '2')
+
+  const fmtAmt = (n: number) => {
+    const num = n.toFixed(decimals)
+    return currPos === 'before' ? `${currSym} ${num}` : `${num} ${currSym}`
+  }
+
+  const lines: string[] = [CMD.INIT, CMD.ALIGN_CENTER]
+
+  if (showArabic && config.restaurant_name_ar) {
+    lines.push(CMD.BOLD_ON + config.restaurant_name_ar + CMD.BOLD_OFF)
+  }
+  if (config.restaurant_name) {
+    lines.push(CMD.BOLD_ON + config.restaurant_name + CMD.BOLD_OFF)
+  }
+  lines.push(getDashLine())
+  if (config.address_line_1) lines.push(config.address_line_1)
+  if (showArabic && config.address_line_1_ar) lines.push(config.address_line_1_ar)
+  if (config.address_line_2) lines.push(config.address_line_2)
+  if (config.phone) lines.push(`Tel: ${config.phone}`)
+  if (showCr) lines.push(`CR: ${config.cr_number}`)
+  if (showVat) lines.push(`VAT: ${config.vat_number}`)
+  lines.push(getSeparatorLine())
+  lines.push(CMD.BOLD_ON + 'INVOICE' + CMD.BOLD_OFF)
+  lines.push(getSeparatorLine())
+
+  lines.push(CMD.ALIGN_LEFT)
+  lines.push(`Invoice: ${data.orderNumber}`)
+  lines.push(`Date: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}    ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`)
+  if (data.tableName) {
+    lines.push(formatLine(`Table: ${data.tableName}`, data.guests ? `Guests: ${data.guests}` : ''))
+  }
+  if (showCashier) lines.push(`Cashier: ${data.cashierName}`)
+  if (data.waiterName) lines.push(`Waiter: ${data.waiterName}`)
+  lines.push(`Type: ${data.orderType}`)
+
+  lines.push(getDashLine())
+  lines.push(formatLine('Qty  Item', 'Amount'))
+  lines.push(getDashLine())
+
+  const showDescEn = config.show_description_on_receipt === '1'
+  const showDescAr = config.show_description_ar_on_receipt === '1'
+  const showArabicItems = config.show_arabic_items === '1'
+
+  for (const item of data.items) {
+    const qtyStr = ` ${item.qty}   `
+    const amtStr = item.amount.toFixed(decimals)
+    lines.push(formatLine(`${qtyStr}${item.itemName}`, amtStr))
+
+    if (showArabicItems && item.itemNameAr) {
+      lines.push(`     ${item.itemNameAr}`)
+    }
+    if (showDescEn && item.description) {
+      const maxLen = 27
+      for (let i = 0; i < item.description.length; i += maxLen) {
+        lines.push(`     ${item.description.slice(i, i + maxLen)}`)
+      }
+    }
+    if (showDescAr && item.descriptionAr) {
+      const maxLen = 27
+      for (let i = 0; i < item.descriptionAr.length; i += maxLen) {
+        lines.push(`     ${item.descriptionAr.slice(i, i + maxLen)}`)
+      }
+    }
+    if (item.modifiers) {
+      for (const mod of item.modifiers) {
+        if (mod.price > 0) {
+          lines.push(formatLine(`     + ${mod.name}`, mod.price.toFixed(decimals)))
+        } else {
+          lines.push(`     + ${mod.name}`)
+        }
+      }
+    }
+    if (item.specialInstructions) {
+      lines.push(`     "${item.specialInstructions}"`)
+    }
+  }
+
+  lines.push(getDashLine())
+  lines.push(formatLine('Subtotal:', fmtAmt(data.subtotal)))
+  if (data.discountAmount > 0) {
+    lines.push(formatLine('Discount:', `-${fmtAmt(data.discountAmount)}`))
+  }
+  if (data.taxTotal > 0) {
+    lines.push(formatLine(`${data.taxLabel} (${data.taxRate}%):`, fmtAmt(data.taxTotal)))
+  }
+  lines.push(getDashLine())
+  lines.push(CMD.BOLD_ON)
+  lines.push(formatLine('TOTAL:', fmtAmt(data.grandTotal)))
+  lines.push(CMD.BOLD_OFF)
+
+  lines.push(getSeparatorLine())
+  lines.push(CMD.ALIGN_CENTER)
+  if (showArabic && config.footer_message_ar) lines.push(config.footer_message_ar)
+  if (config.footer_message) lines.push(config.footer_message)
+  lines.push(getSeparatorLine())
+
+  lines.push(CMD.FEED_5)
+  lines.push(CMD.PARTIAL_CUT)
+
+  return lines.join(LF)
+}
+
+function generateInvoiceModern(data: ReceiptData, config: Record<string, string>): string {
+  const showArabic = config.show_arabic === '1'
+  const showCashier = config.show_cashier_name !== '0'
+  const showCr = config.show_cr_number === '1' && config.cr_number
+  const showVat = config.show_vat_number === '1' && config.vat_number
+  const currSym = config.currency_symbol || 'QAR'
+  const currPos = config.currency_position || 'after'
+  const decimals = parseInt(config.currency_decimals || '2')
+  const showDescEn = config.show_description_on_receipt === '1'
+  const showDescAr = config.show_description_ar_on_receipt === '1'
+  const showArabicItems = config.show_arabic_items === '1'
+
+  const fmtAmt = (n: number) => {
+    const num = n.toFixed(decimals)
+    return currPos === 'before' ? `${currSym} ${num}` : `${num} ${currSym}`
+  }
+
+  const lines: string[] = [CMD.INIT]
+
+  lines.push(CMD.ALIGN_CENTER)
+  if (showArabic && config.restaurant_name_ar) {
+    lines.push(CMD.DOUBLE_BOTH + config.restaurant_name_ar + CMD.NORMAL_SIZE)
+  }
+  if (config.restaurant_name) {
+    lines.push(CMD.DOUBLE_BOTH + config.restaurant_name + CMD.NORMAL_SIZE)
+  }
+  if (config.address_line_1) lines.push(config.address_line_1)
+  if (showArabic && config.address_line_1_ar) lines.push(config.address_line_1_ar)
+  if (config.address_line_2) lines.push(config.address_line_2)
+  if (config.phone) lines.push(`Tel: ${config.phone}`)
+
+  const taxInfo: string[] = []
+  if (showCr) taxInfo.push(`CR: ${config.cr_number}`)
+  if (showVat) taxInfo.push(`VAT: ${config.vat_number}`)
+  if (taxInfo.length > 0) lines.push(taxInfo.join('  |  '))
+
+  lines.push(getSeparatorLine())
+  lines.push(CMD.BOLD_ON + 'INVOICE' + CMD.BOLD_OFF)
+  lines.push(getSeparatorLine())
+
+  lines.push(CMD.ALIGN_LEFT)
+  lines.push(formatLine(`#${data.orderNumber}`, new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })))
+  lines.push(formatLine(data.orderType, new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })))
+  if (data.tableName) {
+    lines.push(formatLine(`Table: ${data.tableName}`, data.guests ? `Guests: ${data.guests}` : ''))
+  }
+  if (showCashier) lines.push(`Cashier: ${data.cashierName}`)
+  if (data.waiterName) lines.push(`Waiter: ${data.waiterName}`)
+
+  lines.push(getSeparatorLine())
+
+  let itemNum = 0
+  for (const item of data.items) {
+    itemNum++
+    lines.push(CMD.BOLD_ON + `${itemNum}. ${item.itemName}` + CMD.BOLD_OFF)
+    if (showArabicItems && item.itemNameAr) {
+      lines.push(`   ${item.itemNameAr}`)
+    }
+    lines.push(formatLine(`   ${item.qty} x ${item.rate.toFixed(decimals)}`, item.amount.toFixed(decimals)))
+    if (showDescEn && item.description) {
+      const maxLen = 29
+      for (let i = 0; i < item.description.length; i += maxLen) {
+        lines.push(`   ${item.description.slice(i, i + maxLen)}`)
+      }
+    }
+    if (showDescAr && item.descriptionAr) {
+      const maxLen = 29
+      for (let i = 0; i < item.descriptionAr.length; i += maxLen) {
+        lines.push(`   ${item.descriptionAr.slice(i, i + maxLen)}`)
+      }
+    }
+    if (item.modifiers) {
+      for (const mod of item.modifiers) {
+        if (mod.price > 0) {
+          lines.push(formatLine(`   + ${mod.name}`, `+${mod.price.toFixed(decimals)}`))
+        } else {
+          lines.push(`   + ${mod.name}`)
+        }
+      }
+    }
+    if (item.specialInstructions) {
+      lines.push(`   * ${item.specialInstructions}`)
+    }
+  }
+
+  lines.push(getSeparatorLine())
+  lines.push(formatLine('  Subtotal', fmtAmt(data.subtotal)))
+  if (data.discountAmount > 0) {
+    lines.push(formatLine('  Discount', `-${fmtAmt(data.discountAmount)}`))
+  }
+  if (data.taxTotal > 0) {
+    lines.push(formatLine(`  ${data.taxLabel} ${data.taxRate}%`, fmtAmt(data.taxTotal)))
+  }
+  lines.push(getDashLine())
+
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push(CMD.DOUBLE_BOTH + CMD.BOLD_ON)
+  lines.push(`TOTAL: ${fmtAmt(data.grandTotal)}`)
+  lines.push(CMD.NORMAL_SIZE + CMD.BOLD_OFF)
+
+  lines.push('')
+  lines.push(getSeparatorLine())
+  lines.push(CMD.ALIGN_CENTER)
+  if (showArabic && config.footer_message_ar) lines.push('', config.footer_message_ar)
+  if (config.footer_message) lines.push(config.footer_message)
+  lines.push('')
+
+  lines.push(CMD.FEED_5)
+  lines.push(CMD.PARTIAL_CUT)
 
   return lines.join(LF)
 }

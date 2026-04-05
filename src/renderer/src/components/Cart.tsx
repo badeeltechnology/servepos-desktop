@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Minus, Plus, Trash2, MessageSquare, Percent, MapPin, Users, ChevronDown } from 'lucide-react'
+import { Minus, Plus, Trash2, MessageSquare, Percent, MapPin, Users, ChevronDown, UserCheck } from 'lucide-react'
 import { useCartStore, CartItem } from '../stores/cart'
 import { useAuthStore } from '../stores/auth'
 import TablePicker from './TablePicker'
@@ -27,6 +27,7 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
 
   const {
     items, orderType, setOrderType, tableName, setTable, guests, setGuests,
+    waiterId, waiterName, setWaiter,
     updateItemQty, removeItem, updateItemInstructions, updateItemDiscount,
     orderDiscountPercent, orderDiscountAmount, orderDiscountReason,
     setOrderDiscount, getSubtotal, getOrderDiscountValue, getTaxTotal, getGrandTotal
@@ -46,6 +47,17 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
   const [itemDiscAmt, setItemDiscAmt] = useState(0)
   const [discountError, setDiscountError] = useState('')
   const [showTablePicker, setShowTablePicker] = useState(false)
+  const [waitersList, setWaitersList] = useState<{ name: string; waiter_name: string }[]>([])
+  const [showWaiterPicker, setShowWaiterPicker] = useState(false)
+
+  useEffect(() => { loadWaiters() }, [])
+
+  async function loadWaiters() {
+    try {
+      const list = await window.api.waiters.list()
+      setWaitersList(list || [])
+    } catch { /* waiters table may not exist yet */ }
+  }
 
   const subtotal = getSubtotal()
   const orderDiscVal = getOrderDiscountValue()
@@ -119,6 +131,48 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
               <span className="min-w-[24px] text-center text-sm font-bold">{guests}</span>
               <button onClick={() => setGuests(guests + 1)} className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">+</button>
             </div>
+          </div>
+        )}
+
+        {/* Waiter selector */}
+        {waitersList.length > 0 && (
+          <div className="relative mt-3">
+            <button
+              onClick={() => setShowWaiterPicker(!showWaiterPicker)}
+              className={`flex w-full items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-sm font-medium transition-all ${
+                waiterName
+                  ? 'border-green-200 bg-green-50 text-green-700'
+                  : 'border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-500'
+              }`}
+            >
+              <UserCheck className="h-4 w-4" />
+              {waiterName || 'Assign Waiter (Optional)'}
+              {waiterName && (
+                <span
+                  onClick={(e) => { e.stopPropagation(); setWaiter(null, null) }}
+                  className="ml-auto rounded-full p-0.5 text-green-400 hover:bg-green-100 hover:text-green-600"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </span>
+              )}
+              {!waiterName && <ChevronDown className="ml-auto h-3.5 w-3.5 opacity-50" />}
+            </button>
+            {showWaiterPicker && (
+              <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-xl border bg-white shadow-lg">
+                {waitersList.map((w) => (
+                  <button
+                    key={w.name}
+                    onClick={() => { setWaiter(w.name, w.waiter_name); setShowWaiterPicker(false) }}
+                    className={`flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-gray-50 ${
+                      waiterId === w.name ? 'bg-green-50 font-semibold text-green-700' : 'text-gray-700'
+                    }`}
+                  >
+                    <UserCheck className="h-3.5 w-3.5" />
+                    {w.waiter_name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

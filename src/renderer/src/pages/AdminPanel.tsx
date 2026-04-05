@@ -577,6 +577,36 @@ export default function AdminPanel() {
               </div>
             </div>
 
+            {/* Print Document Settings */}
+            <div className="mb-6 rounded-xl border bg-white p-6">
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Print Document Settings
+              </h3>
+              <p className="mb-4 text-xs text-gray-500">
+                Configure auto-print behavior for each document type. Printer routing is managed in Supervisor Settings &gt; Printers.
+              </p>
+              <div className="space-y-3">
+                {[
+                  { key: 'prep_doc_enabled', label: 'Enable Preparation Document', desc: 'Prints order details without amounts for assembly staff' },
+                  { key: 'prep_doc_auto_print', label: 'Auto-print Prep Doc on order', desc: 'Prints automatically when KOT is printed' },
+                  { key: 'receipt_auto_print', label: 'Auto-print Receipt on payment', desc: 'Prints automatically when payment is confirmed' }
+                ].map(({ key, label, desc }) => (
+                  <label key={key} className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={receiptConfig[key] !== '0'}
+                      onChange={(e) => updateField(key, e.target.checked ? '1' : '0')}
+                      className="mt-0.5 rounded"
+                    />
+                    <div>
+                      <span className="font-medium">{label}</span>
+                      <p className="text-xs text-gray-400">{desc}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {/* Save button */}
             <div className="flex justify-end gap-3">
               <button

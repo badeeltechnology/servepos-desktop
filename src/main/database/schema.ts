@@ -470,6 +470,25 @@ function runMigrations(): void {
   if (!hasColumn('modifier_groups', 'erpnext_name')) {
     database.run('ALTER TABLE modifier_groups ADD COLUMN erpnext_name TEXT')
   }
+
+  // Migration 9: Add waiter fields to orders
+  if (!hasColumn('orders', 'waiter_id')) {
+    database.run('ALTER TABLE orders ADD COLUMN waiter_id TEXT')
+  }
+  if (!hasColumn('orders', 'waiter_name')) {
+    database.run('ALTER TABLE orders ADD COLUMN waiter_name TEXT')
+  }
+
+  // Migration 10: Add waiters table for locally cached waiter list
+  database.run(`
+    CREATE TABLE IF NOT EXISTS waiters (
+      name TEXT PRIMARY KEY,
+      waiter_name TEXT NOT NULL,
+      phone TEXT,
+      is_active INTEGER DEFAULT 1,
+      synced_at TEXT
+    )
+  `)
 }
 
 export function saveDatabase(): void {

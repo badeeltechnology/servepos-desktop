@@ -209,6 +209,24 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       counts.modifier_groups = 0
     }
 
+    // Sync waiters list from ERPNext
+    try {
+      const waitersList = await client.callMethod('servepos.api.waiter.get_waiters')
+      if (waitersList?.message && Array.isArray(waitersList.message)) {
+        db.run('DELETE FROM waiters')
+        for (const w of waitersList.message) {
+          db.run(
+            `INSERT INTO waiters (name, waiter_name, phone, is_active, synced_at)
+             VALUES (?, ?, ?, 1, datetime('now'))`,
+            [w.name, w.waiter_name, w.phone || null]
+          )
+        }
+        counts.waiters = waitersList.message.length
+      }
+    } catch {
+      counts.waiters = 0
+    }
+
     // Sync waiter orders — pick up pending orders from ERPNext
     try {
       const branch = getConfig('branch') || undefined
@@ -222,15 +240,17 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
           const session = sessionStmt.step() ? sessionStmt.getAsObject() as any : null
           sessionStmt.free()
 
-          // Create local order
+          // Create local order with waiter properly assigned
           const order = createOrder({
             orderType: wo.order_type || 'Dine In',
             tableName: wo.table || undefined,
             room: wo.room || undefined,
             guests: wo.guests || 1,
             cashierId: session?.user_id || 'waiter',
-            cashierName: `Waiter: ${wo.waiter_name || 'Unknown'}`,
-            sessionId: session?.id || undefined
+            cashierName: session?.user_name || '',
+            sessionId: session?.id || undefined,
+            waiterId: wo.waiter || undefined,
+            waiterName: wo.waiter_name || undefined
           })
 
           // Add items

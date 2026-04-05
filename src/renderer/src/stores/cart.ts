@@ -27,6 +27,8 @@ interface CartState {
   tableName: string | null
   room: string | null
   guests: number
+  waiterId: string | null
+  waiterName: string | null
   orderDiscountPercent: number
   orderDiscountAmount: number
   orderDiscountReason: string
@@ -41,6 +43,7 @@ interface CartState {
   setOrderType: (type: 'Dine In' | 'Takeaway' | 'Delivery') => void
   setTable: (tableName: string | null, room?: string | null) => void
   setGuests: (guests: number) => void
+  setWaiter: (waiterId: string | null, waiterName?: string | null) => void
   setOrderDiscount: (percent: number, amount: number, reason: string) => void
   clearCart: () => void
   getSubtotal: () => number
@@ -66,6 +69,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   tableName: null,
   room: null,
   guests: 1,
+  waiterId: null,
+  waiterName: null,
   orderDiscountPercent: 0,
   orderDiscountAmount: 0,
   orderDiscountReason: '',
@@ -144,6 +149,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOrderType: (orderType) => set({ orderType }),
   setTable: (tableName, room) => set({ tableName, room: room ?? null }),
   setGuests: (guests) => set({ guests }),
+  setWaiter: (waiterId, waiterName) => set({ waiterId, waiterName: waiterName ?? null }),
   setOrderDiscount: (percent, amount, reason) =>
     set({ orderDiscountPercent: percent, orderDiscountAmount: amount, orderDiscountReason: reason }),
 
@@ -154,6 +160,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       tableName: null,
       room: null,
       guests: 1,
+      waiterId: null,
+      waiterName: null,
       orderDiscountPercent: 0,
       orderDiscountAmount: 0,
       orderDiscountReason: ''

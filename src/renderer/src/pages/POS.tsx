@@ -106,7 +106,9 @@ export default function POS() {
       guests: cart.guests,
       cashierId: user!.id,
       cashierName: user!.name,
-      sessionId: activeSession?.id || null
+      sessionId: activeSession?.id || null,
+      waiterId: cart.waiterId ?? null,
+      waiterName: cart.waiterName ?? null
     })
 
     for (const item of cart.items) {
@@ -858,6 +860,22 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                       </button>
                     )}
                   </>
+                )}
+                {(selectedOrder.status === 'Open' || selectedOrder.status === 'Hold') && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await window.api.print.invoice(selectedOrder.id)
+                        setToast({ type: 'success', message: 'Invoice printed' })
+                      } catch (e: any) {
+                        setToast({ type: 'error', message: `Invoice print failed: ${e.message}` })
+                      }
+                    }}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-blue-200 py-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 active:scale-95"
+                  >
+                    <Printer className="h-3.5 w-3.5" />
+                    Print Invoice
+                  </button>
                 )}
               </div>
             </div>

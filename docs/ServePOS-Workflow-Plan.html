@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServePOS — Restaurant Workflow Plan v2.1</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8f9fa; color: #1a1a2e; line-height: 1.6; }
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 40px 0; text-align: center; }
+  .header h1 { font-size: 2.2em; margin-bottom: 8px; }
+  .header p { font-size: 1.1em; opacity: 0.85; }
+  .header .version { display: inline-block; background: rgba(255,255,255,0.15); padding: 4px 16px; border-radius: 20px; margin-top: 12px; font-size: 0.9em; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+  .section { background: white; border-radius: 12px; padding: 32px; margin: 24px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .section h2 { color: #1a1a2e; font-size: 1.5em; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 3px solid #0f3460; display: inline-block; }
+  .section h3 { color: #16213e; font-size: 1.15em; margin: 20px 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.95em; }
+  th { background: #1a1a2e; color: white; padding: 12px 16px; text-align: left; font-weight: 600; }
+  td { padding: 10px 16px; border-bottom: 1px solid #e8e8e8; }
+  tr:nth-child(even) { background: #f8f9fa; }
+  tr:hover { background: #eef1f6; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }
+  .badge-auto { background: #d4edda; color: #155724; }
+  .badge-manual { background: #fff3cd; color: #856404; }
+  .badge-config { background: #d1ecf1; color: #0c5460; }
+  .badge-new { background: #f8d7da; color: #721c24; }
+  .diagram-container { margin: 20px 0; overflow-x: auto; }
+  .mermaid { display: flex; justify-content: center; }
+  .highlight-box { background: #eef1f6; border-left: 4px solid #0f3460; padding: 16px 20px; margin: 16px 0; border-radius: 0 8px 8px 0; }
+  .highlight-box strong { color: #0f3460; }
+  .highlight-box.updated { border-left-color: #28a745; background: #f0fff4; }
+  .role-card { display: inline-block; background: #f0f0f0; border: 2px solid #ddd; border-radius: 8px; padding: 12px 20px; margin: 6px; min-width: 200px; vertical-align: top; }
+  .role-card h4 { margin-bottom: 6px; color: #1a1a2e; }
+  .role-card ul { margin-left: 16px; font-size: 0.9em; }
+  .role-card.cashier { border-color: #28a745; background: #f0fff0; }
+  .role-card.coordinator { border-color: #007bff; background: #f0f8ff; }
+  .role-card.waiter { border-color: #fd7e14; background: #fff8f0; }
+  .phase { border-left: 4px solid #0f3460; padding: 16px 20px; margin: 16px 0; background: #fafbfc; border-radius: 0 8px 8px 0; }
+  .phase h4 { color: #0f3460; margin-bottom: 8px; }
+  .status-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 12px 0; }
+  .status-pill { padding: 6px 14px; border-radius: 20px; font-size: 0.85em; font-weight: 600; color: white; }
+  .status-arrow { font-size: 1.2em; color: #666; }
+  .footer { text-align: center; padding: 30px; color: #888; font-size: 0.9em; }
+  .view-card { display: inline-block; vertical-align: top; width: 320px; border: 2px solid #ddd; border-radius: 10px; margin: 8px; overflow: hidden; }
+  .view-card .view-header { background: #1a1a2e; color: white; padding: 10px 16px; font-weight: 600; font-size: 1em; }
+  .view-card .view-body { padding: 16px; font-size: 0.9em; min-height: 200px; }
+  .floor-table { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; width: 60px; height: 60px; font-size: 11px; font-weight: 700; color: white; text-align: center; line-height: 1.2; margin: 4px; }
+  .floor-table.available { background: #28a745; }
+  .floor-table.occupied { background: #dc3545; }
+  .floor-table.ready { background: #fd7e14; animation: pulse 1.5s infinite; }
+  .floor-table.invoiced { background: #6f42c1; }
+  .floor-rect { display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; width: 80px; height: 40px; font-size: 10px; font-weight: 700; color: white; text-align: center; line-height: 1.2; margin: 4px; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  @media print {
+    .section { break-inside: avoid; box-shadow: none; border: 1px solid #ddd; }
+    .header { background: #1a1a2e !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="container">
+    <h1>ServePOS — Restaurant Workflow Plan</h1>
+    <p>Complete Order-to-Payment System with Waiter Tracking, Floor Plan & Multi-Printer Support</p>
+    <div class="version">Version 2.1 — Updated 5 Apr 2026 (Customer Feedback Applied)</div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ==================== SYSTEM OVERVIEW ==================== -->
+<div class="section">
+  <h2>1. System Overview</h2>
+  <p>Three connected applications working together. <strong>All master data (menu, tables, floor plans, rooms) managed centrally in ERPNext</strong> and synced to Desktop POS &amp; Waiter App.</p>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+graph TB
+    subgraph EP["<b>ERPNext Backend (Central Management)</b>"]
+        E1["Menu & Items"]
+        E2["Waiters & Users"]
+        E3["Rooms & Floor Plans"]
+        E4["Tables (with positions)"]
+        E5["Order Sync"]
+        E6["Inventory & Accounts"]
+    end
+
+    subgraph WA["<b>Waiter App</b><br/>(Flutter — Android)"]
+        W1[Take Orders]
+        W2[View Order Status]
+        W3["Ready to Serve<br/>Notifications"]
+    end
+
+    subgraph DP["<b>Desktop POS</b><br/>(Electron — Windows)"]
+        D1["Cashier Screen<br/>Orders + Payments"]
+        D2["Coordinator Screen<br/>Grid / List / Floor Plan Views"]
+        D3["Admin Settings<br/>Printers + Config"]
+    end
+
+    subgraph PR["<b>Printers</b>"]
+        P1["Kitchen Printer<br/>(KOT)"]
+        P2["Bar Printer<br/>(KOT - Drinks)"]
+        P3["Receipt Printer<br/>(Invoice / Receipt / Prep Doc)"]
+    end
+
+    EP -->|"Sync menu, tables,<br/>rooms, floor plans"| DP
+    EP -->|"Sync menu,<br/>tables"| WA
+    WA -->|"Place Order"| EP
+    EP -->|"Status Updates"| WA
+    DP -->|"Confirm Payment"| EP
+    DP -->|"Print"| PR
+
+    style WA fill:#fff8f0,stroke:#fd7e14,stroke-width:2px
+    style DP fill:#f0fff0,stroke:#28a745,stroke-width:2px
+    style EP fill:#f0f8ff,stroke:#007bff,stroke-width:2px
+    style PR fill:#f5f5f5,stroke:#666,stroke-width:2px
+    </pre>
+  </div>
+</div>
+
+<!-- ==================== COMPLETE ORDER FLOW ==================== -->
+<div class="section">
+  <h2>2. Complete Order Flow</h2>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+flowchart TD
+    START(["Customer arrives"]) --> ORDER
+
+    subgraph ORDER["ORDER PLACEMENT"]
+        O1{"Order source?"}
+        O1 -->|Waiter App| O2["Waiter takes order<br/>on tablet/phone"]
+        O1 -->|Desktop POS| O3["Cashier takes order<br/>+ selects waiter"]
+        O2 --> O4["Order sent to ERPNext"]
+        O3 --> O4
+        O4 --> O5["Order appears on<br/>Desktop POS +<br/>Coordinator Screen"]
+    end
+
+    ORDER --> PRINT1
+
+    subgraph PRINT1["AUTO-PRINT ON ORDER"]
+        P1["KOT prints at<br/>Kitchen / Bar<br/>(by item group)"]
+        P2["Prep Doc prints<br/>for assembly staff<br/>(NO amounts)"]
+    end
+
+    PRINT1 --> KITCHEN
+
+    subgraph KITCHEN["KITCHEN + COORDINATOR"]
+        K1["Kitchen prepares food"]
+        K1 --> K2["Coordinator marks<br/>'Ready to Serve'<br/>on Coordinator Screen"]
+        K2 --> K3["Waiter gets notification<br/>on Waiter App"]
+    end
+
+    KITCHEN --> SERVE
+
+    subgraph SERVE["SERVICE & BILLING"]
+        S1["Waiter picks up food"]
+        S1 --> S2["Waiter delivers to table"]
+        S2 --> S3["Invoice printed<br/>(amounts, NO payment)<br/>given to customer"]
+        S3 --> S4["Customer pays waiter<br/>(cash or card)"]
+    end
+
+    SERVE --> PAYMENT
+
+    subgraph PAYMENT["PAYMENT CONFIRMATION (Cashier Only)"]
+        PAY1["Waiter returns to cashier"]
+        PAY1 --> PAY2["Tells cashier:<br/>'Order X — paid by cash/card'"]
+        PAY2 --> PAY3["Cashier records payment<br/>on Desktop POS"]
+        PAY3 --> PAY4["Receipt prints<br/>(with payment details)"]
+        PAY4 --> PAY5["Order Completed"]
+    end
+
+    PAYMENT --> COORD["Coordinator screen:<br/>Order disappears<br/>(status = Paid)"]
+    COORD --> SYNC["Synced to ERPNext"]
+
+    style ORDER fill:#fff8f0,stroke:#fd7e14
+    style PRINT1 fill:#f0f0f0,stroke:#666
+    style KITCHEN fill:#fff0f0,stroke:#dc3545
+    style SERVE fill:#f0fff0,stroke:#28a745
+    style PAYMENT fill:#f0f8ff,stroke:#007bff
+    </pre>
+  </div>
+</div>
+
+<!-- ==================== ORDER STATUS LIFECYCLE ==================== -->
+<div class="section">
+  <h2>3. Order Status Lifecycle</h2>
+
+  <div class="status-flow">
+    <span class="status-pill" style="background:#007bff;">Open</span>
+    <span class="status-arrow">&rarr;</span>
+    <span class="status-pill" style="background:#fd7e14;">Preparing</span>
+    <span class="status-arrow">&rarr;</span>
+    <span class="status-pill" style="background:#dc3545;">Ready to Serve</span>
+    <span class="status-arrow">&rarr;</span>
+    <span class="status-pill" style="background:#6f42c1;">Invoiced</span>
+    <span class="status-arrow">&rarr;</span>
+    <span class="status-pill" style="background:#28a745;">Paid (Completed)</span>
+  </div>
+
+  <table>
+    <tr>
+      <th>Status</th>
+      <th>What happened</th>
+      <th>Who changes it</th>
+      <th>What prints</th>
+      <th>Visible on Coordinator?</th>
+    </tr>
+    <tr>
+      <td><strong>Open</strong></td>
+      <td>Order placed</td>
+      <td>System (auto)</td>
+      <td>KOT + Prep Doc (auto)</td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td><strong>Preparing</strong></td>
+      <td>Kitchen started</td>
+      <td>Coordinator / Cashier</td>
+      <td>—</td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td><strong>Ready to Serve</strong></td>
+      <td>Food ready, waiting for waiter</td>
+      <td>Coordinator / Cashier</td>
+      <td>Waiter notification</td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td><strong>Invoiced</strong></td>
+      <td>Invoice given to customer</td>
+      <td>Cashier (prints invoice)</td>
+      <td>Invoice</td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td><strong>Paid (Completed)</strong></td>
+      <td>Cashier confirmed payment</td>
+      <td>Cashier only</td>
+      <td>Receipt (auto)</td>
+      <td>No — removed from view</td>
+    </tr>
+  </table>
+
+  <div class="highlight-box updated">
+    <strong>Customer feedback:</strong> All orders stay visible on the Coordinator Screen until they reach <strong>Paid/Completed</strong> status. This way the coordinator always has a full picture of what is happening — they can check with waiters if any order is stuck at "Ready to Serve" or "Invoiced" for too long.
+  </div>
+</div>
+
+<!-- ==================== PRINT SYSTEM ==================== -->
+<div class="section">
+  <h2>4. Print System — 4 Document Types</h2>
+
+  <table>
+    <tr>
+      <th>Document</th>
+      <th>Header</th>
+      <th>Trigger</th>
+      <th>Content</th>
+      <th>Printer</th>
+    </tr>
+    <tr>
+      <td><strong>KOT</strong></td>
+      <td>KOT #0001</td>
+      <td><span class="badge badge-auto">Auto on order</span></td>
+      <td>Items, qty, modifiers, instructions. <strong>NO amounts</strong></td>
+      <td><span class="badge badge-config">Configurable</span> Kitchen/Bar</td>
+    </tr>
+    <tr>
+      <td><strong>Preparation Doc</strong></td>
+      <td>PREPARATION</td>
+      <td><span class="badge badge-auto">Auto on order</span></td>
+      <td>Table, waiter, items, modifiers. <strong>NO amounts</strong></td>
+      <td><span class="badge badge-config">Configurable</span> Default: Receipt printer</td>
+    </tr>
+    <tr>
+      <td><strong>Invoice</strong></td>
+      <td>INVOICE</td>
+      <td><span class="badge badge-manual">Manual button</span></td>
+      <td>Full order with amounts. <strong>NO payment info</strong></td>
+      <td><span class="badge badge-config">Configurable</span> Default: Receipt printer</td>
+    </tr>
+    <tr>
+      <td><strong>Receipt</strong></td>
+      <td>RECEIPT</td>
+      <td><span class="badge badge-auto">Auto on payment</span></td>
+      <td>Full order + payment method + change + waiter</td>
+      <td><span class="badge badge-config">Configurable</span> Default: Receipt printer</td>
+    </tr>
+  </table>
+
+  <h3>Print Flow Diagram</h3>
+  <div class="diagram-container">
+    <pre class="mermaid">
+flowchart LR
+    subgraph TRIGGER["Triggers"]
+        T1["Order Placed"]
+        T2["Cashier clicks<br/>'Print Invoice'"]
+        T3["Payment Confirmed"]
+    end
+
+    subgraph DOCS["Documents Generated"]
+        D1["KOT"]
+        D2["Prep Doc"]
+        D3["Invoice"]
+        D4["Receipt"]
+    end
+
+    subgraph PRINTERS["Printers (Configurable in Settings)"]
+        P1["Kitchen Printer"]
+        P2["Bar Printer"]
+        P3["Receipt Printer"]
+    end
+
+    T1 --> D1
+    T1 --> D2
+    T2 --> D3
+    T3 --> D4
+
+    D1 -->|"Food items"| P1
+    D1 -->|"Drink items"| P2
+    D2 --> P3
+    D3 --> P3
+    D4 --> P3
+
+    style TRIGGER fill:#fff8f0,stroke:#fd7e14
+    style DOCS fill:#f0f8ff,stroke:#007bff
+    style PRINTERS fill:#f0f0f0,stroke:#666
+    </pre>
+  </div>
+
+  <h3>Print Settings (Admin Page)</h3>
+  <div class="highlight-box">
+    All print routing is <strong>configurable in the Settings page</strong>:
+    <ul style="margin-top:8px; margin-left:20px;">
+      <li><strong>Printer assignment</strong> — Choose which printer for each document type</li>
+      <li><strong>Auto vs Manual</strong> — Choose whether each document auto-prints or requires a button click</li>
+      <li><strong>Enable/Disable</strong> — Turn off any print type if not needed</li>
+      <li><strong>KOT routing</strong> — Route by item group to different kitchen/bar printers</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== COORDINATOR SCREEN ==================== -->
+<div class="section">
+  <h2>5. Coordinator Screen — 3 Views</h2>
+  <p>The coordinator sees <strong>all active orders until Paid/Completed</strong>. Three view options to suit different working styles.</p>
+
+  <div style="display: flex; flex-wrap: wrap; justify-content: center; margin: 20px 0;">
+
+    <!-- GRID VIEW -->
+    <div class="view-card">
+      <div class="view-header">View 1: Grid View (Cards)</div>
+      <div class="view-body" style="display: flex; flex-wrap: wrap; gap: 8px; padding: 12px;">
+        <div style="flex: 1; min-width: 130px; border: 2px solid #007bff; border-radius: 8px; padding: 8px; font-size: 11px; background: #f0f8ff;">
+          <div style="font-weight:700; color:#007bff;">OPEN</div>
+          <div style="font-weight:700;">#0045</div>
+          <div>Table 3 | Ahmed</div>
+          <div>4 items | 12:45</div>
+          <div style="margin-top:4px;"><button style="font-size:10px; background:#fd7e14; color:white; border:none; border-radius:4px; padding:3px 8px; cursor:pointer;">Mark Preparing</button></div>
+        </div>
+        <div style="flex: 1; min-width: 130px; border: 2px solid #fd7e14; border-radius: 8px; padding: 8px; font-size: 11px; background: #fff8f0;">
+          <div style="font-weight:700; color:#fd7e14;">PREPARING</div>
+          <div style="font-weight:700;">#0043</div>
+          <div>Table 8 | Omar</div>
+          <div>5 items | 12:35</div>
+          <div style="margin-top:4px;"><button style="font-size:10px; background:#dc3545; color:white; border:none; border-radius:4px; padding:3px 8px; cursor:pointer;">Mark Ready</button></div>
+        </div>
+        <div style="flex: 1; min-width: 130px; border: 2px solid #dc3545; border-radius: 8px; padding: 8px; font-size: 11px; background: #fff0f0; animation: pulse 1.5s infinite;">
+          <div style="font-weight:700; color:#dc3545;">READY</div>
+          <div style="font-weight:700;">#0042</div>
+          <div>Table 5 | Ali</div>
+          <div>3 items | 12:30</div>
+          <div style="font-size:10px; color:#dc3545;">Waiting 15 min</div>
+        </div>
+        <div style="flex: 1; min-width: 130px; border: 2px solid #6f42c1; border-radius: 8px; padding: 8px; font-size: 11px; background: #f8f0ff;">
+          <div style="font-weight:700; color:#6f42c1;">INVOICED</div>
+          <div style="font-weight:700;">#0040</div>
+          <div>Table 2 | Ahmed</div>
+          <div>2 items | 12:15</div>
+          <div style="font-size:10px; color:#6f42c1;">Waiting payment</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LIST VIEW -->
+    <div class="view-card">
+      <div class="view-header">View 2: List View (Table)</div>
+      <div class="view-body" style="padding: 0;">
+        <table style="margin:0; font-size: 11px;">
+          <tr><th style="padding:6px 8px;">#</th><th style="padding:6px 8px;">Table</th><th style="padding:6px 8px;">Waiter</th><th style="padding:6px 8px;">Status</th><th style="padding:6px 8px;">Time</th></tr>
+          <tr><td style="padding:5px 8px;">0045</td><td style="padding:5px 8px;">T3</td><td style="padding:5px 8px;">Ahmed</td><td style="padding:5px 8px;"><span style="background:#007bff; color:white; padding:2px 6px; border-radius:8px; font-size:10px;">Open</span></td><td style="padding:5px 8px;">12:45</td></tr>
+          <tr><td style="padding:5px 8px;">0043</td><td style="padding:5px 8px;">T8</td><td style="padding:5px 8px;">Omar</td><td style="padding:5px 8px;"><span style="background:#fd7e14; color:white; padding:2px 6px; border-radius:8px; font-size:10px;">Preparing</span></td><td style="padding:5px 8px;">12:35</td></tr>
+          <tr><td style="padding:5px 8px;">0042</td><td style="padding:5px 8px;">T5</td><td style="padding:5px 8px;">Ali</td><td style="padding:5px 8px;"><span style="background:#dc3545; color:white; padding:2px 6px; border-radius:8px; font-size:10px;">Ready</span></td><td style="padding:5px 8px;">12:30</td></tr>
+          <tr><td style="padding:5px 8px;">0040</td><td style="padding:5px 8px;">T2</td><td style="padding:5px 8px;">Ahmed</td><td style="padding:5px 8px;"><span style="background:#6f42c1; color:white; padding:2px 6px; border-radius:8px; font-size:10px;">Invoiced</span></td><td style="padding:5px 8px;">12:15</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- FLOOR PLAN VIEW -->
+    <div class="view-card" style="width: 660px;">
+      <div class="view-header">View 3: Floor Plan View <span class="badge badge-new" style="margin-left:8px;">NEW</span></div>
+      <div class="view-body" style="position: relative; background: #fafafa; min-height: 280px;">
+        <div style="font-size: 10px; color: #999; margin-bottom: 8px;">Floor plan image as background + tables positioned on it</div>
+
+        <!-- Simulated floor plan -->
+        <div style="position: relative; width: 100%; height: 250px; border: 1px dashed #ccc; border-radius: 8px; background: linear-gradient(135deg, #fefefe 0%, #f5f5f0 100%); overflow: hidden;">
+
+          <!-- Room label -->
+          <div style="position: absolute; top: 4px; left: 8px; font-size: 10px; color: #999; font-weight: 600;">MAIN HALL</div>
+
+          <!-- Entrance -->
+          <div style="position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 9px; color: #aaa; border-top: 2px solid #aaa; padding: 2px 16px;">ENTRANCE</div>
+
+          <!-- Tables -->
+          <div class="floor-table available" style="position: absolute; top: 20px; left: 20px;">T1<br/>Free</div>
+          <div class="floor-table occupied" style="position: absolute; top: 20px; left: 100px;">T2<br/>#0040<br/>Ahmed</div>
+          <div class="floor-table available" style="position: absolute; top: 20px; left: 180px;">T3<br/>Free</div>
+          <div class="floor-table ready" style="position: absolute; top: 20px; right: 100px;">T5<br/>#0042<br/>Ali</div>
+          <div class="floor-table available" style="position: absolute; top: 20px; right: 20px;">T6<br/>Free</div>
+
+          <div class="floor-table occupied" style="position: absolute; top: 110px; left: 40px;">T7<br/>#0045<br/>Ahmed</div>
+          <div class="floor-table occupied" style="position: absolute; top: 110px; left: 130px;">T8<br/>#0043<br/>Omar</div>
+          <div class="floor-table available" style="position: absolute; top: 110px; right: 60px;">T9<br/>Free</div>
+
+          <!-- Counter area -->
+          <div class="floor-rect" style="position: absolute; bottom: 30px; right: 10px; background: #6c757d; width: 100px;">COUNTER</div>
+
+          <!-- Legend -->
+          <div style="position: absolute; bottom: 4px; left: 8px; font-size: 9px; display: flex; gap: 8px;">
+            <span><span style="display:inline-block; width:10px; height:10px; background:#28a745; border-radius:50%;"></span> Free</span>
+            <span><span style="display:inline-block; width:10px; height:10px; background:#dc3545; border-radius:50%;"></span> Occupied</span>
+            <span><span style="display:inline-block; width:10px; height:10px; background:#fd7e14; border-radius:50%; animation: pulse 1.5s infinite;"></span> Ready</span>
+            <span><span style="display:inline-block; width:10px; height:10px; background:#6f42c1; border-radius:50%;"></span> Invoiced</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="highlight-box updated">
+    <strong>Customer feedback:</strong> The coordinator needs all three views to monitor operations efficiently. The <strong>Floor Plan View</strong> is especially important — it shows the physical restaurant layout with table positions, so the coordinator can see at a glance which tables are occupied, which orders are ready, and which are waiting for payment.
+  </div>
+</div>
+
+<!-- ==================== FLOOR PLAN MANAGEMENT ==================== -->
+<div class="section">
+  <h2>6. Floor Plan & Table Management</h2>
+  <p><span class="badge badge-new">NEW</span> Centralized in ERPNext — synced to Desktop POS automatically.</p>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+flowchart LR
+    subgraph ERPNEXT["ERPNext (Central Management)"]
+        R1["Create Rooms<br/>(Main Hall, Terrace, etc.)"]
+        R1 --> F1["Upload Floor Plan Image<br/>per Room"]
+        F1 --> T1["Create Tables<br/>(name, capacity, shape)"]
+        T1 --> P1["Position Tables<br/>on Floor Plan<br/>(drag & drop → x, y)"]
+    end
+
+    subgraph SYNC["Auto Sync"]
+        S1["Sync Down"]
+    end
+
+    subgraph DESKTOP["Desktop POS"]
+        D1["Floor Plan View<br/>on Coordinator Screen"]
+        D2["Table Picker<br/>on POS Screen"]
+    end
+
+    subgraph WAITER["Waiter App"]
+        W1["Table Selection<br/>when placing order"]
+    end
+
+    ERPNEXT --> SYNC
+    SYNC --> DESKTOP
+    SYNC --> WAITER
+
+    style ERPNEXT fill:#f0f8ff,stroke:#007bff,stroke-width:2px
+    style DESKTOP fill:#f0fff0,stroke:#28a745,stroke-width:2px
+    style WAITER fill:#fff8f0,stroke:#fd7e14,stroke-width:2px
+    </pre>
+  </div>
+
+  <h3>ERPNext Table Setup</h3>
+  <table>
+    <tr>
+      <th>Field</th>
+      <th>Description</th>
+      <th>Example</th>
+    </tr>
+    <tr><td><strong>Room</strong></td><td>Physical area / section</td><td>Main Hall, Terrace, VIP Room</td></tr>
+    <tr><td><strong>Floor Plan Image</strong></td><td>Image uploaded per room (PNG/JPG)</td><td>main-hall-layout.png</td></tr>
+    <tr><td><strong>Table Name</strong></td><td>Unique table identifier</td><td>T1, T2, VIP-1</td></tr>
+    <tr><td><strong>Capacity</strong></td><td>Number of seats</td><td>2, 4, 6, 8</td></tr>
+    <tr><td><strong>Shape</strong></td><td>For visual rendering</td><td>Round, Square, Rectangle</td></tr>
+    <tr><td><strong>Position X, Y</strong></td><td>Coordinates on floor plan</td><td>x: 150, y: 80</td></tr>
+    <tr><td><strong>Status</strong></td><td>Current table status</td><td>Available, Occupied, Reserved</td></tr>
+  </table>
+
+  <div class="highlight-box">
+    <strong>How it works:</strong>
+    <ul style="margin-top:8px; margin-left:20px;">
+      <li>Restaurant manager uploads floor plan image in ERPNext</li>
+      <li>Creates tables and positions them on the floor plan (drag & drop in ERPNext)</li>
+      <li>Desktop POS syncs this data automatically</li>
+      <li>Coordinator screen renders the floor plan with real-time table statuses</li>
+      <li>Floor plan can be updated anytime in ERPNext — changes sync to all terminals</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== USER ROLES ==================== -->
+<div class="section">
+  <h2>7. User Roles & Permissions</h2>
+
+  <div style="margin: 20px 0;">
+    <div class="role-card cashier">
+      <h4>Cashier</h4>
+      <ul>
+        <li>Full POS screen access</li>
+        <li>Take orders + assign waiter</li>
+        <li>Accept/reject waiter orders</li>
+        <li>Print Invoice</li>
+        <li>Confirm payments (cash/card)</li>
+        <li>Mark order status (all)</li>
+        <li>Print receipts</li>
+        <li>Void orders</li>
+        <li>Access coordinator screen</li>
+        <li>Close shift + reports</li>
+      </ul>
+    </div>
+
+    <div class="role-card coordinator">
+      <h4>Coordinator</h4>
+      <ul>
+        <li>Coordinator screen only</li>
+        <li>View all active orders</li>
+        <li>View order details & items</li>
+        <li>Mark as "Preparing"</li>
+        <li>Mark as "Ready to Serve"</li>
+        <li style="color:#dc3545;">&#10007; Cannot confirm payments</li>
+        <li style="color:#dc3545;">&#10007; Cannot print invoice/receipt</li>
+        <li style="color:#dc3545;">&#10007; Cannot void/edit orders</li>
+        <li style="color:#dc3545;">&#10007; Cannot access POS screen</li>
+      </ul>
+    </div>
+
+    <div class="role-card waiter">
+      <h4>Waiter (Mobile App)</h4>
+      <ul>
+        <li>Take orders on mobile</li>
+        <li>View own order statuses</li>
+        <li>Receive "Ready to Serve" alerts</li>
+        <li>Cancel pending orders</li>
+        <li style="color:#dc3545;">&#10007; Cannot confirm payments</li>
+        <li style="color:#dc3545;">&#10007; Cannot print anything</li>
+        <li style="color:#dc3545;">&#10007; Cannot see others' orders</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== WAITER NOTIFICATIONS ==================== -->
+<div class="section">
+  <h2>8. Waiter App — "Ready to Serve" Notifications</h2>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+sequenceDiagram
+    participant C as Coordinator<br/>(Desktop POS)
+    participant E as ERPNext<br/>(Backend)
+    participant W as Waiter App<br/>(Flutter)
+
+    C->>E: Mark Order #42 as "Ready to Serve"
+    E->>E: Update order status
+
+    alt Polling (every 10-15 seconds)
+        W->>E: Check my order statuses
+        E->>W: Order #42 is now "Ready to Serve"
+    end
+
+    alt Firebase Push (real-time)
+        E->>W: Push notification:<br/>"Order #42 — Table 5 is READY!"
+    end
+
+    W->>W: Show blinking alert<br/>with table number + sound
+    W->>W: Waiter acknowledges<br/>and picks up food
+    </pre>
+  </div>
+</div>
+
+<!-- ==================== PAYMENT FLOW ==================== -->
+<div class="section">
+  <h2>9. Payment Flow & Waiter Accountability</h2>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+sequenceDiagram
+    participant Cust as Customer
+    participant Wait as Waiter
+    participant Cash as Cashier<br/>(Desktop POS)
+    participant Print as Printer
+    participant Coord as Coordinator<br/>(sees all statuses)
+
+    Cash->>Print: Print Invoice (no payment info)
+    Wait->>Cust: Delivers food + Invoice
+    Coord->>Coord: Sees order as "Invoiced"
+
+    Cust->>Wait: Pays (Cash or Card)
+
+    Note over Wait: Waiter walks back<br/>to cashier counter
+
+    Wait->>Cash: "Order #42, Table 5<br/>Paid by CASH — here's the money"
+
+    Cash->>Cash: Opens Payment Dialog:<br/>Select Waiter: Ahmed<br/>Payment Method: Cash<br/>Amount: 150 QAR
+
+    Cash->>Cash: Confirms Payment
+    Cash->>Print: Receipt auto-prints
+
+    Note over Coord: Order disappears from<br/>coordinator screen (Paid)
+
+    rect rgb(255, 240, 240)
+        Note over Cash: END OF DAY:<br/>Any orders still open<br/>under a waiter = waiter<br/>must clarify
+    end
+    </pre>
+  </div>
+
+  <div class="highlight-box">
+    <strong>Key rule:</strong> Only the <strong>Cashier</strong> can confirm payments. Until confirmed, the order stays open under the waiter's name — visible on the Coordinator Screen. At end of day, any uncleared orders require waiter clarification.
+  </div>
+</div>
+
+<!-- ==================== CHANGES PER APP ==================== -->
+<div class="section">
+  <h2>10. Changes Per Application</h2>
+
+  <h3>Desktop POS (Electron — Windows)</h3>
+  <table>
+    <tr><th>#</th><th>Change</th><th>Details</th></tr>
+    <tr><td>1</td><td>Waiter selector</td><td>Dropdown in Cart to assign waiter to every order</td></tr>
+    <tr><td>2</td><td>Coordinator screen</td><td>New page with 3 views: Grid, List, Floor Plan</td></tr>
+    <tr><td>3</td><td>Coordinator user role</td><td>Restricted login — coordinator screen only, no payments</td></tr>
+    <tr><td>4</td><td>Floor plan rendering</td><td>Show floor plan image + table positions from ERPNext</td></tr>
+    <tr><td>5</td><td>Prep Doc print</td><td>New template — order details, NO amounts</td></tr>
+    <tr><td>6</td><td>Invoice print</td><td>New template — amounts, header "INVOICE", no payment</td></tr>
+    <tr><td>7</td><td>Receipt update</td><td>Header "RECEIPT" (was "TAX INVOICE"), includes waiter name</td></tr>
+    <tr><td>8</td><td>Print settings</td><td>Admin page: printer per doc type + auto/manual toggle</td></tr>
+    <tr><td>9</td><td>Payment dialog</td><td>Add "Collected by Waiter" field</td></tr>
+    <tr><td>10</td><td>End-of-day report</td><td>Open orders per waiter at shift close</td></tr>
+  </table>
+
+  <h3>Waiter App (Flutter — Android)</h3>
+  <table>
+    <tr><th>#</th><th>Change</th><th>Details</th></tr>
+    <tr><td>1</td><td>Ready notification</td><td>Blinking/popup + sound when food is ready</td></tr>
+    <tr><td>2</td><td>Updated statuses</td><td>Show: Preparing, Ready to Serve, Invoiced, Paid</td></tr>
+    <tr><td>3</td><td>Firebase push</td><td>Real-time notification (optional enhancement)</td></tr>
+  </table>
+
+  <h3>ERPNext Backend (servepos app)</h3>
+  <table>
+    <tr><th>#</th><th>Change</th><th>Details</th></tr>
+    <tr><td>1</td><td>New order statuses</td><td>Preparing, Ready to Serve, Invoiced on Waiter Order</td></tr>
+    <tr><td>2</td><td>Payment tracking</td><td>payment_collected_by field on order</td></tr>
+    <tr><td>3</td><td>Floor plan fields</td><td>Floor plan image on Room, x/y position on Table</td></tr>
+    <tr><td>4</td><td>Floor plan sync API</td><td>Include floor plan + positions in sync-down data</td></tr>
+    <tr><td>5</td><td>Firebase integration</td><td>Push notification on "Ready to Serve" (optional)</td></tr>
+  </table>
+</div>
+
+<!-- ==================== BUILD PHASES ==================== -->
+<div class="section">
+  <h2>11. Implementation Phases</h2>
+
+  <div class="phase">
+    <h4>Phase 1 — Print System & Waiter Assignment</h4>
+    <p>Get the 4 print types working + waiter selection on all orders + print settings.</p>
+    <ul style="margin-left: 20px; margin-top: 8px;">
+      <li>"TAX INVOICE" &rarr; "INVOICE" / "RECEIPT" separation</li>
+      <li>Waiter selector dropdown in Desktop POS Cart</li>
+      <li>Preparation Document print template</li>
+      <li>Invoice print template (amounts, no payment)</li>
+      <li>Receipt print template (with payment + waiter name)</li>
+      <li>Print settings page — printer per doc type, auto/manual</li>
+      <li>"Print Invoice" button on orders</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <h4>Phase 2 — Coordinator Screen & Notifications</h4>
+    <p>Order tracking across the full lifecycle with 3 view modes.</p>
+    <ul style="margin-left: 20px; margin-top: 8px;">
+      <li>Coordinator user role + login</li>
+      <li>Coordinator screen — Grid View</li>
+      <li>Coordinator screen — List View</li>
+      <li>Order status flow (Open &rarr; Preparing &rarr; Ready &rarr; Invoiced)</li>
+      <li>ERPNext status update API</li>
+      <li>Waiter App: polling + blinking/popup alert</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <h4>Phase 3 — Floor Plan & Payment Accountability</h4>
+    <p>Visual floor plan + waiter payment tracking + end-of-day.</p>
+    <ul style="margin-left: 20px; margin-top: 8px;">
+      <li>ERPNext: Floor plan image upload + table positioning</li>
+      <li>Desktop POS: Floor Plan View on coordinator screen</li>
+      <li>Sync floor plan data to Desktop POS</li>
+      <li>Payment dialog: "Collected by Waiter" field</li>
+      <li>End-of-day report: open orders per waiter</li>
+      <li>Shift close: warn if uncleared waiter orders</li>
+      <li>Firebase push notifications (optional)</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== SAMPLE PRINTS ==================== -->
+<div class="section">
+  <h2>12. Sample Print Outputs</h2>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;">
+
+    <div style="background: white; border: 2px solid #ddd; border-radius: 8px; padding: 20px; width: 260px; font-family: 'Courier New', monospace; font-size: 10.5px; line-height: 1.4;">
+      <div style="text-align:center; font-weight:bold; margin-bottom:8px; color:#666;">--- KOT ---</div>
+      <div style="text-align:center;">================================</div>
+      <div style="text-align:center; font-weight:bold;">*** KOT #0042 ***</div>
+      <div style="text-align:center;">Restaurant Name</div>
+      <div style="text-align:center;">================================</div>
+      <div> Station: KITCHEN</div>
+      <div> Table: 5 &nbsp;&nbsp;&nbsp;&nbsp; Dine In</div>
+      <div> Waiter: Ahmed</div>
+      <div> Time: 05 Apr 2026 12:30</div>
+      <div style="text-align:center;">================================</div>
+      <div><b> 2x  CHICKEN SHAWARMA</b></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp; >> Extra Spicy</div>
+      <div><b> 1x  HUMMUS</b></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp; !! No garlic</div>
+      <div style="text-align:center;">================================</div>
+      <div style="text-align:center;">** END OF KOT **</div>
+    </div>
+
+    <div style="background: white; border: 2px solid #ddd; border-radius: 8px; padding: 20px; width: 260px; font-family: 'Courier New', monospace; font-size: 10.5px; line-height: 1.4;">
+      <div style="text-align:center; font-weight:bold; margin-bottom:8px; color:#666;">--- PREP DOC ---</div>
+      <div style="text-align:center;">================================</div>
+      <div style="text-align:center; font-weight:bold; font-size:12px;">PREPARATION</div>
+      <div style="text-align:center;">================================</div>
+      <div> Order: #0042</div>
+      <div> Table: 5 &nbsp; Guests: 3</div>
+      <div> Waiter: Ahmed</div>
+      <div> Time: 05 Apr 2026 12:30</div>
+      <div style="text-align:center;">================================</div>
+      <div><b> 2x  Chicken Shawarma</b></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp; + Extra Spicy</div>
+      <div><b> 1x  Hummus</b></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp; !! No garlic</div>
+      <div><b> 2x  Fresh Juice</b></div>
+      <div style="text-align:center;">================================</div>
+      <div style="text-align:center; font-weight:bold;">** NO AMOUNTS **</div>
+      <div style="text-align:center;">================================</div>
+    </div>
+
+    <div style="background: white; border: 2px solid #ddd; border-radius: 8px; padding: 20px; width: 260px; font-family: 'Courier New', monospace; font-size: 10.5px; line-height: 1.4;">
+      <div style="text-align:center; font-weight:bold; margin-bottom:8px; color:#666;">--- INVOICE ---</div>
+      <div style="text-align:center;">Restaurant Name</div>
+      <div style="text-align:center;">&#1575;&#1587;&#1605; &#1575;&#1604;&#1605;&#1591;&#1593;&#1605;</div>
+      <div style="text-align:center;">--------------------------------</div>
+      <div style="text-align:center;">123 Street, City</div>
+      <div style="text-align:center;">Tel: +974 1234 5678</div>
+      <div style="text-align:center;">VAT: 123456789</div>
+      <div style="text-align:center;">================================</div>
+      <div style="text-align:center; font-weight:bold;">INVOICE</div>
+      <div style="text-align:center;">================================</div>
+      <div> #0042 &nbsp;&nbsp; 05 Apr 2026</div>
+      <div> Dine In &nbsp;&nbsp;&nbsp;&nbsp; 12:30</div>
+      <div> Table: 5 &nbsp; Guests: 3</div>
+      <div>--------------------------------</div>
+      <div> 2 Chicken Shawarma &nbsp;50.00</div>
+      <div> 1 Hummus &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;15.00</div>
+      <div> 2 Fresh Juice &nbsp;&nbsp;&nbsp;&nbsp;20.00</div>
+      <div>--------------------------------</div>
+      <div> Subtotal: &nbsp;&nbsp;&nbsp; 85.00 QAR</div>
+      <div> VAT 5%: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 4.25 QAR</div>
+      <div>--------------------------------</div>
+      <div><b> TOTAL: &nbsp;&nbsp;&nbsp;&nbsp; 89.25 QAR</b></div>
+      <div>================================</div>
+      <div style="text-align:center;">Thank you!</div>
+    </div>
+
+    <div style="background: white; border: 2px solid #ddd; border-radius: 8px; padding: 20px; width: 260px; font-family: 'Courier New', monospace; font-size: 10.5px; line-height: 1.4;">
+      <div style="text-align:center; font-weight:bold; margin-bottom:8px; color:#666;">--- RECEIPT ---</div>
+      <div style="text-align:center;">Restaurant Name</div>
+      <div style="text-align:center;">&#1575;&#1587;&#1605; &#1575;&#1604;&#1605;&#1591;&#1593;&#1605;</div>
+      <div style="text-align:center;">--------------------------------</div>
+      <div style="text-align:center;">123 Street, City</div>
+      <div style="text-align:center;">Tel: +974 1234 5678</div>
+      <div style="text-align:center;">VAT: 123456789</div>
+      <div style="text-align:center;">================================</div>
+      <div style="text-align:center; font-weight:bold;">RECEIPT</div>
+      <div style="text-align:center;">================================</div>
+      <div> #0042 &nbsp;&nbsp; 05 Apr 2026</div>
+      <div> Dine In &nbsp;&nbsp;&nbsp;&nbsp; 12:30</div>
+      <div> Table: 5 &nbsp; Guests: 3</div>
+      <div>--------------------------------</div>
+      <div> 2 Chicken Shawarma &nbsp;50.00</div>
+      <div> 1 Hummus &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;15.00</div>
+      <div> 2 Fresh Juice &nbsp;&nbsp;&nbsp;&nbsp;20.00</div>
+      <div>--------------------------------</div>
+      <div> Subtotal: &nbsp;&nbsp;&nbsp; 85.00 QAR</div>
+      <div> VAT 5%: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 4.25 QAR</div>
+      <div>--------------------------------</div>
+      <div><b> TOTAL: &nbsp;&nbsp;&nbsp;&nbsp; 89.25 QAR</b></div>
+      <div>================================</div>
+      <div> Paid: Cash &nbsp;&nbsp; 100.00 QAR</div>
+      <div> Change: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 10.75 QAR</div>
+      <div> Waiter: Ahmed</div>
+      <div>================================</div>
+      <div style="text-align:center;">Thank you!</div>
+    </div>
+
+  </div>
+</div>
+
+</div>
+
+<div class="footer">
+  <p>ServePOS — Badeel Technology &nbsp;|&nbsp; Plan v2.1 &nbsp;|&nbsp; Updated 5 April 2026</p>
+  <p>Changes from customer feedback highlighted in green.</p>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'neutral',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    sequence: { useMaxWidth: true, actorMargin: 60, messageMargin: 40 }
+  });
+</script>
+</body>
+</html>

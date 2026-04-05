@@ -5,7 +5,7 @@ import { getDb, saveDatabase, deleteDatabase, initDatabase } from '../database/s
 import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
 import { ERPNextClient } from '../sync/erpnext-client'
 import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute, discoverUsbPrinters } from '../print/printer'
-import { printReceipt, printKots, printAmendmentKot, printWaiterCopy } from '../print/print-engine'
+import { printReceipt, printKots, printAmendmentKot, printWaiterCopy, printPrepDoc, printInvoice } from '../print/print-engine'
 
 export function registerIpcHandlers(): void {
   // ==================== App ====================
@@ -196,15 +196,17 @@ export function registerIpcHandlers(): void {
       const session = sessionStmt.step() ? sessionStmt.getAsObject() as any : null
       sessionStmt.free()
 
-      // Create local order
+      // Create local order with waiter properly assigned
       const order = db.createOrder({
         orderType: wo.order_type || 'Dine In',
         tableName: wo.table || undefined,
         room: wo.room || undefined,
         guests: wo.guests || 1,
         cashierId: session?.user_id || 'waiter',
-        cashierName: `Waiter: ${wo.waiter_name || 'Unknown'}`,
-        sessionId: session?.id || undefined
+        cashierName: session?.user_name || '',
+        sessionId: session?.id || undefined,
+        waiterId: wo.waiter || undefined,
+        waiterName: wo.waiter_name || undefined
       })
 
       // Add items
@@ -249,4 +251,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('print:kots', (_e, orderId: string) => printKots(orderId))
   ipcMain.handle('print:amendmentKot', (_e, orderId: string, amendments: any[]) => printAmendmentKot(orderId, amendments))
   ipcMain.handle('print:waiterCopy', (_e, orderId: string) => printWaiterCopy(orderId))
+  ipcMain.handle('print:prepDoc', (_e, orderId: string) => printPrepDoc(orderId))
+  ipcMain.handle('print:invoice', (_e, orderId: string) => printInvoice(orderId))
+
+  // Waiters
+  ipcMain.handle('waiters:list', () => db.getWaiters())
 }

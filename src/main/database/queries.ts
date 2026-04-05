@@ -311,14 +311,16 @@ export function createOrder(data: {
   cashierId: string
   cashierName: string
   sessionId?: string
+  waiterId?: string
+  waiterName?: string
 }): any {
   const id = uuidv4()
   const orderNumber = generateOrderNumber()
 
   execute(
-    `INSERT INTO orders (id, order_number, order_type, table_name, room, guests, cashier_id, cashier_name, session_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, orderNumber, data.orderType, data.tableName ?? null, data.room ?? null, data.guests ?? null, data.cashierId, data.cashierName, data.sessionId ?? null]
+    `INSERT INTO orders (id, order_number, order_type, table_name, room, guests, cashier_id, cashier_name, session_id, waiter_id, waiter_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, orderNumber, data.orderType, data.tableName ?? null, data.room ?? null, data.guests ?? null, data.cashierId, data.cashierName, data.sessionId ?? null, data.waiterId ?? null, data.waiterName ?? null]
   )
 
   if (data.tableName) {
@@ -351,7 +353,7 @@ export function updateOrder(id: string, updates: Record<string, any>): boolean {
     discountPercent: 'discount_percent', discountReason: 'discount_reason',
     grandTotal: 'grand_total', voidReason: 'void_reason', kotPrinted: 'kot_printed',
     completedAt: 'completed_at', syncStatus: 'sync_status', syncError: 'sync_error',
-    erpnextDocname: 'erpnext_docname'
+    erpnextDocname: 'erpnext_docname', waiterId: 'waiter_id', waiterName: 'waiter_name'
   }
 
   const sets: string[] = []
@@ -803,6 +805,12 @@ export function clearTransactions(): { orders: number; sessions: number } {
 
   saveDatabase()
   return { orders: orderCount, sessions: sessionCount }
+}
+
+// ==================== Waiters ====================
+
+export function getWaiters(): any[] {
+  return queryAll('SELECT * FROM waiters WHERE is_active = 1 ORDER BY waiter_name')
 }
 
 // ==================== Setup Check ====================

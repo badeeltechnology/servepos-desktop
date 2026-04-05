@@ -1,7 +1,7 @@
 import { getDb, saveDatabase } from '../database/schema'
 import { getConfig, getAllReceiptConfig, getOrderItems, getOrderPayments } from '../database/queries'
 import { sendToPrinter, getPrinters, getPrintRoutes, PrinterConfig } from './printer'
-import { generateReceipt, generateKot, generateWaiterCopy } from './templates'
+import { generateReceipt, generateKot, generateWaiterCopy, generatePrepDoc, generateInvoice } from './templates'
 import { processForPrinter } from './arabic-bitmap'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -68,6 +68,7 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
     tableName: order.table_name,
     guests: order.guests,
     cashierName: order.cashier_name || '',
+    waiterName: order.waiter_name || undefined,
     items: items.map((item: any) => {
       // Lookup Arabic name and descriptions from items table
       const itemInfo = db.prepare('SELECT item_name_ar, description, description_ar FROM items WHERE item_code = ?')
@@ -103,6 +104,133 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
   const printBuffer = await processForPrinter(receipt, printer.paper_width || 80)
   const result = await sendToPrinter(printer, printBuffer)
   logPrint(orderId, 'receipt', printer.id, result.success, result.error)
+  return result
+}
+
+export async function printPrepDoc(orderId: string): Promise<{ success: boolean; error?: string }> {
+  const db = getDb()
+
+  const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
+  orderStmt.bind([orderId])
+  if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
+  const order = orderStmt.getAsObject() as any
+  orderStmt.free()
+
+  const items = getOrderItems(orderId)
+
+  // Use prep_doc printer from config, fallback to receipt printer
+  const config = getAllReceiptConfig()
+  const routes = getPrintRoutes()
+  const printers = getPrinters()
+
+  let printer: any = null
+  if (config.prep_doc_printer_id) {
+    printer = printers.find((p) => p.id === config.prep_doc_printer_id)
+  }
+  if (!printer) {
+    const receiptRoute = routes.find((r) => r.print_type === 'receipt')
+    if (receiptRoute) printer = printers.find((p) => p.id === receiptRoute.printer_id)
+  }
+  if (!printer) return { success: false, error: 'No printer configured for preparation document' }
+
+  const prepData = {
+    orderNumber: order.order_number,
+    orderType: order.order_type,
+    tableName: order.table_name,
+    guests: order.guests,
+    waiterName: order.waiter_name || undefined,
+    cashierName: order.cashier_name || '',
+    items: items.map((item: any) => {
+      const itemInfo = db.prepare('SELECT item_name_ar FROM items WHERE item_code = ?')
+      itemInfo.bind([item.item_code])
+      const info = itemInfo.step() ? itemInfo.getAsObject() as any : {}
+      itemInfo.free()
+      return {
+        itemName: item.item_name,
+        itemNameAr: info.item_name_ar || undefined,
+        qty: item.qty,
+        modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
+        specialInstructions: item.special_instructions
+      }
+    })
+  }
+
+  const doc = generatePrepDoc(prepData)
+  const printBuffer = await processForPrinter(doc, printer.paper_width || 80)
+  const result = await sendToPrinter(printer, printBuffer)
+  logPrint(orderId, 'prep_doc', printer.id, result.success, result.error)
+  return result
+}
+
+export async function printInvoice(orderId: string): Promise<{ success: boolean; error?: string }> {
+  const db = getDb()
+
+  const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
+  orderStmt.bind([orderId])
+  if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
+  const order = orderStmt.getAsObject() as any
+  orderStmt.free()
+
+  const items = getOrderItems(orderId)
+
+  const config = getAllReceiptConfig()
+  const routes = getPrintRoutes()
+  const printers = getPrinters()
+
+  let printer: any = null
+  if (config.invoice_printer_id) {
+    printer = printers.find((p) => p.id === config.invoice_printer_id)
+  }
+  if (!printer) {
+    const receiptRoute = routes.find((r) => r.print_type === 'receipt')
+    if (receiptRoute) printer = printers.find((p) => p.id === receiptRoute.printer_id)
+  }
+  if (!printer) return { success: false, error: 'No printer configured for invoice' }
+
+  const taxEnabled = config.tax_enabled === '1'
+  const taxRate = taxEnabled ? parseFloat(config.tax_rate || '0') : 0
+  const taxLabel = config.tax_label || 'VAT'
+
+  const invoiceData = {
+    orderNumber: order.order_number,
+    orderType: order.order_type,
+    tableName: order.table_name,
+    guests: order.guests,
+    cashierName: order.cashier_name || '',
+    waiterName: order.waiter_name || undefined,
+    items: items.map((item: any) => {
+      const itemInfo = db.prepare('SELECT item_name_ar, description, description_ar FROM items WHERE item_code = ?')
+      itemInfo.bind([item.item_code])
+      const info = itemInfo.step() ? itemInfo.getAsObject() as any : {}
+      itemInfo.free()
+      return {
+        itemName: item.item_name,
+        itemNameAr: info.item_name_ar || null,
+        qty: item.qty,
+        rate: item.rate,
+        amount: item.amount,
+        description: info.description || null,
+        descriptionAr: info.description_ar || null,
+        modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
+        specialInstructions: item.special_instructions,
+        discountPercent: item.discount_percent,
+        discountAmount: item.discount_amount
+      }
+    }),
+    subtotal: order.subtotal || 0,
+    taxTotal: order.tax_total || 0,
+    taxLabel,
+    taxRate,
+    discountAmount: (order.discount_amount || 0) + (order.subtotal * (order.discount_percent || 0) / 100),
+    grandTotal: order.grand_total || 0,
+    payments: [],
+    change: 0
+  }
+
+  const invoice = generateInvoice(invoiceData)
+  const printBuffer = await processForPrinter(invoice, printer.paper_width || 80)
+  const result = await sendToPrinter(printer, printBuffer)
+  logPrint(orderId, 'invoice', printer.id, result.success, result.error)
   return result
 }
 
@@ -194,6 +322,16 @@ export async function printKots(orderId: string): Promise<{ success: boolean; pr
   // Mark KOT as printed on order
   db.run('UPDATE orders SET kot_printed = 1 WHERE id = ?', [orderId])
   saveDatabase()
+
+  // Auto-print Prep Doc alongside KOT if enabled
+  const prepDocConfig = getAllReceiptConfig()
+  if (prepDocConfig.prep_doc_enabled !== '0' && prepDocConfig.prep_doc_auto_print !== '0') {
+    try {
+      await printPrepDoc(orderId)
+    } catch (err: any) {
+      errors.push(`Prep Doc: ${err.message}`)
+    }
+  }
 
   return { success: errors.length === 0, printed, errors }
 }
