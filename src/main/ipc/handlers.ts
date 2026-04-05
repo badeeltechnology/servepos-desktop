@@ -178,7 +178,63 @@ export function registerIpcHandlers(): void {
       if (!erpnextUrl) return []
       const client = new ERPNextClient()
       const branch = db.getConfig('branch') || undefined
-      return await client.getPendingWaiterOrders(branch)
+      const pending = await client.getPendingWaiterOrders(branch)
+
+      // Auto-accept if enabled in settings
+      const autoAccept = db.getReceiptConfig('waiter_order_auto_accept') === '1'
+      if (autoAccept && pending.length > 0) {
+        const database = getDb()
+        for (const wo of pending) {
+          try {
+            // Get active session
+            const sessionStmt = database.prepare("SELECT id, user_id, user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
+            const session = sessionStmt.step() ? sessionStmt.getAsObject() as any : null
+            sessionStmt.free()
+            if (!session) continue // No open shift — skip auto-accept
+
+            // Create local order
+            const order = db.createOrder({
+              orderType: wo.order_type || 'Dine In',
+              tableName: wo.table || undefined,
+              room: wo.room || undefined,
+              guests: wo.guests || 1,
+              cashierId: session.user_id,
+              cashierName: session.user_name || '',
+              sessionId: session.id,
+              waiterId: wo.waiter || undefined,
+              waiterName: wo.waiter_name || undefined
+            })
+
+            // Add items
+            let subtotal = 0
+            for (const item of (wo.items || [])) {
+              const amount = ((item.rate || 0) + (item.modifier_total || 0)) * (item.qty || 1)
+              db.addOrderItem({
+                orderId: order.id, itemCode: item.item_code, itemName: item.item_name,
+                qty: item.qty || 1, rate: item.rate || 0, amount,
+                modifiers: item.modifiers || undefined, modifierTotal: item.modifier_total || 0,
+                specialInstructions: item.special_instructions || undefined
+              })
+              subtotal += amount
+            }
+
+            database.run('UPDATE orders SET subtotal = ?, grand_total = ?, kot_printed = 1 WHERE id = ?', [subtotal, subtotal, order.id])
+            saveDatabase()
+
+            // Accept in ERPNext
+            await client.acceptWaiterOrder(wo.name, order.id)
+
+            // Auto-print KOT
+            try { await printKots(order.id) } catch {}
+          } catch (err) {
+            console.error(`Auto-accept failed for ${wo.name}:`, err)
+          }
+        }
+        // Return empty — all accepted
+        return []
+      }
+
+      return pending
     } catch {
       return []
     }

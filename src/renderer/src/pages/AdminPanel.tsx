@@ -587,6 +587,7 @@ export default function AdminPanel() {
               </p>
               <div className="space-y-3">
                 {[
+                  { key: 'waiter_order_auto_accept', label: 'Auto-accept waiter orders', desc: 'Automatically accept incoming waiter orders and print KOT (no manual approval needed)' },
                   { key: 'prep_doc_enabled', label: 'Enable Preparation Document', desc: 'Prints order details without amounts for assembly staff' },
                   { key: 'prep_doc_auto_print', label: 'Auto-print Prep Doc on order', desc: 'Prints automatically when KOT is printed' },
                   { key: 'receipt_auto_print', label: 'Auto-print Receipt on payment', desc: 'Prints automatically when payment is confirmed' }
