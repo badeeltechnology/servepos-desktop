@@ -495,53 +495,50 @@ function runMigrations(): void {
     database.run('ALTER TABLE order_payments ADD COLUMN collected_by_waiter TEXT')
   }
 
-  // Migration 11: Add coordinator role to users (SQLite can't alter CHECK constraints,
-  // so recreate table with new constraint)
-  // Test by attempting an INSERT that would fail the old CHECK, then rollback
-  let needsUserMigration = false
-  try {
-    database.run('SAVEPOINT test_coordinator')
-    database.run("INSERT INTO users (id, name, pin_hash, role) VALUES ('__test__', '__test__', '__test__', 'coordinator')")
-    database.run("DELETE FROM users WHERE id = '__test__'")
-    database.run('RELEASE SAVEPOINT test_coordinator')
-  } catch {
-    needsUserMigration = true
-    try { database.run('ROLLBACK TO SAVEPOINT test_coordinator') } catch {}
-    try { database.run('RELEASE SAVEPOINT test_coordinator') } catch {}
-  }
-  if (needsUserMigration) {
-    database.run(`CREATE TABLE IF NOT EXISTS users_new (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      full_name TEXT,
-      pin_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('supervisor', 'cashier', 'coordinator')),
-      erpnext_user TEXT,
-      max_discount_pct REAL DEFAULT 0,
-      is_active INTEGER DEFAULT 1,
-      created_by TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`)
-    database.run('INSERT INTO users_new SELECT * FROM users')
-    database.run('DROP TABLE users')
-    database.run('ALTER TABLE users_new RENAME TO users')
+  // Migration 11: Add coordinator role to users
+  // Check if the CREATE TABLE SQL contains 'coordinator' — if not, recreate
+  {
+    // Clean up any leftover temp tables from failed migrations
+    try { database.run('DROP TABLE IF EXISTS users_new') } catch {}
+    try { database.run("DELETE FROM users WHERE id = '__test__'") } catch {}
+
+    const schemaStmt = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
+    const hasSchema = schemaStmt.step()
+    const schemaSql = hasSchema ? (schemaStmt.getAsObject() as any).sql as string : ''
+    schemaStmt.free()
+
+    if (schemaSql && !schemaSql.includes('coordinator')) {
+      database.run(`CREATE TABLE users_new (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        full_name TEXT,
+        pin_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('supervisor', 'cashier', 'coordinator')),
+        erpnext_user TEXT,
+        max_discount_pct REAL DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        created_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`)
+      database.run('INSERT INTO users_new SELECT * FROM users')
+      database.run('DROP TABLE users')
+      database.run('ALTER TABLE users_new RENAME TO users')
+    }
   }
 
   // Migration 12: Expand order status CHECK constraint to support new statuses
-  let needsOrderMigration = false
-  try {
-    database.run('SAVEPOINT test_order_status')
-    database.run("INSERT INTO orders (id, order_number, order_type, status) VALUES ('__test__', '__test_ord__', 'Dine In', 'Preparing')")
-    database.run("DELETE FROM orders WHERE id = '__test__'")
-    database.run('RELEASE SAVEPOINT test_order_status')
-  } catch {
-    needsOrderMigration = true
-    try { database.run('ROLLBACK TO SAVEPOINT test_order_status') } catch {}
-    try { database.run('RELEASE SAVEPOINT test_order_status') } catch {}
-  }
-  if (needsOrderMigration) {
-    database.run(`CREATE TABLE IF NOT EXISTS orders_new (
+  {
+    try { database.run('DROP TABLE IF EXISTS orders_new') } catch {}
+    try { database.run("DELETE FROM orders WHERE id = '__test__'") } catch {}
+
+    const orderSchemaStmt = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'")
+    const hasOrderSchema = orderSchemaStmt.step()
+    const orderSchemaSql = hasOrderSchema ? (orderSchemaStmt.getAsObject() as any).sql as string : ''
+    orderSchemaStmt.free()
+
+    if (orderSchemaSql && !orderSchemaSql.includes('Preparing')) {
+    database.run(`CREATE TABLE orders_new (
       id TEXT PRIMARY KEY,
       order_number TEXT NOT NULL UNIQUE,
       order_type TEXT NOT NULL CHECK(order_type IN ('Dine In', 'Takeaway', 'Delivery')),
@@ -581,6 +578,7 @@ function runMigrations(): void {
     database.run('CREATE INDEX IF NOT EXISTS idx_orders_sync ON orders(sync_status)')
     database.run('CREATE INDEX IF NOT EXISTS idx_orders_cashier ON orders(cashier_id)')
     database.run('CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(created_at)')
+    }
   }
 }
 
