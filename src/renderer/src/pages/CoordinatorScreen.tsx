@@ -76,10 +76,7 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
     try {
       const result = await window.api.coordinator.updateStatus(orderId, newStatus, user?.role || 'coordinator')
       if (result.success) {
-        // Auto-print invoice when marked as Ready to Serve
-        if (newStatus === 'Ready to Serve') {
-          try { await window.api.print.invoice(orderId) } catch {}
-        }
+        // Invoice auto-prints from backend when Ready to Serve
         await loadOrders()
         setSelectedOrder(null)
       }

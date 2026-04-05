@@ -218,16 +218,21 @@ export function registerIpcHandlers(): void {
               subtotal += amount
             }
 
-            database.run('UPDATE orders SET subtotal = ?, grand_total = ?, kot_printed = 1 WHERE id = ?', [subtotal, subtotal, order.id])
+            database.run('UPDATE orders SET subtotal = ?, grand_total = ? WHERE id = ?', [subtotal, subtotal, order.id])
             saveDatabase()
 
             // Accept in ERPNext
             await client.acceptWaiterOrder(wo.name, order.id)
 
             // Auto-print KOT
-            try { await printKots(order.id) } catch {}
+            try {
+              const kotResult = await printKots(order.id)
+              console.log(`[Auto-accept] KOT for ${wo.name}: printed=${kotResult.printed}, errors=${kotResult.errors.join(',')}`)
+            } catch (printErr: any) {
+              console.error(`[Auto-accept] KOT print failed for ${wo.name}:`, printErr.message)
+            }
           } catch (err) {
-            console.error(`Auto-accept failed for ${wo.name}:`, err)
+            console.error(`[Auto-accept] Failed for ${wo.name}:`, err)
           }
         }
         // Return empty — all accepted
@@ -367,6 +372,16 @@ export function registerIpcHandlers(): void {
     }
 
     db.updateOrder(orderId, { status })
+
+    // Auto-print invoice when marked as Ready to Serve
+    if (status === 'Ready to Serve') {
+      try {
+        const invoiceResult = await printInvoice(orderId)
+        console.log('[Coordinator] Invoice print:', invoiceResult.success ? 'OK' : invoiceResult.error)
+      } catch (err: any) {
+        console.error('[Coordinator] Invoice print error:', err.message)
+      }
+    }
 
     // Sync status to ERPNext so waiter app can poll for changes
     try {

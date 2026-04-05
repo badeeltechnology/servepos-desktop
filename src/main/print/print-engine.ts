@@ -14,12 +14,11 @@ function getCopyCount(printType: string): number {
 
 // Send data to printer multiple times based on copy count
 async function sendWithCopies(printer: PrinterConfig, buffer: Buffer, copies: number): Promise<{ success: boolean; error?: string }> {
-  let lastResult: { success: boolean; error?: string } = { success: true }
-  for (let i = 0; i < copies; i++) {
-    lastResult = await sendToPrinter(printer, buffer)
-    if (!lastResult.success) break
-  }
-  return lastResult
+  if (copies <= 1) return sendToPrinter(printer, buffer)
+
+  // For multiple copies, send all data as one job to avoid spooler conflicts
+  const allCopies = Buffer.concat(Array(copies).fill(buffer))
+  return sendToPrinter(printer, allCopies)
 }
 
 // Get next KOT number
