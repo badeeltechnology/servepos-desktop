@@ -1,7 +1,6 @@
 import { getDb, saveDatabase } from '../database/schema'
-import { getConfig, setConfig, createOrder, addOrderItem, updateTableStatus } from '../database/queries'
+import { getConfig, setConfig } from '../database/queries'
 import { ERPNextClient } from './erpnext-client'
-import { printKots } from '../print/print-engine'
 import { v4 as uuidv4 } from 'uuid'
 
 export async function syncDown(): Promise<{ success: boolean; error?: string; counts?: Record<string, number> }> {
@@ -288,69 +287,9 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       counts.waiters = 0
     }
 
-    // Sync waiter orders — pick up pending orders from ERPNext
-    try {
-      const branch = getConfig('branch') || undefined
-      const pendingOrders = await client.getPendingWaiterOrders(branch)
-      let waiterOrdersAccepted = 0
-
-      for (const wo of pendingOrders) {
-        try {
-          // Get active session for assigning orders
-          const sessionStmt = db.prepare("SELECT id, user_id, user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
-          const session = sessionStmt.step() ? sessionStmt.getAsObject() as any : null
-          sessionStmt.free()
-
-          // Create local order with waiter properly assigned
-          const order = createOrder({
-            orderType: wo.order_type || 'Dine In',
-            tableName: wo.table || undefined,
-            room: wo.room || undefined,
-            guests: wo.guests || 1,
-            cashierId: session?.user_id || 'waiter',
-            cashierName: session?.user_name || '',
-            sessionId: session?.id || undefined,
-            waiterId: wo.waiter || undefined,
-            waiterName: wo.waiter_name || undefined
-          })
-
-          // Add items
-          let subtotal = 0
-          for (const item of (wo.items || [])) {
-            const amount = ((item.rate || 0) + (item.modifier_total || 0)) * (item.qty || 1)
-            addOrderItem({
-              orderId: order.id,
-              itemCode: item.item_code,
-              itemName: item.item_name,
-              qty: item.qty || 1,
-              rate: item.rate || 0,
-              amount,
-              modifiers: item.modifiers || undefined,
-              modifierTotal: item.modifier_total || 0,
-              specialInstructions: item.special_instructions || undefined
-            })
-            subtotal += amount
-          }
-
-          // Update order totals
-          db.run('UPDATE orders SET subtotal = ?, grand_total = ?, kot_printed = 1 WHERE id = ?', [subtotal, subtotal, order.id])
-
-          // Accept the waiter order in ERPNext
-          await client.acceptWaiterOrder(wo.name, order.id)
-
-          // Auto-print KOT
-          try { await printKots(order.id) } catch {}
-
-          waiterOrdersAccepted++
-        } catch (err) {
-          console.error(`Failed to process waiter order ${wo.name}:`, err)
-        }
-      }
-      counts.waiter_orders = waiterOrdersAccepted
-    } catch {
-      // Waiter order sync failed — API may not exist yet
-      counts.waiter_orders = 0
-    }
+    // Waiter orders are NOT auto-accepted during sync.
+    // They are handled via the POS screen "Waiter" button where cashier manually accepts/rejects.
+    // The POS screen polls ERPNext every 15 seconds for pending waiter orders.
 
     saveDatabase()
     setConfig('last_sync_at', new Date().toISOString())

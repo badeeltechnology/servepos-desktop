@@ -50,14 +50,14 @@ export default function POS() {
       } catch {}
     }, 1000)
 
-    // Poll waiter orders every 15 seconds
+    // Poll waiter orders every 10 seconds
     const woTimer = setInterval(async () => {
       try {
         const orders = await window.api.waiterOrders.getPending()
         setWaiterOrderCount(orders?.length || 0)
         if (showWaiterOrders) setWaiterOrders(orders || [])
       } catch {}
-    }, 15000)
+    }, 10000)
 
     // Initial load
     window.api.waiterOrders.getPending().then((o: any) => setWaiterOrderCount(o?.length || 0)).catch(() => {})
