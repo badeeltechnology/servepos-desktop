@@ -5,6 +5,23 @@ import { generateReceipt, generateKot, generateWaiterCopy, generatePrepDoc, gene
 import { processForPrinter } from './arabic-bitmap'
 import { v4 as uuidv4 } from 'uuid'
 
+// Get number of copies for a print type from config
+function getCopyCount(printType: string): number {
+  const config = getAllReceiptConfig()
+  const key = `${printType}_copies`
+  return Math.max(1, Math.min(5, parseInt(config[key] || '1')))
+}
+
+// Send data to printer multiple times based on copy count
+async function sendWithCopies(printer: PrinterConfig, buffer: Buffer, copies: number): Promise<{ success: boolean; error?: string }> {
+  let lastResult: { success: boolean; error?: string } = { success: true }
+  for (let i = 0; i < copies; i++) {
+    lastResult = await sendToPrinter(printer, buffer)
+    if (!lastResult.success) break
+  }
+  return lastResult
+}
+
 // Get next KOT number
 function getNextKotNumber(): number {
   const db = getDb()
@@ -102,7 +119,7 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
 
   const receipt = generateReceipt(receiptData)
   const printBuffer = await processForPrinter(receipt, printer.paper_width || 80)
-  const result = await sendToPrinter(printer, printBuffer)
+  const result = await sendWithCopies(printer, printBuffer, getCopyCount('receipt'))
   logPrint(orderId, 'receipt', printer.id, result.success, result.error)
   return result
 }
@@ -152,7 +169,7 @@ export async function printPrepDoc(orderId: string): Promise<{ success: boolean;
 
   const doc = generatePrepDoc(prepData)
   const printBuffer = await processForPrinter(doc, printer.paper_width || 80)
-  const result = await sendToPrinter(printer, printBuffer)
+  const result = await sendWithCopies(printer, printBuffer, getCopyCount('prep_doc'))
   logPrint(orderId, 'prep_doc', printer.id, result.success, result.error)
   return result
 }
@@ -220,7 +237,7 @@ export async function printInvoice(orderId: string): Promise<{ success: boolean;
 
   const invoice = generateInvoice(invoiceData)
   const printBuffer = await processForPrinter(invoice, printer.paper_width || 80)
-  const result = await sendToPrinter(printer, printBuffer)
+  const result = await sendWithCopies(printer, printBuffer, getCopyCount('invoice'))
   logPrint(orderId, 'invoice', printer.id, result.success, result.error)
   return result
 }
@@ -318,7 +335,7 @@ export async function printKots(orderId: string): Promise<{ success: boolean; pr
 
     const kot = generateKot(kotData)
     const kotBuffer = await processForPrinter(kot, group.printer.paper_width || 80)
-    const result = await sendToPrinter(group.printer, kotBuffer)
+    const result = await sendWithCopies(group.printer, kotBuffer, getCopyCount('kot'))
     logPrint(orderId, 'kot', group.printer.id, result.success, result.error)
 
     if (result.success) {

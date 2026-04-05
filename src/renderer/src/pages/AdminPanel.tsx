@@ -583,7 +583,7 @@ export default function AdminPanel() {
                 Print Document Settings
               </h3>
               <p className="mb-4 text-xs text-gray-500">
-                Configure auto-print behavior for each document type. Printer routing is managed in Supervisor Settings &gt; Printers.
+                Configure auto-print behavior and number of copies. Printer routing is managed in Supervisor Settings &gt; Printers.
               </p>
               <div className="space-y-3">
                 {[
@@ -603,6 +603,29 @@ export default function AdminPanel() {
                       <p className="text-xs text-gray-400">{desc}</p>
                     </div>
                   </label>
+                ))}
+              </div>
+
+              {/* Print Copy Count */}
+              <h4 className="mb-3 mt-5 text-xs font-semibold uppercase text-gray-400">Number of Copies</h4>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  { key: 'kot_copies', label: 'KOT' },
+                  { key: 'prep_doc_copies', label: 'Prep Doc' },
+                  { key: 'invoice_copies', label: 'Invoice' },
+                  { key: 'receipt_copies', label: 'Receipt' }
+                ].map(({ key, label }) => (
+                  <div key={key}>
+                    <label className="mb-1 block text-xs font-medium">{label}</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={receiptConfig[key] || '1'}
+                      onChange={(e) => updateField(key, String(Math.max(1, Math.min(5, parseInt(e.target.value) || 1))))}
+                      className="w-full rounded-lg border border-input px-3 py-2 text-center text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
                 ))}
               </div>
             </div>

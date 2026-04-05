@@ -76,6 +76,10 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
     try {
       const result = await window.api.coordinator.updateStatus(orderId, newStatus, user?.role || 'coordinator')
       if (result.success) {
+        // Auto-print invoice when marked as Ready to Serve
+        if (newStatus === 'Ready to Serve') {
+          try { await window.api.print.invoice(orderId) } catch {}
+        }
         await loadOrders()
         setSelectedOrder(null)
       }
@@ -289,13 +293,8 @@ function ListRow({ order, onSelect, onUpdateStatus, userRole, loading }: {
       </td>
       <td className="px-4 py-3 text-xs text-gray-500">{formatElapsed(elapsed)}</td>
       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-        {order.status === 'Open' && (
-          <button disabled={loading} onClick={() => onUpdateStatus(order.id, 'Preparing')} className="rounded-lg bg-orange-500 px-3 py-1 text-[10px] font-bold text-white hover:bg-orange-600 disabled:opacity-50">
-            Preparing
-          </button>
-        )}
-        {order.status === 'Preparing' && (
-          <button disabled={loading} onClick={() => onUpdateStatus(order.id, 'Ready to Serve')} className="rounded-lg bg-red-500 px-3 py-1 text-[10px] font-bold text-white hover:bg-red-600 disabled:opacity-50">
+        {(order.status === 'Open' || order.status === 'Hold' || order.status === 'Preparing') && (
+          <button disabled={loading} onClick={() => onUpdateStatus(order.id, 'Ready to Serve')} className="rounded-lg bg-green-600 px-3 py-1 text-[10px] font-bold text-white hover:bg-green-700 disabled:opacity-50">
             Ready
           </button>
         )}
@@ -398,24 +397,14 @@ function OrderDetail({ order, onUpdateStatus, onClose, userRole, loading }: {
 
       {/* Action buttons */}
       <div className="space-y-2">
-        {(order.status === 'Open' || order.status === 'Hold') && (
-          <button
-            disabled={loading}
-            onClick={() => onUpdateStatus(order.id, 'Preparing')}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50"
-          >
-            <ChefHat className="h-4 w-4" />
-            Mark as Preparing
-          </button>
-        )}
-        {order.status === 'Preparing' && (
+        {(order.status === 'Open' || order.status === 'Hold' || order.status === 'Preparing') && (
           <button
             disabled={loading}
             onClick={() => onUpdateStatus(order.id, 'Ready to Serve')}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 py-3 text-sm font-bold text-white hover:bg-red-600 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50"
           >
             <Bell className="h-4 w-4" />
-            Mark as Ready to Serve
+            Mark Ready + Print Invoice
           </button>
         )}
         {order.status === 'Ready to Serve' && (
