@@ -48,7 +48,7 @@ export class ERPNextClient {
     const params = new URLSearchParams()
     if (options?.fields) params.set('fields', JSON.stringify(options.fields))
     if (options?.filters) params.set('filters', JSON.stringify(options.filters))
-    if (options?.limit) params.set('limit_page_length', String(options.limit))
+    if (options?.limit !== undefined) params.set('limit_page_length', options.limit === 0 ? '0' : String(options.limit))
     if (options?.orderBy) params.set('order_by', options.orderBy)
 
     const res = await fetch(`${this.baseUrl}/api/resource/${doctype}?${params}`, {
