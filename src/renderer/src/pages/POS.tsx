@@ -595,7 +595,8 @@ export default function POS() {
                     setWoProcessing(wo.name)
                     const res = await window.api.waiterOrders.accept(wo.name)
                     if (res.success) {
-                      setToast({ type: 'success', message: `Order accepted — KOT printed` })
+                      const msg = res.kotPrinted ? `Order #${res.orderNumber} accepted — KOT printed` : `Order #${res.orderNumber} accepted${res.kotError ? ` (KOT failed: ${res.kotError})` : ''}`
+                      setToast({ type: res.kotPrinted ? 'success' : 'error', message: msg })
                     } else {
                       setToast({ type: 'error', message: `Failed: ${res.error}` })
                     }

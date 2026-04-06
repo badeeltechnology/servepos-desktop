@@ -274,14 +274,17 @@ export function registerIpcHandlers(): void {
     await client.acceptWaiterOrder(wo.name, order.id)
 
     // Print KOT (this also sets kot_printed = 1)
+    let kotPrinted = false
+    let kotError = ''
     try {
       const kotResult = await printKots(order.id)
-      console.log(`[Waiter] KOT for ${wo.name}: printed=${kotResult.printed}, errors=${kotResult.errors.join(',')}`)
+      kotPrinted = kotResult.printed > 0
+      if (kotResult.errors.length > 0) kotError = kotResult.errors.join(', ')
     } catch (printErr: any) {
-      console.error(`[Waiter] KOT print failed for ${wo.name}:`, printErr.message)
+      kotError = printErr.message
     }
 
-    return { success: true, orderId: order.id, orderNumber: order.order_number }
+    return { success: true, orderId: order.id, orderNumber: order.order_number, kotPrinted, kotError }
   }
 
   ipcMain.handle('waiterOrders:getPending', async () => {
@@ -291,20 +294,7 @@ export function registerIpcHandlers(): void {
       const client = new ERPNextClient()
       const branch = db.getConfig('branch') || undefined
       const pending = await client.getPendingWaiterOrders(branch)
-
-      // Auto-accept if enabled in settings
-      const autoAccept = db.getReceiptConfig('waiter_order_auto_accept') === '1'
-      if (autoAccept && pending.length > 0) {
-        for (const wo of pending) {
-          try {
-            await acceptWaiterOrderLocally(wo, client)
-          } catch (err) {
-            console.error(`[Auto-accept] Failed for ${wo.name}:`, err)
-          }
-        }
-        return []
-      }
-
+      // Always return pending orders to frontend — frontend handles auto-accept via countdown popup
       return pending
     } catch {
       return []
