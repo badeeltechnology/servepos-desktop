@@ -516,8 +516,70 @@ export default function POS() {
         <PaymentDialog grandTotal={cart.getGrandTotal(taxRate)} orderWaiterName={cart.waiterName} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />
       )}
 
-      {/* Waiter Orders Panel */}
-      {showWaiterOrders && (
+      {/* Waiter Orders Panel — Full screen for supervisor/coordinator, corner toast for cashier */}
+      {showWaiterOrders && user?.role === 'cashier' && waiterOrders.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-50 w-[360px] max-h-[50vh] overflow-y-auto rounded-2xl border-2 border-orange-200 bg-white shadow-2xl">
+          <div className="sticky top-0 flex items-center justify-between border-b bg-orange-50 px-4 py-3 rounded-t-2xl">
+            <div className="flex items-center gap-2">
+              <ChefHat className="h-4 w-4 text-orange-600" />
+              <span className="text-sm font-bold text-orange-700">{waiterOrders.length} Waiter Order{waiterOrders.length !== 1 ? 's' : ''}</span>
+            </div>
+            <button onClick={() => setShowWaiterOrders(false)} className="rounded-lg p-1 hover:bg-orange-100">
+              <X className="h-4 w-4 text-orange-500" />
+            </button>
+          </div>
+          <div className="p-3 space-y-2">
+            {waiterOrders.map((wo: any) => (
+              <div key={wo.name} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-gray-50">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-orange-600">{wo.waiter_name}</span>
+                    {wo.table && <span className="text-[10px] rounded bg-blue-50 px-1.5 py-0.5 text-blue-600">T:{wo.table}</span>}
+                  </div>
+                  <span className="text-xs font-bold text-primary">
+                    {(wo.items || []).reduce((s: number, i: any) => s + ((i.rate + (i.modifier_total || 0)) * i.qty), 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="px-3 py-1.5">
+                  {(wo.items || []).slice(0, 3).map((item: any, i: number) => (
+                    <p key={i} className="text-[11px] text-gray-600">{item.qty}x {item.item_name}</p>
+                  ))}
+                  {(wo.items || []).length > 3 && <p className="text-[10px] text-gray-400">+{(wo.items || []).length - 3} more</p>}
+                </div>
+                <WaiterOrderActions
+                  woName={wo.name}
+                  processing={woProcessing === wo.name}
+                  onAccept={async () => {
+                    setWoProcessing(wo.name)
+                    const res = await window.api.waiterOrders.accept(wo.name)
+                    if (res.success) {
+                      setToast({ type: 'success', message: `Order accepted — KOT printed` })
+                    } else {
+                      setToast({ type: 'error', message: `Failed: ${res.error}` })
+                    }
+                    const orders = await window.api.waiterOrders.getPending()
+                    setWaiterOrders(orders || [])
+                    setWaiterOrderCount(orders?.length || 0)
+                    if ((orders?.length || 0) === 0) setShowWaiterOrders(false)
+                    setWoProcessing(null)
+                  }}
+                  onReject={async () => {
+                    if (!confirm('Reject this order?')) return
+                    await window.api.waiterOrders.reject(wo.name)
+                    const orders = await window.api.waiterOrders.getPending()
+                    setWaiterOrders(orders || [])
+                    setWaiterOrderCount(orders?.length || 0)
+                    if ((orders?.length || 0) === 0) setShowWaiterOrders(false)
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Full-screen waiter orders panel for supervisor/coordinator */}
+      {showWaiterOrders && user?.role !== 'cashier' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="max-h-[80vh] w-[600px] overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="sticky top-0 flex items-center justify-between border-b bg-white px-6 py-4">
@@ -573,13 +635,13 @@ export default function POS() {
                           const res = await window.api.waiterOrders.accept(wo.name)
                           if (res.success) {
                             setToast({ type: 'success', message: `Waiter order accepted — KOT printed` })
-                            const orders = await window.api.waiterOrders.getPending()
-                            setWaiterOrders(orders || [])
-                            setWaiterOrderCount(orders?.length || 0)
-                            if ((orders?.length || 0) === 0) setShowWaiterOrders(false)
                           } else {
                             setToast({ type: 'error', message: `Failed: ${res.error}` })
                           }
+                          const orders = await window.api.waiterOrders.getPending()
+                          setWaiterOrders(orders || [])
+                          setWaiterOrderCount(orders?.length || 0)
+                          if ((orders?.length || 0) === 0) setShowWaiterOrders(false)
                           setWoProcessing(null)
                         }}
                         onReject={async () => {
