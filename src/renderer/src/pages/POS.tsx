@@ -500,7 +500,7 @@ export default function POS() {
 
       {/* Orders bar */}
       <OrdersBar activeOrderId={activeOrderId} onSelectOrder={handleResumeOrder} onNewOrder={handleNewOrder}
-        onVoidOrder={async (orderId) => {
+        onVoidOrder={user?.role === 'supervisor' ? async (orderId) => {
           const reason = prompt('Reason for voiding this order:')
           if (!reason) return
           await window.api.orders.update(orderId, { status: 'Void', voidReason: reason })
@@ -511,7 +511,7 @@ export default function POS() {
           // Free table if applicable
           const order = await window.api.orders.get(orderId)
           if (order?.table_name) await window.api.tables.updateStatus(order.table_name, 'Available')
-        }}
+        } : undefined}
       />
 
       {/* Main: Items + Cart */}
