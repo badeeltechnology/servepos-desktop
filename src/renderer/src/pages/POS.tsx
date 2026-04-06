@@ -80,6 +80,35 @@ export default function POS() {
     return () => { polling = false; clearInterval(pollTimer) }
   }, [showWaiterOrders])
 
+  // Auto-close shift check (every 60s)
+  useEffect(() => {
+    let autoCloseDone = false
+    const autoCloseTimer = setInterval(async () => {
+      if (autoCloseDone || !activeSession) return
+      try {
+        const config = await window.api.config.getAll()
+        const autoCloseTime = config.auto_close_shift_time
+        if (!autoCloseTime) return
+        const now = new Date()
+        const [h, m] = autoCloseTime.split(':').map(Number)
+        const target = new Date(now)
+        target.setHours(h, m, 0, 0)
+        // Check if current time is past the target and within 2 minutes of it
+        const diff = now.getTime() - target.getTime()
+        if (diff >= 0 && diff < 120000) {
+          autoCloseDone = true
+          const result = await window.api.sessions.autoClose()
+          if (result.success) {
+            setActiveSession(null)
+            cart.clearCart(); setIsOrderPlaced(false); setActiveOrderId(null)
+            setToast({ type: 'success', message: `Shift auto-closed. ${result.voided || 0} order(s) voided.` })
+          }
+        }
+      } catch {}
+    }, 60000)
+    return () => clearInterval(autoCloseTimer)
+  }, [activeSession])
+
   // Auto-dismiss toast
   useEffect(() => {
     if (toast) {

@@ -145,6 +145,49 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sessions:getPendingSync', (_e, sessionId: string) => db.getSessionPendingSyncOrders(sessionId))
   ipcMain.handle('sessions:getAll', (_e, limit?: number) => db.getSessions(limit))
 
+  // Auto-close shift: void all open/hold orders, then close the session
+  ipcMain.handle('sessions:autoClose', async () => {
+    try {
+      const session = db.getActiveSession()
+      if (!session) return { success: false, error: 'No active session' }
+
+      const database = getDb()
+
+      // Void all Open/Hold orders in this session
+      const openOrders = db.getSessionOpenOrders(session.id)
+      for (const order of openOrders) {
+        database.run(
+          "UPDATE orders SET status = 'Void', void_reason = 'Auto-closed at end of day' WHERE id = ?",
+          [order.id]
+        )
+        // Free table
+        if (order.table_name) {
+          database.run("UPDATE tables_list SET status = 'Available', current_order_id = NULL WHERE name = ?", [order.table_name])
+        }
+      }
+      saveDatabase()
+
+      // Force-sync pending completed orders before closing
+      try { await runSync() } catch {}
+
+      // Close the session with empty closing balance
+      try {
+        db.closeSession(session.id, [], 'Auto-closed at scheduled time')
+        return { success: true, voided: openOrders.length }
+      } catch (err: any) {
+        // If still can't close (pending sync), force close
+        database.run(
+          "UPDATE sessions SET status = 'Closed', closed_at = datetime('now'), remarks = 'Auto-closed at scheduled time' WHERE id = ?",
+          [session.id]
+        )
+        saveDatabase()
+        return { success: true, voided: openOrders.length, forced: true }
+      }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
   // ==================== Modifiers ====================
   ipcMain.handle('modifiers:getGroups', () => db.getModifierGroups())
   ipcMain.handle('modifiers:createGroup', (_e, data: any) => db.createModifierGroup(data))

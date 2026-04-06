@@ -947,6 +947,26 @@ function SystemSettings() {
               <option value="0">Never</option>
             </select>
           </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Auto-close Shift At</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="time"
+                value={config.auto_close_shift_time || ''}
+                onChange={(e) => saveConfig('auto_close_shift_time', e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              />
+              {config.auto_close_shift_time && (
+                <button
+                  onClick={() => saveConfig('auto_close_shift_time', '')}
+                  className="rounded-lg border border-input px-3 py-2 text-xs text-muted-foreground hover:bg-muted"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Auto-void pending orders and close shift at this time daily. Leave empty to disable.</p>
+          </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
