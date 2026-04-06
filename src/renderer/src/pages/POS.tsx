@@ -499,7 +499,20 @@ export default function POS() {
       </header>
 
       {/* Orders bar */}
-      <OrdersBar activeOrderId={activeOrderId} onSelectOrder={handleResumeOrder} onNewOrder={handleNewOrder} />
+      <OrdersBar activeOrderId={activeOrderId} onSelectOrder={handleResumeOrder} onNewOrder={handleNewOrder}
+        onVoidOrder={async (orderId) => {
+          const reason = prompt('Reason for voiding this order:')
+          if (!reason) return
+          await window.api.orders.update(orderId, { status: 'Void', voidReason: reason })
+          // If the voided order was the active one, clear cart
+          if (activeOrderId === orderId) {
+            cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false)
+          }
+          // Free table if applicable
+          const order = await window.api.orders.get(orderId)
+          if (order?.table_name) await window.api.tables.updateStatus(order.table_name, 'Available')
+        }}
+      />
 
       {/* Main: Items + Cart */}
       <div className="flex flex-1 overflow-hidden">
