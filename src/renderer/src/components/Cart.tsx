@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Minus, Plus, Trash2, MessageSquare, Percent, MapPin, Users, ChevronDown, UserCheck, Tag, X } from 'lucide-react'
+import { Minus, Plus, Trash2, MessageSquare, Percent, MapPin, Users, ChevronDown, UserCheck, Tag, X, Printer } from 'lucide-react'
 import { useCartStore, CartItem } from '../stores/cart'
 import { useAuthStore } from '../stores/auth'
 import TablePicker from './TablePicker'
@@ -48,6 +48,7 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
   const [itemDiscAmt, setItemDiscAmt] = useState(0)
   const [discountError, setDiscountError] = useState('')
   const [showTablePicker, setShowTablePicker] = useState(false)
+  const [showPrintMenu, setShowPrintMenu] = useState(false)
   const [waitersList, setWaitersList] = useState<{ name: string; waiter_name: string }[]>([])
   const [showWaiterPicker, setShowWaiterPicker] = useState(false)
   const [promosList, setPromosList] = useState<{ name: string; promo_name: string; discount_type: string; discount_value: number }[]>([])
@@ -267,7 +268,7 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
 
       {/* Totals & Pay */}
       {items.length > 0 && (
-        <div className="border-t bg-gray-50 px-4 py-4">
+        <div className="border-t bg-gray-50 px-4 py-3">
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between text-gray-500">
               <span>Subtotal ({items.length} items)</span>
@@ -291,22 +292,22 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
             </div>
           </div>
 
-          <div className="mt-4 space-y-2">
+          <div className="mt-3 space-y-1.5">
             {/* Promo selector */}
             {promosList.length > 0 && (
               <div className="relative">
                 {promoName ? (
-                  <div className="flex items-center gap-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-4 py-2.5">
-                    <Tag className="h-3.5 w-3.5 text-emerald-600" />
+                  <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5">
+                    <Tag className="h-3 w-3 text-emerald-600" />
                     <span className="flex-1 text-xs font-semibold text-emerald-700">{promoName}</span>
-                    <button onClick={() => setPromo(null)} className="rounded-lg p-0.5 text-emerald-400 hover:bg-emerald-100 hover:text-emerald-600">
-                      <X className="h-3.5 w-3.5" />
+                    <button onClick={() => setPromo(null)} className="rounded p-0.5 text-emerald-400 hover:bg-emerald-100 hover:text-emerald-600">
+                      <X className="h-3 w-3" />
                     </button>
                   </div>
                 ) : (
                   <button onClick={() => setShowPromoPicker(!showPromoPicker)}
-                    className="w-full rounded-xl border-2 border-dashed border-gray-200 px-4 py-2.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
-                    <Tag className="inline h-3.5 w-3.5 mr-1" />
+                    className="w-full rounded-lg border border-dashed border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
+                    <Tag className="inline h-3 w-3 mr-1" />
                     Apply Promo
                     <ChevronDown className="inline h-3 w-3 ml-1 opacity-50" />
                   </button>
@@ -331,57 +332,49 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
             )}
             {canDiscount && !promoName && (
               <button onClick={openOrderDiscount}
-                className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
-                <Percent className="inline h-3.5 w-3.5 mr-1" />
+                className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
+                <Percent className="inline h-3 w-3 mr-1" />
                 Discount
               </button>
             )}
             {!isOrderPlaced && (
               <button onClick={onPlaceOrder}
-                className="w-full rounded-xl bg-emerald-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 active:scale-[0.98]">
+                className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 active:scale-[0.98]">
                 Place Order & Print KOT
               </button>
             )}
             <button onClick={onPay}
-              className="w-full rounded-xl bg-primary py-3.5 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98]">
+              className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98]">
               {isOrderPlaced ? `Payment — ${grandTotal.toFixed(2)}` : `Quick Pay — ${grandTotal.toFixed(2)}`}
             </button>
             {isOrderPlaced && activeOrderId && (
-              <div className="space-y-2">
-                <button onClick={async () => {
-                  const kotRes = await window.api.print.kots(activeOrderId)
-                  const waiterRes = await window.api.print.waiterCopy(activeOrderId)
-                  const errors: string[] = []
-                  if (!kotRes?.success) errors.push('KOT: ' + (kotRes?.errors?.join(', ') || 'failed'))
-                  if (!waiterRes?.success) errors.push('Waiter: ' + (waiterRes?.error || 'failed'))
-                  alert(errors.length === 0 ? 'KOT + Waiter copy printed' : errors.join('\n'))
-                }}
-                  className="w-full rounded-xl border-2 border-emerald-200 px-3 py-2.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 hover:border-emerald-300">
-                  Print KOT + Waiter Copy
+              <div className="relative">
+                <button onClick={() => setShowPrintMenu(!showPrintMenu)}
+                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
+                  <Printer className="inline h-3.5 w-3.5 mr-1" />
+                  Print
+                  <ChevronDown className="inline h-3 w-3 ml-1 opacity-50" />
                 </button>
-                <div className="flex gap-2">
-                  <button onClick={async () => {
-                    const res = await window.api.print.kots(activeOrderId)
-                    alert(res?.success ? 'KOT reprinted' : `KOT failed: ${res?.errors?.join(', ') || 'Check printer'}`)
-                  }}
-                    className="flex-1 rounded-xl border-2 border-orange-200 px-3 py-2 text-xs font-semibold text-orange-600 hover:bg-orange-50 hover:border-orange-300">
-                    Reprint KOT
-                  </button>
-                  <button onClick={async () => {
-                    const res = await window.api.print.waiterCopy(activeOrderId)
-                    alert(res?.success ? 'Waiter copy printed' : `Failed: ${res?.error || 'Check printer'}`)
-                  }}
-                    className="flex-1 rounded-xl border-2 border-blue-200 px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 hover:border-blue-300">
-                    Waiter Copy
-                  </button>
-                </div>
-                <button onClick={async () => {
-                  const res = await window.api.print.invoice(activeOrderId)
-                  alert(res?.success ? 'Invoice printed' : `Failed: ${res?.error || 'Check printer'}`)
-                }}
-                  className="w-full rounded-xl border-2 border-purple-200 px-3 py-2 text-xs font-semibold text-purple-600 hover:bg-purple-50 hover:border-purple-300">
-                  Print Invoice
-                </button>
+                {showPrintMenu && (
+                  <div className="absolute bottom-full left-0 right-0 z-30 mb-1 rounded-xl border bg-white shadow-lg overflow-hidden">
+                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId); const w = await window.api.print.waiterCopy(activeOrderId); alert(r?.success && w?.success ? 'KOT + Waiter copy printed' : 'Print error — check printer') }}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> KOT + Waiter Copy
+                    </button>
+                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId); alert(r?.success ? 'KOT reprinted' : 'KOT failed') }}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
+                      <span className="h-1.5 w-1.5 rounded-full bg-orange-500" /> Reprint KOT
+                    </button>
+                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.waiterCopy(activeOrderId); alert(r?.success ? 'Waiter copy printed' : 'Failed') }}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
+                      <span className="h-1.5 w-1.5 rounded-full bg-blue-500" /> Waiter Copy
+                    </button>
+                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.invoice(activeOrderId); alert(r?.success ? 'Invoice printed' : 'Failed') }}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                      <span className="h-1.5 w-1.5 rounded-full bg-purple-500" /> Print Invoice
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
