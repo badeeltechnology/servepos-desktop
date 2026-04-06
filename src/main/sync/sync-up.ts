@@ -120,6 +120,9 @@ export async function syncUp(): Promise<SyncResult> {
         invoice.servepos_room = order.room || null
         invoice.servepos_guests = order.guests || 0
         invoice.servepos_kot_generated = order.kot_printed ? 1 : 0
+        if (order.promo_name) {
+          invoice.servepos_promo = order.promo_name
+        }
 
         if (order.discount_percent > 0) {
           invoice.additional_discount_percentage = order.discount_percent

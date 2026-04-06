@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Minus, Plus, Trash2, MessageSquare, Percent, MapPin, Users, ChevronDown, UserCheck } from 'lucide-react'
+import { Minus, Plus, Trash2, MessageSquare, Percent, MapPin, Users, ChevronDown, UserCheck, Tag, X } from 'lucide-react'
 import { useCartStore, CartItem } from '../stores/cart'
 import { useAuthStore } from '../stores/auth'
 import TablePicker from './TablePicker'
@@ -30,7 +30,8 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
     waiterId, waiterName, setWaiter,
     updateItemQty, removeItem, updateItemInstructions, updateItemDiscount,
     orderDiscountPercent, orderDiscountAmount, orderDiscountReason,
-    setOrderDiscount, getSubtotal, getOrderDiscountValue, getTaxTotal, getGrandTotal
+    setOrderDiscount, promoName, setPromo,
+    getSubtotal, getOrderDiscountValue, getTaxTotal, getGrandTotal
   } = useCartStore()
 
   const user = useAuthStore((s) => s.user)
@@ -49,14 +50,23 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [waitersList, setWaitersList] = useState<{ name: string; waiter_name: string }[]>([])
   const [showWaiterPicker, setShowWaiterPicker] = useState(false)
+  const [promosList, setPromosList] = useState<{ name: string; promo_name: string; discount_type: string; discount_value: number }[]>([])
+  const [showPromoPicker, setShowPromoPicker] = useState(false)
 
-  useEffect(() => { loadWaiters() }, [])
+  useEffect(() => { loadWaiters(); loadPromos() }, [])
 
   async function loadWaiters() {
     try {
       const list = await window.api.waiters.list()
       setWaitersList(list || [])
     } catch { /* waiters table may not exist yet */ }
+  }
+
+  async function loadPromos() {
+    try {
+      const list = await window.api.promos.list()
+      setPromosList(list || [])
+    } catch { /* promos table may not exist yet */ }
   }
 
   const subtotal = getSubtotal()
@@ -265,7 +275,7 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
             </div>
             {orderDiscVal > 0 && (
               <div className="flex justify-between text-emerald-600">
-                <span>Discount</span>
+                <span>Discount{promoName ? ` (${promoName}${orderDiscountPercent > 0 ? ` ${orderDiscountPercent}%` : ''})` : ''}</span>
                 <span className="font-medium">-{orderDiscVal.toFixed(2)}</span>
               </div>
             )}
@@ -282,7 +292,44 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
           </div>
 
           <div className="mt-4 space-y-2">
-            {canDiscount && (
+            {/* Promo selector */}
+            {promosList.length > 0 && (
+              <div className="relative">
+                {promoName ? (
+                  <div className="flex items-center gap-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-4 py-2.5">
+                    <Tag className="h-3.5 w-3.5 text-emerald-600" />
+                    <span className="flex-1 text-xs font-semibold text-emerald-700">{promoName}</span>
+                    <button onClick={() => setPromo(null)} className="rounded-lg p-0.5 text-emerald-400 hover:bg-emerald-100 hover:text-emerald-600">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowPromoPicker(!showPromoPicker)}
+                    className="w-full rounded-xl border-2 border-dashed border-gray-200 px-4 py-2.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
+                    <Tag className="inline h-3.5 w-3.5 mr-1" />
+                    Apply Promo
+                    <ChevronDown className="inline h-3 w-3 ml-1 opacity-50" />
+                  </button>
+                )}
+                {showPromoPicker && !promoName && (
+                  <div className="absolute bottom-full left-0 right-0 z-30 mb-1 max-h-48 overflow-y-auto rounded-xl border bg-white shadow-lg">
+                    {promosList.map((p) => (
+                      <button
+                        key={p.name}
+                        onClick={() => { setPromo(p.promo_name, p.discount_type, p.discount_value); setShowPromoPicker(false) }}
+                        className="flex w-full items-center justify-between px-4 py-2.5 text-left text-xs hover:bg-gray-50"
+                      >
+                        <span className="font-semibold text-gray-700">{p.promo_name}</span>
+                        <span className="text-emerald-600 font-medium">
+                          {p.discount_type === 'Percentage' ? `${p.discount_value}%` : `${p.discount_value}`}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {canDiscount && !promoName && (
               <button onClick={openOrderDiscount}
                 className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
                 <Percent className="inline h-3.5 w-3.5 mr-1" />

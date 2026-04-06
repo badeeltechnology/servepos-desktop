@@ -63,6 +63,7 @@ interface ReceiptData {
   payments: { method: string; amount: number }[]
   change: number
   waiterName?: string
+  promoName?: string
 }
 
 export function generateReceipt(data: ReceiptData): string {
@@ -174,7 +175,8 @@ function generateReceiptClassic(data: ReceiptData, config: Record<string, string
   // Totals
   lines.push(formatLine('Subtotal:', fmtAmt(data.subtotal)))
   if (data.discountAmount > 0) {
-    lines.push(formatLine('Discount:', `-${fmtAmt(data.discountAmount)}`))
+    const discLabel = data.promoName ? `Discount (${data.promoName}):` : 'Discount:'
+    lines.push(formatLine(discLabel, `-${fmtAmt(data.discountAmount)}`))
   }
   if (data.taxTotal > 0) {
     lines.push(formatLine(`${data.taxLabel} (${data.taxRate}%):`, fmtAmt(data.taxTotal)))
@@ -319,7 +321,8 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
   // Totals — right-aligned with clear labels
   lines.push(formatLine('  Subtotal', fmtAmt(data.subtotal)))
   if (data.discountAmount > 0) {
-    lines.push(formatLine('  Discount', `-${fmtAmt(data.discountAmount)}`))
+    const discLabel = data.promoName ? `  Discount (${data.promoName})` : '  Discount'
+    lines.push(formatLine(discLabel, `-${fmtAmt(data.discountAmount)}`))
   }
   if (data.taxTotal > 0) {
     lines.push(formatLine(`  ${data.taxLabel} ${data.taxRate}%`, fmtAmt(data.taxTotal)))
@@ -709,7 +712,8 @@ function generateInvoiceClassic(data: ReceiptData, config: Record<string, string
   lines.push(getDashLine())
   lines.push(formatLine('Subtotal:', fmtAmt(data.subtotal)))
   if (data.discountAmount > 0) {
-    lines.push(formatLine('Discount:', `-${fmtAmt(data.discountAmount)}`))
+    const discLabel = data.promoName ? `Discount (${data.promoName}):` : 'Discount:'
+    lines.push(formatLine(discLabel, `-${fmtAmt(data.discountAmount)}`))
   }
   if (data.taxTotal > 0) {
     lines.push(formatLine(`${data.taxLabel} (${data.taxRate}%):`, fmtAmt(data.taxTotal)))
@@ -819,7 +823,8 @@ function generateInvoiceModern(data: ReceiptData, config: Record<string, string>
   lines.push(getSeparatorLine())
   lines.push(formatLine('  Subtotal', fmtAmt(data.subtotal)))
   if (data.discountAmount > 0) {
-    lines.push(formatLine('  Discount', `-${fmtAmt(data.discountAmount)}`))
+    const discLabel = data.promoName ? `  Discount (${data.promoName})` : '  Discount'
+    lines.push(formatLine(discLabel, `-${fmtAmt(data.discountAmount)}`))
   }
   if (data.taxTotal > 0) {
     lines.push(formatLine(`  ${data.taxLabel} ${data.taxRate}%`, fmtAmt(data.taxTotal)))

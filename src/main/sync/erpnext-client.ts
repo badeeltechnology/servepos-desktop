@@ -212,6 +212,14 @@ export class ERPNextClient {
     return this.callMethod('servepos.api.pos_session.get_item_modifiers', { item_code: itemCode })
   }
 
+  async getPromos(): Promise<any[]> {
+    return this.getList('ServePOS Promo', {
+      fields: ['name', 'promo_name', 'discount_type', 'discount_value', 'enabled'],
+      filters: { enabled: 1 },
+      limit: 0
+    })
+  }
+
   async getPendingWaiterOrders(branch?: string): Promise<any[]> {
     const args: any = {}
     if (branch) args.branch = branch

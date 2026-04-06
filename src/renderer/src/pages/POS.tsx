@@ -136,6 +136,10 @@ export default function POS() {
     await window.api.orders.update(order.id, {
       status,
       subtotal: cart.getSubtotal(),
+      discountAmount: cart.orderDiscountAmount,
+      discountPercent: cart.orderDiscountPercent,
+      discountReason: cart.orderDiscountReason || null,
+      promoName: cart.promoName || null,
       grandTotal: cart.getGrandTotal(taxRate)
     })
 
@@ -230,6 +234,7 @@ export default function POS() {
           discountAmount: cart.orderDiscountAmount,
           discountPercent: cart.orderDiscountPercent,
           discountReason: cart.orderDiscountReason || null,
+          promoName: cart.promoName || null,
           grandTotal: cart.getGrandTotal(taxRate),
           completedAt: new Date().toISOString()
         })

@@ -159,6 +159,11 @@ const api = {
     list: () => ipcRenderer.invoke('waiters:list')
   },
 
+  // Promos
+  promos: {
+    list: () => ipcRenderer.invoke('promos:list')
+  },
+
   // Touch keyboard
   keyboard: {
     show: () => ipcRenderer.invoke('keyboard:show')

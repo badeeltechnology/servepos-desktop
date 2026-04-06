@@ -113,7 +113,8 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
     discountAmount: (order.discount_amount || 0) + (order.subtotal * (order.discount_percent || 0) / 100),
     grandTotal: order.grand_total || 0,
     payments: payments.map((p: any) => ({ method: p.payment_method, amount: p.amount })),
-    change: Math.max(0, totalPaid - (order.grand_total || 0))
+    change: Math.max(0, totalPaid - (order.grand_total || 0)),
+    promoName: order.promo_name || undefined
   }
 
   const receipt = generateReceipt(receiptData)
@@ -231,7 +232,8 @@ export async function printInvoice(orderId: string): Promise<{ success: boolean;
     discountAmount: (order.discount_amount || 0) + (order.subtotal * (order.discount_percent || 0) / 100),
     grandTotal: order.grand_total || 0,
     payments: [],
-    change: 0
+    change: 0,
+    promoName: order.promo_name || undefined
   }
 
   const invoice = generateInvoice(invoiceData)

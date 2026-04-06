@@ -353,7 +353,8 @@ export function updateOrder(id: string, updates: Record<string, any>): boolean {
     discountPercent: 'discount_percent', discountReason: 'discount_reason',
     grandTotal: 'grand_total', voidReason: 'void_reason', kotPrinted: 'kot_printed',
     completedAt: 'completed_at', syncStatus: 'sync_status', syncError: 'sync_error',
-    erpnextDocname: 'erpnext_docname', waiterId: 'waiter_id', waiterName: 'waiter_name'
+    erpnextDocname: 'erpnext_docname', waiterId: 'waiter_id', waiterName: 'waiter_name',
+    promoName: 'promo_name'
   }
 
   const sets: string[] = []
@@ -811,6 +812,12 @@ export function clearTransactions(): { orders: number; sessions: number } {
 
 export function getWaiters(): any[] {
   return queryAll('SELECT * FROM waiters WHERE is_active = 1 ORDER BY waiter_name')
+}
+
+// ==================== Promos ====================
+
+export function getPromos(): any[] {
+  return queryAll('SELECT * FROM promos WHERE enabled = 1 ORDER BY promo_name')
 }
 
 // ==================== Setup Check ====================

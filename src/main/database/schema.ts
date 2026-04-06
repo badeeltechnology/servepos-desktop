@@ -372,6 +372,17 @@ function createTables(): void {
     )
   `)
 
+  database.run(`
+    CREATE TABLE IF NOT EXISTS promos (
+      name TEXT PRIMARY KEY,
+      promo_name TEXT NOT NULL,
+      discount_type TEXT NOT NULL CHECK(discount_type IN ('Percentage', 'Amount')),
+      discount_value REAL NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      synced_at TEXT
+    )
+  `)
+
   // Indexes
   const indexes = [
     'CREATE INDEX IF NOT EXISTS idx_items_group ON items(item_group)',
@@ -589,6 +600,11 @@ function runMigrations(): void {
     database.run('CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(created_at)')
     database.run('PRAGMA foreign_keys = ON')
     }
+  }
+
+  // Migration 13b: Add promo_name to orders
+  if (!hasColumn('orders', 'promo_name')) {
+    database.run('ALTER TABLE orders ADD COLUMN promo_name TEXT')
   }
 
   // Migration 13: Expand print_routes to support prep_doc, invoice types

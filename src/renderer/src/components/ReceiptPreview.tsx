@@ -171,7 +171,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
               </div>
               {(order.discount_amount > 0 || order.discount_percent > 0) && (
                 <div className="flex justify-between">
-                  <span>Discount:</span>
+                  <span>Discount{order.promo_name ? ` (${order.promo_name})` : ''}:</span>
                   <span>-{fmt((order.discount_amount || 0) + (order.subtotal || 0) * (order.discount_percent || 0) / 100)}</span>
                 </div>
               )}

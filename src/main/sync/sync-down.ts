@@ -287,6 +287,23 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       counts.waiters = 0
     }
 
+    // Sync promos from ERPNext
+    try {
+      const promos = await client.getPromos()
+      db.run('DELETE FROM promos')
+      for (const p of promos) {
+        db.run(
+          `INSERT INTO promos (name, promo_name, discount_type, discount_value, enabled, synced_at)
+           VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+          [p.name, p.promo_name, p.discount_type, p.discount_value, p.enabled ? 1 : 0]
+        )
+      }
+      counts.promos = promos.length
+    } catch {
+      // ServePOS Promo doctype may not exist yet
+      counts.promos = 0
+    }
+
     // Waiter orders are NOT auto-accepted during sync.
     // They are handled via the POS screen "Waiter" button where cashier manually accepts/rejects.
     // The POS screen polls ERPNext every 15 seconds for pending waiter orders.

@@ -379,6 +379,9 @@ export function registerIpcHandlers(): void {
   // Waiters
   ipcMain.handle('waiters:list', () => db.getWaiters())
 
+  // Promos
+  ipcMain.handle('promos:list', () => db.getPromos())
+
   // Waiter accountability — orders per waiter in a session
   ipcMain.handle('sessions:getWaiterSummary', (_e, sessionId: string) => {
     const database = getDb()
