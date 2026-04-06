@@ -52,16 +52,17 @@ export default function POS() {
 
     const pollTimer = setInterval(async () => {
       if (!polling) return
-      // Sync countdown
+      // Sync countdown — only update state if value changed
       try {
         const status = await window.api.sync.status()
-        setNextSyncIn(status.nextSyncIn ?? null)
+        const newSync = status.nextSyncIn ?? null
+        setNextSyncIn((prev) => prev === newSync ? prev : newSync)
       } catch {}
-      // Waiter orders — auto-show popup when new orders arrive
+      // Waiter orders — only update state if count changed
       try {
         const orders = await window.api.waiterOrders.getPending()
         const count = orders?.length || 0
-        setWaiterOrderCount(count)
+        setWaiterOrderCount((prev) => prev === count ? prev : count)
         if (count > 0) {
           setWaiterOrders(orders || [])
           if (!showWaiterOrdersRef.current) setShowWaiterOrders(true)

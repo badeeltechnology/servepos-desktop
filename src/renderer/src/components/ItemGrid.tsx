@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, memo } from 'react'
 import { Search, X, Info, LayoutGrid, List, ArrowLeft, FolderOpen, Globe } from 'lucide-react'
 import { useCartStore, CartModifier } from '../stores/cart'
 import ModifierModal from './ModifierModal'
@@ -39,7 +39,7 @@ const catColors = [
 
 type ViewMode = 'categories' | 'grid' | 'list'
 
-export default function ItemGrid() {
+function ItemGrid() {
   const [items, setItems] = useState<Item[]>([])
   const [groups, setGroups] = useState<ItemGroup[]>([])
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
@@ -508,3 +508,5 @@ export default function ItemGrid() {
     </div>
   )
 }
+
+export default memo(ItemGrid)
