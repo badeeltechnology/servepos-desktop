@@ -72,6 +72,7 @@ const api = {
     create: (data: any) => ipcRenderer.invoke('orders:create', data),
     get: (id: string) => ipcRenderer.invoke('orders:get', id),
     getAll: (filters?: any) => ipcRenderer.invoke('orders:getAll', filters),
+    getActive: () => ipcRenderer.invoke('orders:getActive'),
     update: (id: string, updates: any) => ipcRenderer.invoke('orders:update', id, updates)
   },
 

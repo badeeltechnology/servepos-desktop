@@ -117,6 +117,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('orders:create', (_e, data: any) => db.createOrder(data))
   ipcMain.handle('orders:get', (_e, id: string) => db.getOrder(id))
   ipcMain.handle('orders:getAll', (_e, filters?: any) => db.getOrders(filters))
+  ipcMain.handle('orders:getActive', () => db.getActiveOrders())
   ipcMain.handle('orders:update', (_e, id: string, updates: any) => db.updateOrder(id, updates))
 
   // ==================== Order Items ====================
@@ -172,6 +173,74 @@ export function registerIpcHandlers(): void {
 
   // ==================== Printing ====================
   // ==================== Waiter Orders ====================
+
+  // Shared helper: create local order from waiter order data, apply tax, print KOT
+  async function acceptWaiterOrderLocally(wo: any, client: ERPNextClient): Promise<{ success: boolean; orderId?: string; orderNumber?: string; error?: string }> {
+    const database = getDb()
+
+    // Check for duplicate — skip if already accepted
+    const dupStmt = database.prepare("SELECT id FROM orders WHERE waiter_id = ? AND order_type = ? AND table_name = ? AND created_at > datetime('now', '-5 minutes') AND status != 'Void'")
+    dupStmt.bind([wo.waiter || '', wo.order_type || 'Dine In', wo.table || ''])
+    const isDup = dupStmt.step()
+    dupStmt.free()
+    if (isDup) return { success: false, error: 'Already accepted' }
+
+    // Get active session
+    const sessionStmt = database.prepare("SELECT id, user_id, user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
+    const session = sessionStmt.step() ? sessionStmt.getAsObject() as any : null
+    sessionStmt.free()
+    if (!session) return { success: false, error: 'No open shift' }
+
+    // Create local order
+    const order = db.createOrder({
+      orderType: wo.order_type || 'Dine In',
+      tableName: wo.table || undefined,
+      room: wo.room || undefined,
+      guests: wo.guests || 1,
+      cashierId: session.user_id,
+      cashierName: session.user_name || '',
+      sessionId: session.id,
+      waiterId: wo.waiter || undefined,
+      waiterName: wo.waiter_name || undefined
+    })
+
+    // Add items
+    let subtotal = 0
+    for (const item of (wo.items || [])) {
+      const amount = ((item.rate || 0) + (item.modifier_total || 0)) * (item.qty || 1)
+      db.addOrderItem({
+        orderId: order.id, itemCode: item.item_code, itemName: item.item_name,
+        qty: item.qty || 1, rate: item.rate || 0, amount,
+        modifiers: item.modifiers || undefined, modifierTotal: item.modifier_total || 0,
+        specialInstructions: item.special_instructions || undefined
+      })
+      subtotal += amount
+    }
+
+    // Apply tax to calculate proper grand_total
+    const config = db.getAllReceiptConfig()
+    const taxEnabled = config.tax_enabled === '1'
+    const taxRate = taxEnabled ? parseFloat(config.tax_rate || '0') : 0
+    const taxTotal = subtotal * (taxRate / 100)
+    const grandTotal = subtotal + taxTotal
+
+    database.run('UPDATE orders SET subtotal = ?, tax_total = ?, grand_total = ? WHERE id = ?', [subtotal, taxTotal, grandTotal, order.id])
+    saveDatabase()
+
+    // Accept in ERPNext
+    await client.acceptWaiterOrder(wo.name, order.id)
+
+    // Print KOT (this also sets kot_printed = 1)
+    try {
+      const kotResult = await printKots(order.id)
+      console.log(`[Waiter] KOT for ${wo.name}: printed=${kotResult.printed}, errors=${kotResult.errors.join(',')}`)
+    } catch (printErr: any) {
+      console.error(`[Waiter] KOT print failed for ${wo.name}:`, printErr.message)
+    }
+
+    return { success: true, orderId: order.id, orderNumber: order.order_number }
+  }
+
   ipcMain.handle('waiterOrders:getPending', async () => {
     try {
       const erpnextUrl = db.getConfig('erpnext_url')
@@ -183,59 +252,13 @@ export function registerIpcHandlers(): void {
       // Auto-accept if enabled in settings
       const autoAccept = db.getReceiptConfig('waiter_order_auto_accept') === '1'
       if (autoAccept && pending.length > 0) {
-        const database = getDb()
         for (const wo of pending) {
           try {
-            // Get active session
-            const sessionStmt = database.prepare("SELECT id, user_id, user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
-            const session = sessionStmt.step() ? sessionStmt.getAsObject() as any : null
-            sessionStmt.free()
-            if (!session) continue // No open shift — skip auto-accept
-
-            // Create local order
-            const order = db.createOrder({
-              orderType: wo.order_type || 'Dine In',
-              tableName: wo.table || undefined,
-              room: wo.room || undefined,
-              guests: wo.guests || 1,
-              cashierId: session.user_id,
-              cashierName: session.user_name || '',
-              sessionId: session.id,
-              waiterId: wo.waiter || undefined,
-              waiterName: wo.waiter_name || undefined
-            })
-
-            // Add items
-            let subtotal = 0
-            for (const item of (wo.items || [])) {
-              const amount = ((item.rate || 0) + (item.modifier_total || 0)) * (item.qty || 1)
-              db.addOrderItem({
-                orderId: order.id, itemCode: item.item_code, itemName: item.item_name,
-                qty: item.qty || 1, rate: item.rate || 0, amount,
-                modifiers: item.modifiers || undefined, modifierTotal: item.modifier_total || 0,
-                specialInstructions: item.special_instructions || undefined
-              })
-              subtotal += amount
-            }
-
-            database.run('UPDATE orders SET subtotal = ?, grand_total = ? WHERE id = ?', [subtotal, subtotal, order.id])
-            saveDatabase()
-
-            // Accept in ERPNext
-            await client.acceptWaiterOrder(wo.name, order.id)
-
-            // Auto-print KOT
-            try {
-              const kotResult = await printKots(order.id)
-              console.log(`[Auto-accept] KOT for ${wo.name}: printed=${kotResult.printed}, errors=${kotResult.errors.join(',')}`)
-            } catch (printErr: any) {
-              console.error(`[Auto-accept] KOT print failed for ${wo.name}:`, printErr.message)
-            }
+            await acceptWaiterOrderLocally(wo, client)
           } catch (err) {
             console.error(`[Auto-accept] Failed for ${wo.name}:`, err)
           }
         }
-        // Return empty — all accepted
         return []
       }
 
@@ -248,51 +271,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('waiterOrders:accept', async (_e, waiterOrderName: string) => {
     try {
       const client = new ERPNextClient()
-      // Fetch the full waiter order
       const wo = await client.getDoc('ServePOS Waiter Order', waiterOrderName)
-      const dbRef = getDb()
-
-      // Get active session
-      const sessionStmt = dbRef.prepare("SELECT id, user_id, user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
-      const session = sessionStmt.step() ? sessionStmt.getAsObject() as any : null
-      sessionStmt.free()
-
-      // Create local order with waiter properly assigned
-      const order = db.createOrder({
-        orderType: wo.order_type || 'Dine In',
-        tableName: wo.table || undefined,
-        room: wo.room || undefined,
-        guests: wo.guests || 1,
-        cashierId: session?.user_id || 'waiter',
-        cashierName: session?.user_name || '',
-        sessionId: session?.id || undefined,
-        waiterId: wo.waiter || undefined,
-        waiterName: wo.waiter_name || undefined
-      })
-
-      // Add items
-      let subtotal = 0
-      for (const item of (wo.items || [])) {
-        const amount = ((item.rate || 0) + (item.modifier_total || 0)) * (item.qty || 1)
-        db.addOrderItem({
-          orderId: order.id, itemCode: item.item_code, itemName: item.item_name,
-          qty: item.qty || 1, rate: item.rate || 0, amount,
-          modifiers: item.modifiers || undefined, modifierTotal: item.modifier_total || 0,
-          specialInstructions: item.special_instructions || undefined
-        })
-        subtotal += amount
-      }
-
-      dbRef.run('UPDATE orders SET subtotal = ?, grand_total = ?, kot_printed = 1 WHERE id = ?', [subtotal, subtotal, order.id])
-      ;saveDatabase()
-
-      // Accept in ERPNext
-      await client.acceptWaiterOrder(waiterOrderName, order.id)
-
-      // Print KOT
-      try { await printKots(order.id) } catch {}
-
-      return { success: true, orderId: order.id, orderNumber: order.order_number }
+      return await acceptWaiterOrderLocally(wo, client)
     } catch (err: any) {
       return { success: false, error: err.message }
     }
@@ -316,32 +296,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('print:invoice', (_e, orderId: string) => printInvoice(orderId))
 
   // Poll for "Ready to Serve" orders that need invoice printing
-  // This runs on the cashier's machine (where the printer is)
+  // Concurrency guard to prevent double-printing
+  let pollReadyRunning = false
   ipcMain.handle('print:pollReadyOrders', async () => {
+    if (pollReadyRunning) return { printed: 0, total: 0 }
+    pollReadyRunning = true
     try {
       const database = getDb()
-
-      // First: check ERPNext for status changes on waiter orders linked to local orders
-      try {
-        const client = new ERPNextClient()
-        // Get local orders that are still Open/Preparing (might have been marked Ready by coordinator on another machine)
-        const localStmt = database.prepare(
-          "SELECT id, order_number FROM orders WHERE status IN ('Open', 'Preparing') AND waiter_name IS NOT NULL"
-        )
-        const localOrders: { id: string; order_number: string }[] = []
-        while (localStmt.step()) localOrders.push(localStmt.getAsObject() as any)
-        localStmt.free()
-
-        for (const lo of localOrders) {
-          try {
-            const result = await client.callMethod('servepos.api.waiter.update_order_status_by_pos', {
-              pos_order_id: lo.id,
-              status: '__check__' // won't match any mapping — just checking
-            })
-            // The API returns the current waiter order status, but we don't use it here
-          } catch {}
-        }
-      } catch {}
 
       // Find orders that are "Ready to Serve" but invoice not yet printed
       const readyStmt = database.prepare(
@@ -355,17 +316,23 @@ export function registerIpcHandlers(): void {
 
       let printed = 0
       for (const orderId of readyOrders) {
+        // Mark as printed BEFORE printing to prevent concurrent attempts
+        database.run('UPDATE orders SET invoice_printed = 1 WHERE id = ?', [orderId])
+        saveDatabase()
         try {
           const result = await printInvoice(orderId)
           if (result.success) {
-            database.run('UPDATE orders SET invoice_printed = 1 WHERE id = ?', [orderId])
-            saveDatabase()
             printed++
             console.log(`[Auto-Invoice] Printed invoice for order ${orderId}`)
           } else {
+            // Reset flag so it retries next poll
+            database.run('UPDATE orders SET invoice_printed = 0 WHERE id = ?', [orderId])
+            saveDatabase()
             console.error(`[Auto-Invoice] Failed for ${orderId}: ${result.error}`)
           }
         } catch (err: any) {
+          database.run('UPDATE orders SET invoice_printed = 0 WHERE id = ?', [orderId])
+          saveDatabase()
           console.error(`[Auto-Invoice] Error for ${orderId}: ${err.message}`)
         }
       }
@@ -373,6 +340,8 @@ export function registerIpcHandlers(): void {
       return { printed, total: readyOrders.length }
     } catch {
       return { printed: 0, total: 0 }
+    } finally {
+      pollReadyRunning = false
     }
   })
 

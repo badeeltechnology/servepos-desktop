@@ -28,9 +28,8 @@ export default function OrdersBar({ activeOrderId, onSelectOrder, onNewOrder }: 
   }, [])
 
   async function loadOrders() {
-    const openOrders = await window.api.orders.getAll({ status: 'Open' })
-    const heldOrders = await window.api.orders.getAll({ status: 'Hold' })
-    setOrders([...openOrders, ...heldOrders])
+    const active = await window.api.orders.getActive()
+    setOrders(active || [])
   }
 
   if (orders.length === 0) return null

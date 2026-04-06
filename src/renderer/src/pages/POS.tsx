@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuthStore } from '../stores/auth'
 import { useCartStore } from '../stores/cart'
 import ItemGrid from '../components/ItemGrid'
@@ -40,34 +40,44 @@ export default function POS() {
 
   useEffect(() => { loadTaxConfig(); checkSession() }, [])
 
-  // Clock + sync countdown + waiter orders poll
+  // Clock (1s) — no IPC calls, just local time
   useEffect(() => {
-    const timer = setInterval(async () => {
-      setCurrentTime(new Date())
+    const clockTimer = setInterval(() => setCurrentTime(new Date()), 1000)
+    return () => clearInterval(clockTimer)
+  }, [])
+
+  // Sync status (10s) + waiter orders poll (10s) + invoice poll (10s)
+  useEffect(() => {
+    let polling = true
+
+    const pollTimer = setInterval(async () => {
+      if (!polling) return
+      // Sync countdown
       try {
         const status = await window.api.sync.status()
         setNextSyncIn(status.nextSyncIn ?? null)
       } catch {}
-    }, 1000)
-
-    // Poll waiter orders every 10 seconds
-    const woTimer = setInterval(async () => {
+      // Waiter orders — auto-show popup when new orders arrive
       try {
         const orders = await window.api.waiterOrders.getPending()
-        setWaiterOrderCount(orders?.length || 0)
-        if (showWaiterOrders) setWaiterOrders(orders || [])
+        const count = orders?.length || 0
+        setWaiterOrderCount(count)
+        if (count > 0) {
+          setWaiterOrders(orders || [])
+          if (!showWaiterOrders) setShowWaiterOrders(true)
+        } else if (showWaiterOrders) {
+          setWaiterOrders([])
+        }
       } catch {}
-    }, 10000)
-
-    // Poll for ready orders that need invoice printing (every 10 seconds)
-    const invoiceTimer = setInterval(async () => {
+      // Invoice auto-print for ready orders
       try { await window.api.print.pollReadyOrders() } catch {}
     }, 10000)
 
     // Initial load
     window.api.waiterOrders.getPending().then((o: any) => setWaiterOrderCount(o?.length || 0)).catch(() => {})
+    window.api.sync.status().then((s: any) => setNextSyncIn(s.nextSyncIn ?? null)).catch(() => {})
 
-    return () => { clearInterval(timer); clearInterval(woTimer); clearInterval(invoiceTimer) }
+    return () => { polling = false; clearInterval(pollTimer) }
   }, [showWaiterOrders])
 
   // Auto-dismiss toast
@@ -555,39 +565,32 @@ export default function POS() {
                           <span className="text-primary">{(wo.items || []).reduce((s: number, i: any) => s + ((i.rate + (i.modifier_total || 0)) * i.qty), 0).toFixed(2)} QAR</span>
                         </div>
                       </div>
-                      <div className="flex gap-2 border-t bg-gray-50 px-4 py-2.5">
-                        <button
-                          onClick={async () => {
-                            setWoProcessing(wo.name)
-                            const res = await window.api.waiterOrders.accept(wo.name)
-                            if (res.success) {
-                              setToast({ type: 'success', message: `Waiter order accepted — KOT printed` })
-                              const orders = await window.api.waiterOrders.getPending()
-                              setWaiterOrders(orders || [])
-                              setWaiterOrderCount(orders?.length || 0)
-                            } else {
-                              setToast({ type: 'error', message: `Failed: ${res.error}` })
-                            }
-                            setWoProcessing(null)
-                          }}
-                          disabled={woProcessing === wo.name}
-                          className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-                        >
-                          {woProcessing === wo.name ? 'Processing...' : 'Accept & Print KOT'}
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (!confirm('Reject this order?')) return
-                            await window.api.waiterOrders.reject(wo.name)
+                      <WaiterOrderActions
+                        woName={wo.name}
+                        processing={woProcessing === wo.name}
+                        onAccept={async () => {
+                          setWoProcessing(wo.name)
+                          const res = await window.api.waiterOrders.accept(wo.name)
+                          if (res.success) {
+                            setToast({ type: 'success', message: `Waiter order accepted — KOT printed` })
                             const orders = await window.api.waiterOrders.getPending()
                             setWaiterOrders(orders || [])
                             setWaiterOrderCount(orders?.length || 0)
-                          }}
-                          className="rounded-lg border-2 border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                        >
-                          Reject
-                        </button>
-                      </div>
+                            if ((orders?.length || 0) === 0) setShowWaiterOrders(false)
+                          } else {
+                            setToast({ type: 'error', message: `Failed: ${res.error}` })
+                          }
+                          setWoProcessing(null)
+                        }}
+                        onReject={async () => {
+                          if (!confirm('Reject this order?')) return
+                          await window.api.waiterOrders.reject(wo.name)
+                          const orders = await window.api.waiterOrders.getPending()
+                          setWaiterOrders(orders || [])
+                          setWaiterOrderCount(orders?.length || 0)
+                          if ((orders?.length || 0) === 0) setShowWaiterOrders(false)
+                        }}
+                      />
                     </div>
                   ))}
                 </div>
@@ -910,6 +913,50 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
       {previewOrderId && (
         <ReceiptPreview orderId={previewOrderId} onClose={() => setPreviewOrderId(null)} />
       )}
+    </div>
+  )
+}
+
+// Waiter order Accept button with 5-second auto-accept countdown
+function WaiterOrderActions({ woName, processing, onAccept, onReject }: {
+  woName: string; processing: boolean; onAccept: () => void; onReject: () => void
+}) {
+  const [countdown, setCountdown] = useState(5)
+  const accepted = useRef(false)
+
+  useEffect(() => {
+    if (processing || accepted.current) return
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer)
+          if (!accepted.current) {
+            accepted.current = true
+            onAccept()
+          }
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [woName, processing])
+
+  return (
+    <div className="flex gap-2 border-t bg-gray-50 px-4 py-2.5">
+      <button
+        onClick={() => { accepted.current = true; onAccept() }}
+        disabled={processing}
+        className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+      >
+        {processing ? 'Processing...' : `Accept & Print KOT (${countdown}s)`}
+      </button>
+      <button
+        onClick={() => { accepted.current = true; onReject() }}
+        className="rounded-lg border-2 border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+      >
+        Reject
+      </button>
     </div>
   )
 }

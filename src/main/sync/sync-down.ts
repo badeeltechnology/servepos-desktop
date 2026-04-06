@@ -287,9 +287,9 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       counts.waiters = 0
     }
 
-    // Sync promos from ERPNext
+    // Sync promos from ERPNext (filtered by POS profile)
     try {
-      const promos = await client.getPromos()
+      const promos = await client.getPromos(posProfile || undefined)
       db.run('DELETE FROM promos')
       for (const p of promos) {
         db.run(

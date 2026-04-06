@@ -31,11 +31,19 @@ function getNextKotNumber(): number {
     const current = getConfig('kot_seq_number')
     num = (current ? parseInt(current) : 0) + 1
   }
-  const dbRef = getDb()
-  dbRef.run("INSERT OR REPLACE INTO config (key, value) VALUES ('kot_seq_date', ?)", [today])
-  dbRef.run("INSERT OR REPLACE INTO config (key, value) VALUES ('kot_seq_number', ?)", [String(num)])
+  db.run("INSERT OR REPLACE INTO config (key, value) VALUES ('kot_seq_date', ?)", [today])
+  db.run("INSERT OR REPLACE INTO config (key, value) VALUES ('kot_seq_number', ?)", [String(num)])
   saveDatabase()
   return num
+}
+
+// Shared helper: lookup item info (Arabic name, descriptions) from items table
+function lookupItemInfo(db: any, itemCode: string): { item_name_ar?: string; description?: string; description_ar?: string; item_group?: string; kitchen_station?: string } {
+  const stmt = db.prepare('SELECT item_name_ar, description, description_ar, item_group, kitchen_station FROM items WHERE item_code = ?')
+  stmt.bind([itemCode])
+  const info = stmt.step() ? stmt.getAsObject() as any : {}
+  stmt.free()
+  return info
 }
 
 // Log print action
@@ -86,12 +94,7 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
     cashierName: order.cashier_name || '',
     waiterName: order.waiter_name || undefined,
     items: items.map((item: any) => {
-      // Lookup Arabic name and descriptions from items table
-      const itemInfo = db.prepare('SELECT item_name_ar, description, description_ar FROM items WHERE item_code = ?')
-      itemInfo.bind([item.item_code])
-      const info = itemInfo.step() ? itemInfo.getAsObject() as any : {}
-      itemInfo.free()
-
+      const info = lookupItemInfo(db, item.item_code)
       return {
         itemName: item.item_name,
         itemNameAr: info.item_name_ar || null,
@@ -153,10 +156,7 @@ export async function printPrepDoc(orderId: string): Promise<{ success: boolean;
     waiterName: order.waiter_name || undefined,
     cashierName: order.cashier_name || '',
     items: items.map((item: any) => {
-      const itemInfo = db.prepare('SELECT item_name_ar FROM items WHERE item_code = ?')
-      itemInfo.bind([item.item_code])
-      const info = itemInfo.step() ? itemInfo.getAsObject() as any : {}
-      itemInfo.free()
+      const info = lookupItemInfo(db, item.item_code)
       return {
         itemName: item.item_name,
         itemNameAr: info.item_name_ar || undefined,
@@ -195,6 +195,7 @@ export async function printInvoice(orderId: string): Promise<{ success: boolean;
   const printer = route ? printers.find((p) => p.id === route.printer_id) : printers[0]
   if (!printer) return { success: false, error: 'No printer configured for invoice' }
 
+  const config = getAllReceiptConfig()
   const taxEnabled = config.tax_enabled === '1'
   const taxRate = taxEnabled ? parseFloat(config.tax_rate || '0') : 0
   const taxLabel = config.tax_label || 'VAT'
@@ -207,10 +208,7 @@ export async function printInvoice(orderId: string): Promise<{ success: boolean;
     cashierName: order.cashier_name || '',
     waiterName: order.waiter_name || undefined,
     items: items.map((item: any) => {
-      const itemInfo = db.prepare('SELECT item_name_ar, description, description_ar FROM items WHERE item_code = ?')
-      itemInfo.bind([item.item_code])
-      const info = itemInfo.step() ? itemInfo.getAsObject() as any : {}
-      itemInfo.free()
+      const info = lookupItemInfo(db, item.item_code)
       return {
         itemName: item.item_name,
         itemNameAr: info.item_name_ar || null,
@@ -272,11 +270,7 @@ export async function printKots(orderId: string): Promise<{ success: boolean; pr
   const routeItems: Record<string, { printer: PrinterConfig; station: string; items: any[] }> = {}
 
   for (const item of items) {
-    // Lookup item_group from items table (order_items doesn't store it)
-    const groupStmt = db.prepare('SELECT item_group, kitchen_station FROM items WHERE item_code = ?')
-    groupStmt.bind([item.item_code])
-    const itemInfo = groupStmt.step() ? groupStmt.getAsObject() as any : {}
-    groupStmt.free()
+    const itemInfo = lookupItemInfo(db, item.item_code)
     const itemGroup = itemInfo.item_group || ''
     const kitchenStation = itemInfo.kitchen_station || ''
 
@@ -320,10 +314,7 @@ export async function printKots(orderId: string): Promise<{ success: boolean; pr
       tableName: order.table_name,
       cashierName: order.cashier_name || '',
       items: group.items.map((item: any) => {
-        const itemInfo = db.prepare('SELECT item_name_ar FROM items WHERE item_code = ?')
-        itemInfo.bind([item.item_code])
-        const info = itemInfo.step() ? itemInfo.getAsObject() as any : {}
-        itemInfo.free()
+        const info = lookupItemInfo(db, item.item_code)
         return {
           itemName: item.item_name,
           itemNameAr: info.item_name_ar || undefined,
@@ -430,10 +421,7 @@ export async function printWaiterCopy(orderId: string): Promise<{ success: boole
     guests: order.guests,
     cashierName: order.cashier_name || '',
     items: items.map((item: any) => {
-      const itemInfo = db.prepare('SELECT item_name_ar FROM items WHERE item_code = ?')
-      itemInfo.bind([item.item_code])
-      const info = itemInfo.step() ? itemInfo.getAsObject() as any : {}
-      itemInfo.free()
+      const info = lookupItemInfo(db, item.item_code)
       return {
         itemName: item.item_name,
         itemNameAr: info.item_name_ar || undefined,

@@ -334,6 +334,10 @@ export function getOrder(id: string): any | null {
   return queryOne('SELECT * FROM orders WHERE id = ?', [id])
 }
 
+export function getActiveOrders(): any[] {
+  return queryAll("SELECT * FROM orders WHERE status IN ('Open', 'Hold') ORDER BY created_at DESC")
+}
+
 export function getOrders(filters?: { status?: string; cashierId?: string; date?: string }): any[] {
   const conditions: string[] = []
   const values: any[] = []
@@ -354,7 +358,7 @@ export function updateOrder(id: string, updates: Record<string, any>): boolean {
     grandTotal: 'grand_total', voidReason: 'void_reason', kotPrinted: 'kot_printed',
     completedAt: 'completed_at', syncStatus: 'sync_status', syncError: 'sync_error',
     erpnextDocname: 'erpnext_docname', waiterId: 'waiter_id', waiterName: 'waiter_name',
-    promoName: 'promo_name'
+    promoName: 'promo_name', invoicePrinted: 'invoice_printed'
   }
 
   const sets: string[] = []

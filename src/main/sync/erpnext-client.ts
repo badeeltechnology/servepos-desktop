@@ -212,12 +212,15 @@ export class ERPNextClient {
     return this.callMethod('servepos.api.pos_session.get_item_modifiers', { item_code: itemCode })
   }
 
-  async getPromos(): Promise<any[]> {
-    return this.getList('ServePOS Promo', {
-      fields: ['name', 'promo_name', 'discount_type', 'discount_value', 'enabled'],
+  async getPromos(posProfile?: string): Promise<any[]> {
+    // Fetch all enabled promos, then filter client-side for profile match + global
+    const all = await this.getList('ServePOS Promo', {
+      fields: ['name', 'promo_name', 'discount_type', 'discount_value', 'enabled', 'pos_profile'],
       filters: { enabled: 1 },
       limit: 0
     })
+    if (!posProfile) return all
+    return all.filter((p: any) => !p.pos_profile || p.pos_profile === posProfile)
   }
 
   async getPendingWaiterOrders(branch?: string): Promise<any[]> {

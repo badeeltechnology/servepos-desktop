@@ -375,6 +375,13 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
                     Waiter Copy
                   </button>
                 </div>
+                <button onClick={async () => {
+                  const res = await window.api.print.invoice(activeOrderId)
+                  alert(res?.success ? 'Invoice printed' : `Failed: ${res?.error || 'Check printer'}`)
+                }}
+                  className="w-full rounded-xl border-2 border-purple-200 px-3 py-2 text-xs font-semibold text-purple-600 hover:bg-purple-50 hover:border-purple-300">
+                  Print Invoice
+                </button>
               </div>
             )}
           </div>
