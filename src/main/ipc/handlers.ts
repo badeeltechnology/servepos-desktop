@@ -221,12 +221,14 @@ export function registerIpcHandlers(): void {
   async function acceptWaiterOrderLocally(wo: any, client: ERPNextClient): Promise<{ success: boolean; orderId?: string; orderNumber?: string; error?: string }> {
     const database = getDb()
 
-    // Check for duplicate — skip if already accepted
-    const dupStmt = database.prepare("SELECT id FROM orders WHERE waiter_id = ? AND order_type = ? AND table_name = ? AND created_at > datetime('now', '-5 minutes') AND status != 'Void'")
-    dupStmt.bind([wo.waiter || '', wo.order_type || 'Dine In', wo.table || ''])
-    const isDup = dupStmt.step()
-    dupStmt.free()
-    if (isDup) return { success: false, error: 'Already accepted' }
+    // Check for duplicate — skip if this exact waiter order was already accepted
+    if (wo.name) {
+      const dupStmt = database.prepare("SELECT id FROM orders WHERE waiter_order_name = ? AND status != 'Void'")
+      dupStmt.bind([wo.name])
+      const isDup = dupStmt.step()
+      dupStmt.free()
+      if (isDup) return { success: false, error: 'Already accepted' }
+    }
 
     // Get active session
     const sessionStmt = database.prepare("SELECT id, user_id, user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
@@ -267,7 +269,7 @@ export function registerIpcHandlers(): void {
     const taxTotal = subtotal * (taxRate / 100)
     const grandTotal = subtotal + taxTotal
 
-    database.run('UPDATE orders SET subtotal = ?, tax_total = ?, grand_total = ? WHERE id = ?', [subtotal, taxTotal, grandTotal, order.id])
+    database.run('UPDATE orders SET subtotal = ?, tax_total = ?, grand_total = ?, waiter_order_name = ? WHERE id = ?', [subtotal, taxTotal, grandTotal, wo.name || null, order.id])
     saveDatabase()
 
     // Accept in ERPNext

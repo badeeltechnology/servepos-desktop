@@ -358,7 +358,8 @@ export function updateOrder(id: string, updates: Record<string, any>): boolean {
     grandTotal: 'grand_total', voidReason: 'void_reason', kotPrinted: 'kot_printed',
     completedAt: 'completed_at', syncStatus: 'sync_status', syncError: 'sync_error',
     erpnextDocname: 'erpnext_docname', waiterId: 'waiter_id', waiterName: 'waiter_name',
-    promoName: 'promo_name', invoicePrinted: 'invoice_printed'
+    promoName: 'promo_name', invoicePrinted: 'invoice_printed',
+    waiterOrderName: 'waiter_order_name'
   }
 
   const sets: string[] = []
