@@ -968,6 +968,18 @@ function SystemSettings() {
             <p className="mt-1 text-xs text-muted-foreground">Auto-void pending orders and close shift at this time daily. Leave empty to disable.</p>
           </div>
         </div>
+        <div className="mt-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={config.touch_keyboard_enabled === '1'}
+              onChange={(e) => saveConfig('touch_keyboard_enabled', e.target.checked ? '1' : '0')}
+              className="rounded"
+            />
+            <span className="font-medium">Enable on-screen touch keyboard</span>
+          </label>
+          <p className="ml-6 text-xs text-muted-foreground">Show Windows touch keyboard when tapping input fields. Only enable on devices without a physical keyboard.</p>
+        </div>
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
             <label className="mb-1 block text-sm font-medium">Branch Code</label>
