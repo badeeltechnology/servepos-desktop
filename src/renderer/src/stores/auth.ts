@@ -24,6 +24,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   lastActivity: Date.now(),
   setUser: (user) => set({ user, lastActivity: Date.now() }),
   setAdminMode: (isAdminMode) => set({ isAdminMode }),
-  updateActivity: () => set({ lastActivity: Date.now() }),
+  updateActivity: () => {
+    // Throttle: only update state if >30s since last update to prevent re-render on every keystroke
+    const { lastActivity } = useAuthStore.getState()
+    if (Date.now() - lastActivity > 30000) set({ lastActivity: Date.now() })
+  },
   logout: () => set({ user: null, isAdminMode: false })
 }))
