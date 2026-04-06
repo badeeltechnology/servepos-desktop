@@ -157,7 +157,11 @@ const api = {
 
   // Waiters
   waiters: {
-    list: () => ipcRenderer.invoke('waiters:list')
+    list: () => ipcRenderer.invoke('waiters:list'),
+    fetchFromServer: () => ipcRenderer.invoke('waiters:fetchFromServer'),
+    create: (data: { waiter_name: string; pin: string; phone?: string }) => ipcRenderer.invoke('waiters:create', data),
+    resetPin: (waiterName: string, newPin: string) => ipcRenderer.invoke('waiters:resetPin', waiterName, newPin),
+    toggleActive: (waiterName: string, isActive: boolean) => ipcRenderer.invoke('waiters:toggleActive', waiterName, isActive)
   },
 
   // Promos

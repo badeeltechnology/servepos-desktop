@@ -345,8 +345,70 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  // Waiters
+  // Waiters (local cache)
   ipcMain.handle('waiters:list', () => db.getWaiters())
+
+  // Waiters (ERPNext CRUD)
+  ipcMain.handle('waiters:fetchFromServer', async () => {
+    try {
+      const client = new ERPNextClient()
+      const result = await client.callMethod('servepos.api.waiter.get_waiters')
+      return { success: true, waiters: result || [] }
+    } catch (err: any) {
+      return { success: false, error: err.message, waiters: [] }
+    }
+  })
+
+  ipcMain.handle('waiters:create', async (_e, data: { waiter_name: string; pin: string; phone?: string }) => {
+    try {
+      const client = new ERPNextClient()
+      await client.createDoc('ServePOS Waiter', {
+        waiter_name: data.waiter_name,
+        pin: data.pin,
+        phone: data.phone || null,
+        is_active: 1
+      })
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('waiters:resetPin', async (_e, waiterName: string, newPin: string) => {
+    try {
+      const client = new ERPNextClient()
+      // Use Frappe's standard REST API to update the pin field
+      const res = await fetch(`${db.getConfig('erpnext_url')}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `token ${db.getConfig('api_key')}:${db.getConfig('api_secret')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ pin: newPin })
+      })
+      if (!res.ok) { const t = await res.text(); return { success: false, error: t } }
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('waiters:toggleActive', async (_e, waiterName: string, isActive: boolean) => {
+    try {
+      const res = await fetch(`${db.getConfig('erpnext_url')}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `token ${db.getConfig('api_key')}:${db.getConfig('api_secret')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ is_active: isActive ? 1 : 0 })
+      })
+      if (!res.ok) { const t = await res.text(); return { success: false, error: t } }
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
 
   // Promos
   ipcMain.handle('promos:list', () => db.getPromos())

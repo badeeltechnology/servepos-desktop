@@ -211,20 +211,15 @@ function WaiterManagement() {
   async function loadData() {
     setLoading(true)
     try {
-      // Fetch waiters from ERPNext via sync test connection
-      const result = await window.api.sync.testConnection()
+      const result = await window.api.waiters.fetchFromServer()
       if (result.success) {
-        // Use a custom fetch — we need to call the ERPNext API
-        const config = await window.api.config.getAll()
-        const res = await fetch(`${config.erpnext_url}/api/method/servepos.api.waiter.get_waiters`, {
-          headers: { 'Authorization': `token ${config.api_key}:${config.api_secret}`, 'Content-Type': 'application/json' }
-        })
-        if (res.ok) {
-          const data = await res.json()
-          setWaiters(data.message || [])
-        }
+        setWaiters(result.waiters || [])
+      } else {
+        setError(result.error || 'Failed to fetch waiters')
       }
-    } catch {}
+    } catch (e: any) {
+      setError(e.message || 'Failed to fetch waiters')
+    }
     setLoading(false)
   }
 
@@ -241,13 +236,8 @@ function WaiterManagement() {
     if (!/^\d+$/.test(wPin)) { setError('PIN must be numbers only'); return }
 
     try {
-      const config = await window.api.config.getAll()
-      const res = await fetch(`${config.erpnext_url}/api/resource/ServePOS Waiter`, {
-        method: 'POST',
-        headers: { 'Authorization': `token ${config.api_key}:${config.api_secret}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ waiter_name: wName.trim(), pin: wPin, phone: wPhone.trim() || null, is_active: 1 })
-      })
-      if (!res.ok) { const t = await res.text(); setError(`Failed: ${t}`); return }
+      const res = await window.api.waiters.create({ waiter_name: wName.trim(), pin: wPin, phone: wPhone.trim() || undefined })
+      if (!res.success) { setError(res.error || 'Failed to create waiter'); return }
       setShowAdd(false); setWName(''); setWPin(''); setWPhone('')
       setSuccess('Waiter created')
       loadData()
@@ -262,13 +252,8 @@ function WaiterManagement() {
     if (!/^\d+$/.test(newPin)) { setError('PIN must be numbers only'); return }
 
     try {
-      const config = await window.api.config.getAll()
-      const res = await fetch(`${config.erpnext_url}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
-        method: 'PUT',
-        headers: { 'Authorization': `token ${config.api_key}:${config.api_secret}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: newPin })
-      })
-      if (!res.ok) { setError('Failed to update PIN'); return }
+      const res = await window.api.waiters.resetPin(waiterName, newPin)
+      if (!res.success) { setError(res.error || 'Failed to update PIN'); return }
       setEditingPin(null); setNewPin('')
       setSuccess('PIN updated')
     } catch (e: any) {
@@ -279,11 +264,7 @@ function WaiterManagement() {
   async function handleDeleteWaiter(waiterName: string) {
     if (!confirm(`Delete waiter "${waiterName}"?`)) return
     try {
-      const config = await window.api.config.getAll()
-      await fetch(`${config.erpnext_url}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `token ${config.api_key}:${config.api_secret}` }
-      })
+      await window.api.waiters.toggleActive(waiterName, false)
       loadData()
     } catch {}
   }
