@@ -360,12 +360,16 @@ export function registerIpcHandlers(): void {
             printed++
             console.log(`[Auto-Invoice] Printed invoice for order ${orderId}`)
           } else {
-            // Reset flag so it retries next poll
-            database.run('UPDATE orders SET invoice_printed = 0 WHERE id = ?', [orderId])
-            saveDatabase()
+            // Don't retry for config errors (no printer) — only retry for transient errors
+            const isConfigError = result.error?.includes('No printer') || result.error?.includes('not found') || result.error?.includes('not configured')
+            if (!isConfigError) {
+              database.run('UPDATE orders SET invoice_printed = 0 WHERE id = ?', [orderId])
+              saveDatabase()
+            }
             console.error(`[Auto-Invoice] Failed for ${orderId}: ${result.error}`)
           }
         } catch (err: any) {
+          // Retry on unexpected errors
           database.run('UPDATE orders SET invoice_printed = 0 WHERE id = ?', [orderId])
           saveDatabase()
           console.error(`[Auto-Invoice] Error for ${orderId}: ${err.message}`)
