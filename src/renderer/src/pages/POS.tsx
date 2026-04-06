@@ -31,20 +31,20 @@ export default function POS() {
   const [activeSession, setActiveSession] = useState<any>(null)
   const [sessionLoading, setSessionLoading] = useState(true)
   const [showCloseShift, setShowCloseShift] = useState(false)
-  const [currentTime, setCurrentTime] = useState(new Date())
+  // currentTime removed — moved to isolated Clock component to prevent full POS re-renders
   const [nextSyncIn, setNextSyncIn] = useState<number | null>(null)
   const [waiterOrderCount, setWaiterOrderCount] = useState(0)
   const [showWaiterOrders, setShowWaiterOrders] = useState(false)
+  const showWaiterOrdersRef = useRef(false)
   const [waiterOrders, setWaiterOrders] = useState<any[]>([])
   const [woProcessing, setWoProcessing] = useState<string | null>(null)
 
+  // Keep ref in sync with state
+  useEffect(() => { showWaiterOrdersRef.current = showWaiterOrders }, [showWaiterOrders])
+
   useEffect(() => { loadTaxConfig(); checkSession() }, [])
 
-  // Clock (1s) — no IPC calls, just local time
-  useEffect(() => {
-    const clockTimer = setInterval(() => setCurrentTime(new Date()), 1000)
-    return () => clearInterval(clockTimer)
-  }, [])
+  // Clock moved to isolated <Clock /> component to avoid re-rendering entire POS every second
 
   // Sync status (10s) + waiter orders poll (10s) + invoice poll (10s)
   useEffect(() => {
@@ -64,8 +64,8 @@ export default function POS() {
         setWaiterOrderCount(count)
         if (count > 0) {
           setWaiterOrders(orders || [])
-          if (!showWaiterOrders) setShowWaiterOrders(true)
-        } else if (showWaiterOrders) {
+          if (!showWaiterOrdersRef.current) setShowWaiterOrders(true)
+        } else if (showWaiterOrdersRef.current) {
           setWaiterOrders([])
         }
       } catch {}
@@ -78,7 +78,7 @@ export default function POS() {
     window.api.sync.status().then((s: any) => setNextSyncIn(s.nextSyncIn ?? null)).catch(() => {})
 
     return () => { polling = false; clearInterval(pollTimer) }
-  }, [showWaiterOrders])
+  }, []) // No dependencies — interval runs once, uses refs for current state
 
   // Auto-close shift check (every 60s)
   useEffect(() => {
@@ -440,8 +440,7 @@ export default function POS() {
             </div>
             <div className="h-4 w-px bg-gray-200" />
             <div className="text-[11px] text-gray-400">
-              <span className="font-medium text-gray-600">{currentTime.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-              <span className="ml-1.5">{currentTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+              <Clock />
             </div>
             {nextSyncIn !== null && (
               <>
@@ -1018,6 +1017,21 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
         <ReceiptPreview orderId={previewOrderId} onClose={() => setPreviewOrderId(null)} />
       )}
     </div>
+  )
+}
+
+// Isolated clock component — only re-renders itself every second, not the entire POS
+function Clock() {
+  const [time, setTime] = useState(new Date())
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  return (
+    <>
+      <span className="font-medium text-gray-600">{time.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+      <span className="ml-1.5">{time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+    </>
   )
 }
 
