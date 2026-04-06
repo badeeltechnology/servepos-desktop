@@ -740,7 +740,8 @@ function PrinterManagement() {
   const [showRouteForm, setShowRouteForm] = useState(false)
   const [routeType, setRouteType] = useState<'receipt' | 'kot'>('receipt')
   const [routePrinter, setRoutePrinter] = useState('')
-  const [routeItemGroup, setRouteItemGroup] = useState('')
+  const [routeItemGroups, setRouteItemGroups] = useState<string[]>([])
+  const [showGroupDropdown, setShowGroupDropdown] = useState(false)
   const [itemGroups, setItemGroups] = useState<any[]>([])
 
   useEffect(() => { loadData() }, [])
@@ -917,27 +918,64 @@ function PrinterManagement() {
                 {printers.map((p) => <option key={p.id} value={p.id}>{p.printer_name}</option>)}
               </select>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Item Group (KOT only)</label>
-              <select value={routeItemGroup} onChange={(e) => setRouteItemGroup(e.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" disabled={routeType !== 'kot'}>
-                <option value="">All Items</option>
-                {itemGroups.map((g) => <option key={g.name} value={g.name}>{g.name}</option>)}
-              </select>
+            <div className="relative">
+              <label className="mb-1 block text-xs font-medium">Item Groups (KOT only)</label>
+              <button
+                onClick={() => routeType === 'kot' && setShowGroupDropdown(!showGroupDropdown)}
+                disabled={routeType !== 'kot'}
+                className="flex w-full items-center justify-between rounded-lg border border-input bg-background px-3 py-2 text-sm text-left disabled:opacity-50"
+              >
+                <span className={routeItemGroups.length === 0 ? 'text-muted-foreground' : ''}>
+                  {routeItemGroups.length === 0 ? 'All Items' : `${routeItemGroups.length} group${routeItemGroups.length > 1 ? 's' : ''} selected`}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+              {showGroupDropdown && (
+                <div className="absolute top-full left-0 right-0 z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-white shadow-lg">
+                  <button
+                    onClick={() => { setRouteItemGroups([]); setShowGroupDropdown(false) }}
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted ${routeItemGroups.length === 0 ? 'bg-primary/5 font-medium text-primary' : ''}`}
+                  >
+                    All Items
+                  </button>
+                  {itemGroups.map((g) => (
+                    <label key={g.name} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={routeItemGroups.includes(g.name)}
+                        onChange={(e) => {
+                          if (e.target.checked) setRouteItemGroups([...routeItemGroups, g.name])
+                          else setRouteItemGroups(routeItemGroups.filter((n) => n !== g.name))
+                        }}
+                        className="rounded"
+                      />
+                      {g.name}
+                    </label>
+                  ))}
+                  <div className="sticky bottom-0 border-t bg-white p-2">
+                    <button onClick={() => setShowGroupDropdown(false)}
+                      className="w-full rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">Done</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <div className="mt-3 flex gap-2">
-            <button onClick={() => { setShowRouteForm(false); setRouteItemGroup('') }}
+            <button onClick={() => { setShowRouteForm(false); setRouteItemGroups([]); setShowGroupDropdown(false) }}
               className="rounded-lg border border-input px-4 py-2 text-sm hover:bg-muted">Cancel</button>
             <button onClick={async () => {
               if (!routePrinter) return
-              await window.api.printRoutes.add({
-                printType: routeType,
-                itemGroup: routeType === 'kot' && routeItemGroup ? routeItemGroup : null,
-                printerId: routePrinter
-              })
+              if (routeType === 'kot' && routeItemGroups.length > 0) {
+                // Create one route per selected group
+                for (const group of routeItemGroups) {
+                  await window.api.printRoutes.add({ printType: routeType, itemGroup: group, printerId: routePrinter })
+                }
+              } else {
+                await window.api.printRoutes.add({ printType: routeType, itemGroup: null, printerId: routePrinter })
+              }
               setShowRouteForm(false)
-              setRouteItemGroup('')
+              setRouteItemGroups([])
+              setShowGroupDropdown(false)
               loadData()
             }} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Add Route</button>
           </div>
