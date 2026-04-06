@@ -252,14 +252,45 @@ export function registerIpcHandlers(): void {
     // Add items
     let subtotal = 0
     for (const item of (wo.items || [])) {
-      const amount = ((item.rate || 0) + (item.modifier_total || 0)) * (item.qty || 1)
-      db.addOrderItem({
-        orderId: order.id, itemCode: item.item_code, itemName: item.item_name,
-        qty: item.qty || 1, rate: item.rate || 0, amount,
-        modifiers: item.modifiers || undefined, modifierTotal: item.modifier_total || 0,
-        specialInstructions: item.special_instructions || undefined
-      })
-      subtotal += amount
+      try {
+        const amount = ((item.rate || 0) + (item.modifier_total || 0)) * (item.qty || 1)
+        // Sanitize modifiers: waiter app sends JS notation not valid JSON
+        // e.g. "[{name: Pumpkin Seeds, price: 2.0}]" → '[{"name":"Pumpkin Seeds","price":2}]'
+        let modifiersStr: string | undefined
+        if (item.modifiers) {
+          if (typeof item.modifiers === 'string') {
+            try {
+              JSON.parse(item.modifiers)
+              modifiersStr = item.modifiers
+            } catch {
+              try {
+                const fixed = item.modifiers
+                  .replace(/(\{|,)\s*(\w+)\s*:/g, '$1"$2":')
+                  .replace(/:\s*([^,}\[\]"]+?)(\s*[,}])/g, (_: string, val: string, end: string) => {
+                    const trimmed = val.trim()
+                    return /^-?\d+(\.\d+)?$/.test(trimmed) ? ':' + trimmed + end : ':"' + trimmed + '"' + end
+                  })
+                JSON.parse(fixed) // verify
+                modifiersStr = fixed
+              } catch {
+                modifiersStr = '[]'
+              }
+            }
+          } else {
+            modifiersStr = JSON.stringify(item.modifiers)
+          }
+        }
+        db.addOrderItem({
+          orderId: order.id, itemCode: item.item_code, itemName: item.item_name,
+          qty: item.qty || 1, rate: item.rate || 0, amount,
+          modifiers: modifiersStr, modifierTotal: item.modifier_total || 0,
+          specialInstructions: item.special_instructions || undefined
+        })
+        subtotal += amount
+      } catch (itemErr: any) {
+        console.error(`[Waiter] Failed to add item ${item.item_code}: ${itemErr.message}`)
+        // Continue with remaining items
+      }
     }
 
     // Apply tax to calculate proper grand_total
