@@ -123,6 +123,9 @@ export async function syncUp(): Promise<SyncResult> {
         if (order.promo_name) {
           invoice.servepos_promo = order.promo_name
         }
+        if (order.order_notes) {
+          invoice.remarks = order.order_notes
+        }
 
         if (order.discount_percent > 0) {
           invoice.additional_discount_percentage = order.discount_percent

@@ -31,6 +31,7 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
     updateItemQty, removeItem, updateItemInstructions, updateItemDiscount,
     orderDiscountPercent, orderDiscountAmount, orderDiscountReason,
     setOrderDiscount, promoName, setPromo,
+    orderNotes, setOrderNotes,
     getSubtotal, getOrderDiscountValue, getTaxTotal, getGrandTotal
   } = useCartStore()
 
@@ -186,6 +187,14 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
             )}
           </div>
         )}
+        {/* Order-level notes */}
+        <input
+          type="text"
+          value={orderNotes}
+          onChange={(e) => setOrderNotes(e.target.value)}
+          placeholder="Order notes (optional)..."
+          className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-none"
+        />
       </div>
 
       {/* Cart items */}

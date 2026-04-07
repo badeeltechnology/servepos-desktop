@@ -64,6 +64,7 @@ interface ReceiptData {
   change: number
   waiterName?: string
   promoName?: string
+  orderNotes?: string
 }
 
 export function generateReceipt(data: ReceiptData): string {
@@ -117,6 +118,9 @@ function generateReceiptClassic(data: ReceiptData, config: Record<string, string
   }
   if (showCashier) lines.push(`Cashier: ${data.cashierName}`)
   lines.push(`Type: ${data.orderType}`)
+  if (data.orderNotes) {
+    lines.push(`Notes: ${data.orderNotes}`)
+  }
 
   lines.push(getDashLine())
   lines.push(formatLine('Qty  Item', 'Amount'))
@@ -266,6 +270,7 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
     lines.push(formatLine(`Table: ${data.tableName}`, data.guests ? `Guests: ${data.guests}` : ''))
   }
   if (showCashier) lines.push(`Cashier: ${data.cashierName}`)
+  if (data.orderNotes) lines.push(`Notes: ${data.orderNotes}`)
 
   lines.push(getSeparatorLine())
 
@@ -385,6 +390,7 @@ interface WaiterCopyData {
     specialInstructions?: string
   }[]
   grandTotal: number
+  orderNotes?: string
 }
 
 export function generateWaiterCopy(data: WaiterCopyData): string {
@@ -415,6 +421,7 @@ export function generateWaiterCopy(data: WaiterCopyData): string {
     lines.push(formatLine(`Table: ${data.tableName}`, data.guests ? `Guests: ${data.guests}` : ''))
   }
   lines.push(`Cashier: ${data.cashierName}`)
+  if (data.orderNotes) lines.push(`Notes: ${data.orderNotes}`)
 
   lines.push(getSeparatorLine())
 
@@ -479,6 +486,7 @@ interface KotData {
   }[]
   isAmendment?: boolean
   amendmentActions?: { action: string; itemName: string; detail?: string }[]
+  orderNotes?: string
 }
 
 export function generateKot(data: KotData): string {
@@ -541,6 +549,10 @@ export function generateKot(data: KotData): string {
   lines.push(CMD.ALIGN_LEFT)
   if (showOrderNum) lines.push(` Order: ${data.orderNumber}`)
   lines.push(` Cashier: ${data.cashierName}`)
+  if (data.orderNotes) {
+    lines.push(getDashLine())
+    lines.push(CMD.BOLD_ON + ` NOTES: ${data.orderNotes}` + CMD.BOLD_OFF)
+  }
   lines.push(getSeparatorLine())
   lines.push(CMD.ALIGN_CENTER + '** END OF KOT **')
   lines.push(getSeparatorLine())
@@ -564,6 +576,7 @@ interface PrepDocData {
     modifiers?: { name: string }[]
     specialInstructions?: string
   }[]
+  orderNotes?: string
 }
 
 export function generatePrepDoc(data: PrepDocData): string {
@@ -586,6 +599,7 @@ export function generatePrepDoc(data: PrepDocData): string {
   }
   if (data.waiterName) lines.push(`Waiter: ${data.waiterName}`)
   lines.push(`Cashier: ${data.cashierName}`)
+  if (data.orderNotes) lines.push(`Notes: ${data.orderNotes}`)
 
   lines.push(getSeparatorLine())
 
@@ -783,6 +797,7 @@ function generateInvoiceModern(data: ReceiptData, config: Record<string, string>
   }
   if (showCashier) lines.push(`Cashier: ${data.cashierName}`)
   if (data.waiterName) lines.push(`Waiter: ${data.waiterName}`)
+  if (data.orderNotes) lines.push(`Notes: ${data.orderNotes}`)
 
   lines.push(getSeparatorLine())
 

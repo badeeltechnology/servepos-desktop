@@ -300,7 +300,7 @@ export function registerIpcHandlers(): void {
     const taxTotal = subtotal * (taxRate / 100)
     const grandTotal = subtotal + taxTotal
 
-    database.run('UPDATE orders SET subtotal = ?, tax_total = ?, grand_total = ?, waiter_order_name = ? WHERE id = ?', [subtotal, taxTotal, grandTotal, wo.name || null, order.id])
+    database.run('UPDATE orders SET subtotal = ?, tax_total = ?, grand_total = ?, waiter_order_name = ?, order_notes = ? WHERE id = ?', [subtotal, taxTotal, grandTotal, wo.name || null, wo.notes || null, order.id])
     saveDatabase()
 
     // Accept in ERPNext

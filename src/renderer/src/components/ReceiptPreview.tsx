@@ -120,6 +120,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
               )}
               {showCashier && <p>Cashier: {order.cashier_name}</p>}
               <p>Type: {order.order_type}</p>
+              {order.order_notes && <p className="text-gray-600">Notes: {order.order_notes}</p>}
             </div>
 
             <div className="my-2 border-t border-dashed border-gray-300" />

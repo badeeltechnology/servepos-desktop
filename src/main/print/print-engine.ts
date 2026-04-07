@@ -117,7 +117,8 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
     grandTotal: order.grand_total || 0,
     payments: payments.map((p: any) => ({ method: p.payment_method, amount: p.amount })),
     change: Math.max(0, totalPaid - (order.grand_total || 0)),
-    promoName: order.promo_name || undefined
+    promoName: order.promo_name || undefined,
+    orderNotes: order.order_notes || undefined
   }
 
   const receipt = generateReceipt(receiptData)
@@ -155,6 +156,7 @@ export async function printPrepDoc(orderId: string): Promise<{ success: boolean;
     guests: order.guests,
     waiterName: order.waiter_name || undefined,
     cashierName: order.cashier_name || '',
+    orderNotes: order.order_notes || undefined,
     items: items.map((item: any) => {
       const info = lookupItemInfo(db, item.item_code)
       return {
@@ -231,7 +233,8 @@ export async function printInvoice(orderId: string): Promise<{ success: boolean;
     grandTotal: order.grand_total || 0,
     payments: [],
     change: 0,
-    promoName: order.promo_name || undefined
+    promoName: order.promo_name || undefined,
+    orderNotes: order.order_notes || undefined
   }
 
   const invoice = generateInvoice(invoiceData)
@@ -313,6 +316,7 @@ export async function printKots(orderId: string): Promise<{ success: boolean; pr
       orderType: order.order_type,
       tableName: order.table_name,
       cashierName: order.cashier_name || '',
+      orderNotes: order.order_notes || undefined,
       items: group.items.map((item: any) => {
         const info = lookupItemInfo(db, item.item_code)
         return {
@@ -420,6 +424,7 @@ export async function printWaiterCopy(orderId: string): Promise<{ success: boole
     tableName: order.table_name,
     guests: order.guests,
     cashierName: order.cashier_name || '',
+    orderNotes: order.order_notes || undefined,
     items: items.map((item: any) => {
       const info = lookupItemInfo(db, item.item_code)
       return {

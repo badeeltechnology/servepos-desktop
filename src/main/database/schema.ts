@@ -495,6 +495,11 @@ function runMigrations(): void {
     database.run('ALTER TABLE orders ADD COLUMN waiter_order_name TEXT')
   }
 
+  // Migration 9d: Add order_notes column for order-level notes
+  if (!hasColumn('orders', 'order_notes')) {
+    database.run('ALTER TABLE orders ADD COLUMN order_notes TEXT')
+  }
+
   // Migration 9b: Add invoice_printed flag to orders
   if (!hasColumn('orders', 'invoice_printed')) {
     database.run('ALTER TABLE orders ADD COLUMN invoice_printed INTEGER DEFAULT 0')

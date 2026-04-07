@@ -33,6 +33,7 @@ interface CartState {
   orderDiscountAmount: number
   orderDiscountReason: string
   promoName: string | null
+  orderNotes: string
 
   // Actions
   addItem: (item: Omit<CartItem, 'id' | 'amount' | 'discountAmount' | 'discountPercent' | 'modifierTotal' | 'specialInstructions'> & { modifiers?: CartModifier[]; specialInstructions?: string }) => void
@@ -47,6 +48,7 @@ interface CartState {
   setWaiter: (waiterId: string | null, waiterName?: string | null) => void
   setOrderDiscount: (percent: number, amount: number, reason: string) => void
   setPromo: (promoName: string | null, discountType?: string, discountValue?: number) => void
+  setOrderNotes: (notes: string) => void
   clearCart: () => void
   getSubtotal: () => number
   getModifierTotal: () => number
@@ -77,6 +79,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   orderDiscountAmount: 0,
   orderDiscountReason: '',
   promoName: null,
+  orderNotes: '',
 
   addItem: (item) => {
     const id = `cart-${++cartIdCounter}`
@@ -156,6 +159,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOrderDiscount: (percent, amount, reason) =>
     set({ orderDiscountPercent: percent, orderDiscountAmount: amount, orderDiscountReason: reason, promoName: null }),
 
+  setOrderNotes: (orderNotes) => set({ orderNotes }),
+
   setPromo: (promoName, discountType, discountValue) => {
     if (!promoName) {
       set({ promoName: null, orderDiscountPercent: 0, orderDiscountAmount: 0, orderDiscountReason: '' })
@@ -183,7 +188,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       orderDiscountPercent: 0,
       orderDiscountAmount: 0,
       orderDiscountReason: '',
-      promoName: null
+      promoName: null,
+      orderNotes: ''
     }),
 
   getSubtotal: () => get().items.reduce((sum, item) => sum + item.amount, 0),

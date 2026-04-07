@@ -180,6 +180,7 @@ export default function POS() {
       discountPercent: cart.orderDiscountPercent,
       discountReason: cart.orderDiscountReason || null,
       promoName: cart.promoName || null,
+      orderNotes: cart.orderNotes || null,
       grandTotal: cart.getGrandTotal(taxRate)
     })
 
@@ -275,6 +276,7 @@ export default function POS() {
           discountPercent: cart.orderDiscountPercent,
           discountReason: cart.orderDiscountReason || null,
           promoName: cart.promoName || null,
+          orderNotes: cart.orderNotes || null,
           grandTotal: cart.getGrandTotal(taxRate),
           completedAt: new Date().toISOString()
         })
@@ -354,6 +356,7 @@ export default function POS() {
     cart.setOrderType(order.order_type)
     if (order.table_name) cart.setTable(order.table_name, order.room)
     if (order.guests) cart.setGuests(order.guests)
+    if (order.order_notes) cart.setOrderNotes(order.order_notes)
 
     for (const item of items) {
       cart.addItem({
