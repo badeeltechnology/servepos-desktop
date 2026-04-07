@@ -83,9 +83,8 @@ export default function POS() {
 
   // Auto-close shift check (every 60s)
   useEffect(() => {
-    let autoCloseDone = false
     const autoCloseTimer = setInterval(async () => {
-      if (autoCloseDone || !activeSession) return
+      if (!activeSession) return
       try {
         const config = await window.api.config.getAll()
         const autoCloseTime = config.auto_close_shift_time
@@ -94,10 +93,11 @@ export default function POS() {
         const [h, m] = autoCloseTime.split(':').map(Number)
         const target = new Date(now)
         target.setHours(h, m, 0, 0)
-        // Check if current time is past the target and within 2 minutes of it
+        const todayKey = now.toISOString().slice(0, 10)
+        // Only auto-close once per day, and only within a 2-minute window after the target time
         const diff = now.getTime() - target.getTime()
-        if (diff >= 0 && diff < 120000) {
-          autoCloseDone = true
+        if (diff >= 0 && diff < 120000 && config.last_auto_close_date !== todayKey) {
+          await window.api.config.set('last_auto_close_date', todayKey)
           const result = await window.api.sessions.autoClose()
           if (result.success) {
             setActiveSession(null)
@@ -360,10 +360,11 @@ export default function POS() {
 
     for (const item of items) {
       cart.addItem({
+        dbId: item.id,
         itemCode: item.item_code, itemName: item.item_name, qty: item.qty, rate: item.rate,
-        modifiers: item.modifiers ? JSON.parse(item.modifiers) : [],
+        modifiers: item.modifiers ? (function(){ try { return JSON.parse(item.modifiers) } catch { return [] } })() : [],
         specialInstructions: item.special_instructions || null
-      })
+      } as any)
     }
 
     // Change status from Hold to Open (NO voiding)

@@ -9,6 +9,7 @@ export interface CartModifier {
 
 export interface CartItem {
   id: string // unique cart line id
+  dbId?: string // DB row id (when resumed from placed order)
   itemCode: string
   itemName: string
   qty: number
@@ -87,6 +88,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     const modifierTotal = modifiers.reduce((sum, m) => sum + m.price, 0)
     const newItem: CartItem = {
       id,
+      dbId: (item as any).dbId,
       itemCode: item.itemCode,
       itemName: item.itemName,
       qty: item.qty,

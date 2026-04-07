@@ -50,6 +50,9 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
   const [discountError, setDiscountError] = useState('')
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [showPrintMenu, setShowPrintMenu] = useState(false)
+  const [removeRequest, setRemoveRequest] = useState<{ cartId: string; dbId?: string } | null>(null)
+  const [removePin, setRemovePin] = useState('')
+  const [removeError, setRemoveError] = useState('')
   const [waitersList, setWaitersList] = useState<{ name: string; waiter_name: string }[]>([])
   const [showWaiterPicker, setShowWaiterPicker] = useState(false)
   const [promosList, setPromosList] = useState<{ name: string; promo_name: string; discount_type: string; discount_value: number }[]>([])
@@ -264,7 +267,19 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
                         <Percent className="h-3.5 w-3.5" />
                       </button>
                     )}
-                    <button onClick={() => removeItem(item.id)} className="rounded-lg p-1.5 text-red-300 hover:bg-red-50 hover:text-red-500" title="Remove">
+                    <button onClick={() => {
+                      // For placed orders, require supervisor PIN to remove
+                      if (isOrderPlaced && user?.role !== 'supervisor') {
+                        setRemoveRequest({ cartId: item.id, dbId: (item as any).dbId })
+                        setRemovePin(''); setRemoveError('')
+                      } else {
+                        // Supervisor or unplaced order — remove directly
+                        if (isOrderPlaced && (item as any).dbId) {
+                          window.api.orderItems.remove((item as any).dbId).catch(() => {})
+                        }
+                        removeItem(item.id)
+                      }
+                    }} className="rounded-lg p-1.5 text-red-300 hover:bg-red-50 hover:text-red-500" title="Remove">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -393,6 +408,60 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
       {/* Table picker */}
       {showTablePicker && (
         <TablePicker onSelect={handleTableSelect} onCancel={() => setShowTablePicker(false)} currentTable={tableName} />
+      )}
+
+      {/* Supervisor PIN modal for removing items from placed orders */}
+      {removeRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="mb-2 text-lg font-bold">Supervisor Approval</h3>
+            <p className="mb-4 text-xs text-gray-500">Enter supervisor PIN to remove this item</p>
+            <input
+              type="password"
+              value={removePin}
+              onChange={(e) => { setRemovePin(e.target.value); setRemoveError('') }}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter' && removePin.length >= 4) {
+                  const u = await window.api.users.verifyPin(removePin)
+                  if (u && u.role === 'supervisor') {
+                    if (removeRequest.dbId) {
+                      await window.api.orderItems.remove(removeRequest.dbId).catch(() => {})
+                    }
+                    removeItem(removeRequest.cartId)
+                    setRemoveRequest(null); setRemovePin('')
+                  } else {
+                    setRemoveError('Invalid PIN or not a supervisor')
+                  }
+                }
+              }}
+              autoFocus
+              placeholder="Supervisor PIN"
+              className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-center text-lg tracking-widest focus:border-primary focus:outline-none"
+            />
+            {removeError && <p className="mt-2 text-xs text-red-500">{removeError}</p>}
+            <div className="mt-4 flex gap-3">
+              <button onClick={() => { setRemoveRequest(null); setRemovePin(''); setRemoveError('') }}
+                className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={async () => {
+                const u = await window.api.users.verifyPin(removePin)
+                if (u && u.role === 'supervisor') {
+                  if (removeRequest.dbId) {
+                    await window.api.orderItems.remove(removeRequest.dbId).catch(() => {})
+                  }
+                  removeItem(removeRequest.cartId)
+                  setRemoveRequest(null); setRemovePin('')
+                } else {
+                  setRemoveError('Invalid PIN or not a supervisor')
+                }
+              }}
+                className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Instructions modal */}
