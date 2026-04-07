@@ -37,8 +37,12 @@ export function registerIpcHandlers(): void {
     const url = db.getConfig('erpnext_url') || ''
     const apiKey = db.getConfig('api_key') || ''
     const apiSecret = db.getConfig('api_secret') || ''
+    const posProfile = db.getConfig('pos_profile') || ''
     if (!url || !apiKey || !apiSecret) return { error: 'ERPNext connection not configured' }
-    const qrData = `${url}|${apiKey}|${apiSecret}`
+    if (!posProfile) return { error: 'POS Profile is not configured on this device' }
+    // Format: url|api_key|api_secret|pos_profile — pos_profile is required so
+    // the Waiter App can call the centralized registry API on setup.
+    const qrData = `${url}|${apiKey}|${apiSecret}|${posProfile}`
     const dataUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2 })
     return { dataUrl }
   })
@@ -325,8 +329,7 @@ export function registerIpcHandlers(): void {
       const erpnextUrl = db.getConfig('erpnext_url')
       if (!erpnextUrl) return []
       const client = new ERPNextClient()
-      const branch = db.getConfig('branch') || undefined
-      const pending = await client.getPendingWaiterOrders(branch)
+      const pending = await client.getPendingWaiterOrders()
       // Always return pending orders to frontend — frontend handles auto-accept via countdown popup
       return pending
     } catch {
@@ -418,11 +421,13 @@ export function registerIpcHandlers(): void {
   // Waiters (local cache)
   ipcMain.handle('waiters:list', () => db.getWaiters())
 
-  // Waiters (ERPNext CRUD)
+  // Waiters (ERPNext CRUD) — via centralized registry
   ipcMain.handle('waiters:fetchFromServer', async () => {
     try {
       const client = new ERPNextClient()
-      const result = await client.callMethod('servepos.api.waiter.get_waiters')
+      const posProfile = db.getConfig('pos_profile') || ''
+      if (!posProfile) return { success: false, error: 'POS Profile not configured', waiters: [] }
+      const result = await client.callMethod('servepos.api.registry.get_waiters', { pos_profile: posProfile })
       return { success: true, waiters: result || [] }
     } catch (err: any) {
       return { success: false, error: err.message, waiters: [] }
@@ -531,9 +536,12 @@ export function registerIpcHandlers(): void {
       const erpnextUrl = db.getConfig('erpnext_url')
       if (erpnextUrl) {
         const client = new ERPNextClient()
-        const branch = db.getConfig('branch') || undefined
-        const posProfile = db.getConfig('pos_profile') || undefined
-        const remote = await client.callMethod('servepos.api.waiter.get_active_orders', { branch, pos_profile: posProfile })
+        const posProfile = db.getConfig('pos_profile') || ''
+        if (!posProfile) throw new Error('POS Profile not configured')
+        const remote = await client.callMethod('servepos.api.registry.get_active_orders', {
+          pos_profile: posProfile,
+          statuses: 'Accepted,In Kitchen,Ready',
+        })
         if (Array.isArray(remote)) {
           // Map ERPNext waiter orders to coordinator format
           // Skip orders that are already in localRows (matched by waiter_order_name = wo.name)

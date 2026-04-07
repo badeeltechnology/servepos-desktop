@@ -202,24 +202,13 @@ export function deleteUser(id: string): boolean {
 
 // ==================== Items ====================
 
+// Profile filtering now happens server-side via servepos.api.registry.
+// The local DB is pre-filtered at sync time, so these reads are plain queries.
 export function getItems(group?: string): any[] {
-  const posProfile = getConfig('pos_profile') || ''
   if (group) {
-    const items = queryAll('SELECT * FROM items WHERE item_group = ? AND is_visible = 1 AND is_available = 1 ORDER BY item_name', [group])
-    return filterByVisibleProfiles(items, posProfile)
+    return queryAll('SELECT * FROM items WHERE item_group = ? AND is_visible = 1 AND is_available = 1 ORDER BY item_name', [group])
   }
-  const items = queryAll('SELECT * FROM items WHERE is_visible = 1 AND is_available = 1 ORDER BY item_group, item_name')
-  return filterByVisibleProfiles(items, posProfile)
-}
-
-// Filter items by visible_profiles: empty = visible everywhere, non-empty = only on listed profiles
-function filterByVisibleProfiles(items: any[], posProfile: string): any[] {
-  return items.filter((item) => {
-    if (!item.visible_profiles) return true // empty = visible on all profiles
-    const profiles = item.visible_profiles.split(',').map((p: string) => p.trim()).filter(Boolean)
-    if (profiles.length === 0) return true
-    return profiles.includes(posProfile)
-  })
+  return queryAll('SELECT * FROM items WHERE is_visible = 1 AND is_available = 1 ORDER BY item_group, item_name')
 }
 
 export function getAllItems(): any[] {
@@ -255,15 +244,14 @@ export function getAllItemGroups(): any[] {
 }
 
 // ==================== Tables & Rooms ====================
+// Profile/branch filtering happens server-side via servepos.api.registry.
+// The local DB is pre-filtered at sync time, so these reads are plain queries.
 
 export function getTables(room?: string): any[] {
-  const branch = getConfig('branch') || ''
   if (room) {
-    const tables = queryAll('SELECT * FROM tables_list WHERE room = ? AND is_active = 1 ORDER BY table_name', [room])
-    return filterByBranch(tables, branch)
+    return queryAll('SELECT * FROM tables_list WHERE room = ? AND is_active = 1 ORDER BY table_name', [room])
   }
-  const tables = queryAll('SELECT * FROM tables_list WHERE is_active = 1 ORDER BY room, table_name')
-  return filterByBranch(tables, branch)
+  return queryAll('SELECT * FROM tables_list WHERE is_active = 1 ORDER BY room, table_name')
 }
 
 export function updateTableStatus(name: string, status: string, orderId?: string | null): void {
@@ -271,15 +259,7 @@ export function updateTableStatus(name: string, status: string, orderId?: string
 }
 
 export function getRooms(): any[] {
-  const branch = getConfig('branch') || ''
-  const rooms = queryAll('SELECT * FROM rooms WHERE is_active = 1 ORDER BY room_name')
-  return filterByBranch(rooms, branch)
-}
-
-// Filter tables/rooms by branch: if branch is set on POS Profile, only show matching or unassigned
-function filterByBranch(items: any[], branch: string): any[] {
-  if (!branch) return items
-  return items.filter((item) => !item.branch || item.branch === branch)
+  return queryAll('SELECT * FROM rooms WHERE is_active = 1 ORDER BY room_name')
 }
 
 // ==================== Orders ====================

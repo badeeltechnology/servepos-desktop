@@ -124,109 +124,75 @@ export class ERPNextClient {
     })
   }
 
-  async getItems(lastSync?: string): Promise<any[]> {
-    const filters: any = { disabled: 0 }
-    if (lastSync) filters.modified = ['>', lastSync]
+  // ---------------------------------------------------------------------
+  // Registry-backed convenience methods.
+  // All list APIs below call servepos.api.registry.* — the single source of
+  // truth for POS Profile filtering. Do NOT bypass with raw getList().
+  // ---------------------------------------------------------------------
 
-    const baseFields = [
-      'name', 'item_name', 'description', 'item_group', 'standard_rate',
-      'stock_uom', 'image', 'has_variants', 'variant_of'
-    ]
-    const arabicFields = ['servepos_item_name_ar', 'servepos_description_ar']
-    const appFields = ['servepos_kitchen_station', 'servepos_preparation_time', 'servepos_is_available', 'servepos_visible_profiles']
-
-    // Try all fields first (full servepos app installed)
-    try {
-      return await this.getList('Item', {
-        fields: [...baseFields, ...arabicFields, ...appFields],
-        filters, limit: 0
-      })
-    } catch {}
-
-    // Try base + Arabic fields (Arabic custom fields exist but not full app)
-    try {
-      return await this.getList('Item', {
-        fields: [...baseFields, ...arabicFields],
-        filters, limit: 0
-      })
-    } catch {}
-
-    // Fallback: standard fields only
-    return this.getList('Item', {
-      fields: baseFields,
-      filters, limit: 0
-    })
+  private requireProfile(profile?: string): string {
+    const p = profile || getConfig('pos_profile') || ''
+    if (!p) throw new Error('pos_profile is required. Configure the device POS Profile first.')
+    return p
   }
 
-  async getItemGroups(): Promise<any[]> {
-    // Try with servepos fields first
-    try {
-      return await this.getList('Item Group', {
-        fields: ['name', 'parent_item_group', 'image', 'servepos_is_menu_group'],
-        limit: 0
-      })
-    } catch {}
-
-    return this.getList('Item Group', {
-      fields: ['name', 'parent_item_group', 'image'],
-      limit: 0
-    })
+  async getItems(lastSync?: string, posProfile?: string): Promise<any[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    const args: any = { pos_profile }
+    if (lastSync) args.modified_after = lastSync
+    return this.callMethod('servepos.api.registry.get_items', args)
   }
 
-  async getPaymentMethods(posProfile: string): Promise<any[]> {
-    const doc = await this.getDoc('POS Profile', posProfile)
-    return doc?.payments || []
+  async getItemGroups(posProfile?: string): Promise<any[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_item_groups', { pos_profile })
   }
 
-  async getTables(): Promise<any[]> {
-    try {
-      return await this.getList('ServePOS Table', {
-        fields: ['name', 'table_name', 'room', 'capacity', 'is_active', 'branch'],
-        limit: 0
-      })
-    } catch {}
-    return this.getList('ServePOS Table', {
-      fields: ['name', 'table_name', 'room', 'capacity', 'is_active'],
-      limit: 0
-    })
+  async getPaymentMethods(posProfile?: string): Promise<any[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_payment_methods', { pos_profile })
   }
 
-  async getRooms(): Promise<any[]> {
-    try {
-      return await this.getList('ServePOS Room', {
-        fields: ['name', 'room_name', 'description', 'is_active', 'branch'],
-        limit: 0
-      })
-    } catch {}
-    return this.getList('ServePOS Room', {
-      fields: ['name', 'room_name', 'description', 'is_active'],
-      limit: 0
-    })
+  async getTables(posProfile?: string): Promise<any[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_tables', { pos_profile })
   }
 
-  async getModifierGroups(): Promise<any[]> {
-    return this.callMethod('servepos.api.pos_session.get_all_modifier_groups')
+  async getRooms(posProfile?: string): Promise<any[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_rooms', { pos_profile })
+  }
+
+  async getModifierGroups(posProfile?: string): Promise<any[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_modifier_groups', { pos_profile })
   }
 
   async getItemModifiers(itemCode: string): Promise<any[]> {
     return this.callMethod('servepos.api.pos_session.get_item_modifiers', { item_code: itemCode })
   }
 
-  async getPromos(posProfile?: string): Promise<any[]> {
-    // Fetch all enabled promos, then filter client-side for profile match + global
-    const all = await this.getList('ServePOS Promo', {
-      fields: ['name', 'promo_name', 'discount_type', 'discount_value', 'enabled', 'pos_profile'],
-      filters: { enabled: 1 },
-      limit: 0
-    })
-    if (!posProfile) return all
-    return all.filter((p: any) => !p.pos_profile || p.pos_profile === posProfile)
+  async getKitchenStations(posProfile?: string): Promise<any[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_kitchen_stations', { pos_profile })
   }
 
-  async getPendingWaiterOrders(branch?: string): Promise<any[]> {
-    const args: any = {}
-    if (branch) args.branch = branch
-    return this.callMethod('servepos.api.waiter.get_pending_orders', args)
+  async getPromos(posProfile?: string): Promise<any[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_promos', { pos_profile })
+  }
+
+  async getPendingWaiterOrders(posProfile?: string): Promise<any[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_active_orders', {
+      pos_profile,
+      statuses: 'Pending',
+    })
+  }
+
+  async getPosBundle(posProfile?: string): Promise<any> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_pos_bundle', { pos_profile })
   }
 
   async acceptWaiterOrder(orderName: string, posOrderId: string): Promise<any> {

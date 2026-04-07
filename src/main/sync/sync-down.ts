@@ -269,19 +269,21 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       counts.modifier_groups = 0
     }
 
-    // Sync waiters list from ERPNext
+    // Sync waiters list via the centralized registry (filtered by POS profile)
     try {
-      const waitersList = await client.callMethod('servepos.api.waiter.get_waiters')
-      if (waitersList?.message && Array.isArray(waitersList.message)) {
+      const waiters = posProfile
+        ? await client.callMethod('servepos.api.registry.get_waiters', { pos_profile: posProfile })
+        : []
+      if (Array.isArray(waiters)) {
         db.run('DELETE FROM waiters')
-        for (const w of waitersList.message) {
+        for (const w of waiters) {
           db.run(
             `INSERT INTO waiters (name, waiter_name, phone, is_active, synced_at)
              VALUES (?, ?, ?, 1, datetime('now'))`,
             [w.name, w.waiter_name, w.phone || null]
           )
         }
-        counts.waiters = waitersList.message.length
+        counts.waiters = waiters.length
       }
     } catch {
       counts.waiters = 0
