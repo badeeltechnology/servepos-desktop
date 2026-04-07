@@ -316,6 +316,7 @@ export async function printKots(orderId: string): Promise<{ success: boolean; pr
       orderType: order.order_type,
       tableName: order.table_name,
       cashierName: order.cashier_name || '',
+      waiterName: order.waiter_name || undefined,
       orderNotes: order.order_notes || undefined,
       items: group.items.map((item: any) => {
         const info = lookupItemInfo(db, item.item_code)

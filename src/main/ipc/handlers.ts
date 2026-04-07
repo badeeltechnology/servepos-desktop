@@ -506,9 +506,12 @@ export function registerIpcHandlers(): void {
     return rows
   })
 
-  // Coordinator — get active orders (not Completed/Void/Returned)
-  ipcMain.handle('coordinator:getActiveOrders', () => {
+  // Coordinator — get active orders. Combines local orders + remote waiter orders from ERPNext
+  // (so coordinator on Machine 2 can see orders accepted on Machine 1)
+  ipcMain.handle('coordinator:getActiveOrders', async () => {
     const database = getDb()
+
+    // Local active orders (this machine)
     const stmt = database.prepare(
       `SELECT o.*, GROUP_CONCAT(oi.item_name || ' x' || oi.qty, ', ') as items_summary,
               COUNT(oi.id) as item_count
@@ -518,10 +521,55 @@ export function registerIpcHandlers(): void {
        GROUP BY o.id
        ORDER BY o.created_at DESC`
     )
-    const rows: any[] = []
-    while (stmt.step()) rows.push(stmt.getAsObject())
+    const localRows: any[] = []
+    while (stmt.step()) localRows.push(stmt.getAsObject())
     stmt.free()
-    return rows
+
+    // Remote: pull active waiter orders from ERPNext (cross-machine visibility)
+    let remoteRows: any[] = []
+    try {
+      const erpnextUrl = db.getConfig('erpnext_url')
+      if (erpnextUrl) {
+        const client = new ERPNextClient()
+        const branch = db.getConfig('branch') || undefined
+        const posProfile = db.getConfig('pos_profile') || undefined
+        const remote = await client.callMethod('servepos.api.waiter.get_active_orders', { branch, pos_profile: posProfile })
+        if (Array.isArray(remote)) {
+          // Map ERPNext waiter orders to coordinator format
+          // Skip orders that are already in localRows (matched by waiter_order_name = wo.name)
+          const localWaiterNames = new Set(localRows.map((r) => r.waiter_order_name).filter(Boolean))
+          // ERPNext status → POS status mapping
+          const statusMap: Record<string, string> = {
+            'Accepted': 'Open',
+            'In Kitchen': 'Preparing',
+            'Ready': 'Ready to Serve'
+          }
+          remoteRows = remote
+            .filter((wo: any) => !localWaiterNames.has(wo.name))
+            .map((wo: any) => ({
+              id: wo.pos_order_id || wo.name,
+              order_number: wo.name,
+              order_type: wo.order_type || 'Dine In',
+              table_name: wo.table || null,
+              room: wo.room || null,
+              guests: wo.guests || 1,
+              waiter_name: wo.waiter_name || null,
+              cashier_name: null,
+              status: statusMap[wo.status] || 'Open',
+              order_notes: wo.notes || null,
+              created_at: wo.creation,
+              waiter_order_name: wo.name,
+              is_remote: 1, // marker so frontend knows this is remote
+              items_summary: (wo.items || []).map((i: any) => `${i.item_name} x${i.qty}`).join(', '),
+              item_count: (wo.items || []).length
+            }))
+        }
+      }
+    } catch (err) {
+      console.error('[Coordinator] Failed to fetch remote orders:', err)
+    }
+
+    return [...localRows, ...remoteRows]
   })
 
   // Coordinator — update order status (restricted statuses)
@@ -536,7 +584,11 @@ export function registerIpcHandlers(): void {
       return { success: false, error: 'Invalid status' }
     }
 
-    db.updateOrder(orderId, { status })
+    // Check if this order exists locally — remote orders don't
+    const existingOrder = db.getOrder(orderId)
+    if (existingOrder) {
+      db.updateOrder(orderId, { status })
+    }
 
     // Auto-print invoice when marked as Ready to Serve (if printer is on this machine)
     if (status === 'Ready to Serve') {

@@ -477,6 +477,7 @@ interface KotData {
   orderType: string
   tableName?: string
   cashierName: string
+  waiterName?: string
   items: {
     itemName: string
     itemNameAr?: string
@@ -549,6 +550,7 @@ export function generateKot(data: KotData): string {
   lines.push(CMD.ALIGN_LEFT)
   if (showOrderNum) lines.push(` Order: ${data.orderNumber}`)
   lines.push(` Cashier: ${data.cashierName}`)
+  if (data.waiterName) lines.push(` Waiter: ${data.waiterName}`)
   if (data.orderNotes) {
     lines.push(getDashLine())
     lines.push(CMD.BOLD_ON + ` NOTES: ${data.orderNotes}` + CMD.BOLD_OFF)
