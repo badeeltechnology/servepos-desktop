@@ -316,7 +316,7 @@ export function getOrder(id: string): any | null {
 
 export function getActiveOrders(): any[] {
   return queryAll(
-    "SELECT * FROM orders WHERE status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced') AND date(created_at) = date('now', 'localtime') ORDER BY created_at DESC"
+    "SELECT * FROM orders WHERE status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced') AND date(created_at, 'localtime') = date('now', 'localtime') ORDER BY created_at DESC"
   )
 }
 
