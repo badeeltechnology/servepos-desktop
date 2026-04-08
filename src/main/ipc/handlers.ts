@@ -547,28 +547,7 @@ export function registerIpcHandlers(): void {
 
   // Coordinator — get active orders. Combines local orders + remote waiter orders from ERPNext
   // (so coordinator on Machine 2 can see orders accepted on Machine 1)
-  // Auto-void orders from previous days that are stuck in non-final states.
-  // Runs on app startup and when coordinator fetches orders.
-  function voidStaleOrders(): number {
-    const database = getDb()
-    const result = database.run(
-      `UPDATE orders
-       SET status = 'Void',
-           void_reason = COALESCE(void_reason, 'Auto-voided: stale order from previous day'),
-           completed_at = datetime('now')
-       WHERE status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced')
-         AND date(created_at, 'localtime') < date('now', 'localtime')`
-    )
-    const changes = (database.getRowsModified?.() as number) || 0
-    if (changes > 0) saveDatabase()
-    return changes
-  }
-  ipcMain.handle('orders:voidStale', () => ({ voided: voidStaleOrders() }))
-
   ipcMain.handle('coordinator:getActiveOrders', async () => {
-    // Clean up any stale orders from previous days before fetching
-    voidStaleOrders()
-
     const database = getDb()
 
     // Local active orders (this machine) — today only (both sides converted to local time)
