@@ -251,13 +251,11 @@ export default function POS() {
           // Existing order — just add payment
           order = await window.api.orders.get(orderId)
         } else {
-          // Quick Pay — create order now
+          // Quick Pay — create order now. Skip KOT print: Quick Pay is for
+          // walk-in items where the customer pays immediately and only the
+          // receipt is needed; kitchen doesn't need a separate KOT.
           order = await saveCartAsOrder('Open')
           orderId = order.id
-          try {
-            const kotRes = await window.api.print.kots(order.id, user?.name)
-            if (kotRes?.success === false) setToast({ type: 'error', message: `KOT print failed: ${kotRes?.errors?.join(', ') || 'Check printer'}` })
-          } catch {}
         }
 
         if (!order) throw new Error('Order not found')
