@@ -12,7 +12,7 @@ import OpenShift from '../components/OpenShift'
 import CloseShift from '../components/CloseShift'
 import {
   LogOut, User, Users, PauseCircle, Settings, CheckCircle, AlertCircle, Wifi, WifiOff,
-  ClipboardList, X, RotateCcw, Printer, DoorOpen, RefreshCw, ChefHat
+  ClipboardList, X, RotateCcw, Printer, DoorOpen, RefreshCw, ChefHat, Loader2
 } from 'lucide-react'
 import { useAppStore } from '../stores/app'
 
@@ -26,7 +26,7 @@ export default function POS() {
   const [isOrderPlaced, setIsOrderPlaced] = useState(false)
   const [taxRate, setTaxRate] = useState(0)
   const [taxLabel, setTaxLabel] = useState('VAT')
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
   const [processing, setProcessing] = useState(false)
   const [activeSession, setActiveSession] = useState<any>(null)
   const [sessionLoading, setSessionLoading] = useState(true)
@@ -286,7 +286,9 @@ export default function POS() {
           await window.api.tables.updateStatus(cart.tableName, 'Available')
         }
 
-        // Print receipt
+        // Print receipt — show an intermediate indicator so the cashier
+        // knows something is happening while the printer warms up.
+        setToast({ type: 'info', message: 'Printing receipt…' })
         let receiptResult: any
         try { receiptResult = await window.api.print.receipt(orderId!) } catch (e: any) { receiptResult = { success: false, error: e.message } }
 
@@ -732,9 +734,13 @@ export default function POS() {
       {/* Toast notification */}
       {toast && (
         <div className={`fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl px-5 py-3 text-sm font-medium shadow-lg transition-all ${
-          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+          toast.type === 'success' ? 'bg-emerald-600 text-white'
+            : toast.type === 'info' ? 'bg-blue-600 text-white'
+            : 'bg-red-600 text-white'
         }`}>
-          {toast.type === 'success' ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+          {toast.type === 'success' ? <CheckCircle className="h-5 w-5" />
+            : toast.type === 'info' ? <Loader2 className="h-5 w-5 animate-spin" />
+            : <AlertCircle className="h-5 w-5" />}
           {toast.message}
         </div>
       )}
