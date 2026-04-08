@@ -72,7 +72,7 @@ export default function POS() {
       } catch {}
       // Invoice auto-print for ready orders
       try { await window.api.print.pollReadyOrders() } catch {}
-    }, 10000)
+    }, 3000)
 
     // Initial load
     window.api.waiterOrders.getPending().then((o: any) => setWaiterOrderCount(o?.length || 0)).catch(() => {})
