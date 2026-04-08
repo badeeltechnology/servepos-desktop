@@ -221,17 +221,46 @@ export function registerIpcHandlers(): void {
   // ==================== Printing ====================
   // ==================== Waiter Orders ====================
 
+  // Per-waiter-order mutex — serializes concurrent accept calls for the same waiter order.
+  // Without this, two calls racing in the few ms before waiter_order_name is written both
+  // pass the dup check and create duplicate POS orders (each printing its own KOT).
+  const acceptingWaiterOrders = new Map<string, Promise<any>>()
+
   // Shared helper: create local order from waiter order data, apply tax, print KOT
-  async function acceptWaiterOrderLocally(wo: any, client: ERPNextClient): Promise<{ success: boolean; orderId?: string; orderNumber?: string; error?: string }> {
+  async function acceptWaiterOrderLocally(wo: any, client: ERPNextClient): Promise<{ success: boolean; orderId?: string; orderNumber?: string; error?: string; kotPrinted?: boolean; kotError?: string }> {
+    // Serialize per waiter order name — if another accept is in-flight for the same wo.name,
+    // wait for it and return its result instead of creating a duplicate.
+    if (wo.name) {
+      const inflight = acceptingWaiterOrders.get(wo.name)
+      if (inflight) return await inflight
+      const p = (async () => {
+        try {
+          return await doAcceptWaiterOrderLocally(wo, client)
+        } finally {
+          acceptingWaiterOrders.delete(wo.name)
+        }
+      })()
+      acceptingWaiterOrders.set(wo.name, p)
+      return await p
+    }
+    return await doAcceptWaiterOrderLocally(wo, client)
+  }
+
+  async function doAcceptWaiterOrderLocally(wo: any, client: ERPNextClient): Promise<{ success: boolean; orderId?: string; orderNumber?: string; error?: string; kotPrinted?: boolean; kotError?: string }> {
     const database = getDb()
 
-    // Check for duplicate — skip if this exact waiter order was already accepted
+    // Check for duplicate — skip if this exact waiter order was already accepted.
+    // With the per-name mutex above, this check is now race-free.
     if (wo.name) {
-      const dupStmt = database.prepare("SELECT id FROM orders WHERE waiter_order_name = ? AND status != 'Void'")
+      const dupStmt = database.prepare("SELECT id, order_number FROM orders WHERE waiter_order_name = ? AND status != 'Void'")
       dupStmt.bind([wo.name])
-      const isDup = dupStmt.step()
+      if (dupStmt.step()) {
+        const existing = dupStmt.getAsObject() as any
+        dupStmt.free()
+        // Treat as idempotent success — do NOT reprint KOT
+        return { success: true, orderId: existing.id, orderNumber: existing.order_number, kotPrinted: false, error: 'Already accepted' }
+      }
       dupStmt.free()
-      if (isDup) return { success: false, error: 'Already accepted' }
     }
 
     // Get active session
@@ -252,6 +281,13 @@ export function registerIpcHandlers(): void {
       waiterId: wo.waiter || undefined,
       waiterName: wo.waiter_name || undefined
     })
+
+    // Immediately claim this waiter_order_name on the new row so any racing caller's
+    // dup check finds it (defense-in-depth alongside the per-name mutex above).
+    if (wo.name) {
+      database.run('UPDATE orders SET waiter_order_name = ? WHERE id = ?', [wo.name, order.id])
+      saveDatabase()
+    }
 
     // Add items
     let subtotal = 0
@@ -314,7 +350,9 @@ export function registerIpcHandlers(): void {
     let kotPrinted = false
     let kotError = ''
     try {
-      const kotResult = await printKots(order.id)
+      // Actor for auto prints = waiter who placed the order (if via waiter app)
+      // else the cashier on the current shift.
+      const kotResult = await printKots(order.id, 'auto', wo.waiter_name || session.user_name)
       kotPrinted = kotResult.printed > 0
       if (kotResult.errors.length > 0) kotError = kotResult.errors.join(', ')
     } catch (printErr: any) {
@@ -358,8 +396,35 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('print:receipt', (_e, orderId: string) => printReceipt(orderId))
-  ipcMain.handle('print:kots', (_e, orderId: string) => printKots(orderId))
+  ipcMain.handle('print:kots', (_e, orderId: string, actorName?: string) => {
+    // Determine manual vs reprint based on whether KOT was already printed
+    const database = getDb()
+    const stmt = database.prepare('SELECT kot_printed FROM orders WHERE id = ?')
+    stmt.bind([orderId])
+    const already = stmt.step() ? (stmt.getAsObject() as any).kot_printed === 1 : false
+    stmt.free()
+    return printKots(orderId, already ? 'reprint' : 'manual', actorName)
+  })
   ipcMain.handle('print:amendmentKot', (_e, orderId: string, amendments: any[]) => printAmendmentKot(orderId, amendments))
+
+  // Fetch print history for an order (for the "Print History" panel).
+  // Joins printer name so the UI doesn't need a second lookup.
+  ipcMain.handle('printLog:getForOrder', (_e, orderId: string) => {
+    const database = getDb()
+    const stmt = database.prepare(
+      `SELECT pl.id, pl.print_type, pl.status, pl.error, pl.source, pl.actor_name, pl.printed_at,
+              p.printer_name
+       FROM print_log pl
+       LEFT JOIN printers p ON p.id = pl.printer_id
+       WHERE pl.order_id = ?
+       ORDER BY pl.printed_at ASC`
+    )
+    stmt.bind([orderId])
+    const rows: any[] = []
+    while (stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
   ipcMain.handle('print:waiterCopy', (_e, orderId: string) => printWaiterCopy(orderId))
   ipcMain.handle('print:prepDoc', (_e, orderId: string) => printPrepDoc(orderId))
   ipcMain.handle('print:invoice', (_e, orderId: string) => printInvoice(orderId))
@@ -607,7 +672,14 @@ export function registerIpcHandlers(): void {
               waiter_order_name: wo.name,
               is_remote: 1, // marker so frontend knows this is remote
               items_summary: (wo.items || []).map((i: any) => `${i.item_name} x${i.qty}`).join(', '),
-              item_count: (wo.items || []).length
+              item_count: (wo.items || []).length,
+              items: (wo.items || []).map((i: any, idx: number) => ({
+                id: `${wo.name}-${idx}`,
+                item_name: i.item_name,
+                qty: i.qty,
+                rate: i.rate,
+                amount: i.amount
+              }))
             }))
         }
       }

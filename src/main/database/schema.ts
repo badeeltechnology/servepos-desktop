@@ -368,6 +368,8 @@ function createTables(): void {
       printer_id TEXT,
       status TEXT,
       error TEXT,
+      source TEXT,
+      actor_name TEXT,
       printed_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
@@ -615,6 +617,17 @@ function runMigrations(): void {
   // Migration 13b: Add promo_name to orders
   if (!hasColumn('orders', 'promo_name')) {
     database.run('ALTER TABLE orders ADD COLUMN promo_name TEXT')
+  }
+
+  // Migration 13c: Add source column to print_log ('auto' | 'manual' | 'reprint')
+  if (!hasColumn('print_log', 'source')) {
+    database.run('ALTER TABLE print_log ADD COLUMN source TEXT')
+  }
+
+  // Migration 13d: Add actor_name to print_log so we can attribute prints
+  // to the real human (all staff share one ERPNext username).
+  if (!hasColumn('print_log', 'actor_name')) {
+    database.run('ALTER TABLE print_log ADD COLUMN actor_name TEXT')
   }
 
   // Migration 13: Expand print_routes to support prep_doc, invoice types

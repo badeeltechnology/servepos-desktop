@@ -381,11 +381,11 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
                 </button>
                 {showPrintMenu && (
                   <div className="absolute bottom-full left-0 right-0 z-30 mb-1 rounded-xl border bg-white shadow-lg overflow-hidden">
-                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId); const w = await window.api.print.waiterCopy(activeOrderId); alert(r?.success && w?.success ? 'KOT + Waiter copy printed' : 'Print error — check printer') }}
+                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name); const w = await window.api.print.waiterCopy(activeOrderId); alert(r?.success && w?.success ? 'KOT + Waiter copy printed' : 'Print error — check printer') }}
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> KOT + Waiter Copy
                     </button>
-                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId); alert(r?.success ? 'KOT reprinted' : 'KOT failed') }}
+                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name); alert(r?.success ? 'KOT reprinted' : 'KOT failed') }}
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
                       <span className="h-1.5 w-1.5 rounded-full bg-orange-500" /> Reprint KOT
                     </button>

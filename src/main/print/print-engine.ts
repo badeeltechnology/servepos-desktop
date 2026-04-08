@@ -46,12 +46,48 @@ function lookupItemInfo(db: any, itemCode: string): { item_name_ar?: string; des
   return info
 }
 
-// Log print action
-function logPrint(orderId: string, printType: string, printerId: string, success: boolean, error?: string): void {
+// Resolve the human actor for a print action.
+// Since all staff share one ERPNext login, the real identity lives on the open
+// shift (sessions.user_name) or on the order itself (cashier_name / waiter_name).
+function resolveActor(orderId: string, explicit?: string): string {
+  if (explicit && explicit.trim()) return explicit.trim()
   const db = getDb()
+  // Prefer the cashier recorded on the order (set at createOrder time).
+  const ordStmt = db.prepare('SELECT cashier_name, waiter_name FROM orders WHERE id = ?')
+  ordStmt.bind([orderId])
+  if (ordStmt.step()) {
+    const row = ordStmt.getAsObject() as any
+    ordStmt.free()
+    if (row.cashier_name) return row.cashier_name
+    if (row.waiter_name) return row.waiter_name
+  } else {
+    ordStmt.free()
+  }
+  // Fallback: the user on the currently open shift.
+  const sessStmt = db.prepare("SELECT user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
+  if (sessStmt.step()) {
+    const s = sessStmt.getAsObject() as any
+    sessStmt.free()
+    if (s.user_name) return s.user_name
+  } else {
+    sessStmt.free()
+  }
+  return 'system'
+}
+
+// Log print action.
+// `source` identifies what triggered the print:
+//   'auto'      — triggered automatically by the system (waiter order accept, ready-to-serve poll)
+//   'manual'    — user clicked a print button in the UI
+//   'reprint'   — user re-triggered a print that was already done
+//   'amendment' — amendment KOT printed after order edit
+// `actorName` is the human who triggered it; resolved from session/order if omitted.
+function logPrint(orderId: string, printType: string, printerId: string, success: boolean, error?: string, source: string = 'manual', actorName?: string): void {
+  const db = getDb()
+  const actor = resolveActor(orderId, actorName)
   db.run(
-    'INSERT INTO print_log (id, order_id, print_type, printer_id, status, error) VALUES (?, ?, ?, ?, ?, ?)',
-    [uuidv4(), orderId, printType, printerId, success ? 'success' : 'failed', error || null]
+    'INSERT INTO print_log (id, order_id, print_type, printer_id, status, error, source, actor_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [uuidv4(), orderId, printType, printerId, success ? 'success' : 'failed', error || null, source, actor]
   )
   saveDatabase()
 }
@@ -244,7 +280,7 @@ export async function printInvoice(orderId: string): Promise<{ success: boolean;
   return result
 }
 
-export async function printKots(orderId: string): Promise<{ success: boolean; printed: number; errors: string[] }> {
+export async function printKots(orderId: string, source: 'auto' | 'manual' | 'reprint' = 'manual', actorName?: string): Promise<{ success: boolean; printed: number; errors: string[] }> {
   const db = getDb()
   const errors: string[] = []
   let printed = 0
@@ -333,7 +369,7 @@ export async function printKots(orderId: string): Promise<{ success: boolean; pr
     const kot = generateKot(kotData)
     const kotBuffer = await processForPrinter(kot, group.printer.paper_width || 80)
     const result = await sendWithCopies(group.printer, kotBuffer, getCopyCount('kot'))
-    logPrint(orderId, 'kot', group.printer.id, result.success, result.error)
+    logPrint(orderId, 'kot', group.printer.id, result.success, result.error, source, actorName)
 
     if (result.success) {
       printed++

@@ -209,7 +209,7 @@ export default function POS() {
 
       // Print KOT
       let kotResult: any
-      try { kotResult = await window.api.print.kots(order.id) } catch (e: any) { kotResult = { success: false, errors: [e.message] } }
+      try { kotResult = await window.api.print.kots(order.id, user?.name) } catch (e: any) { kotResult = { success: false, errors: [e.message] } }
 
       // Auto-print waiter copy if enabled
       try {
@@ -255,7 +255,7 @@ export default function POS() {
           order = await saveCartAsOrder('Open')
           orderId = order.id
           try {
-            const kotRes = await window.api.print.kots(order.id)
+            const kotRes = await window.api.print.kots(order.id, user?.name)
             if (kotRes?.success === false) setToast({ type: 'error', message: `KOT print failed: ${kotRes?.errors?.join(', ') || 'Check printer'}` })
           } catch {}
         }
@@ -323,7 +323,7 @@ export default function POS() {
         // Not saved yet — create as Hold + print KOT so kitchen starts
         order = await saveCartAsOrder('Hold')
         try {
-          const kotRes = await window.api.print.kots(order.id)
+          const kotRes = await window.api.print.kots(order.id, user?.name)
           if (kotRes?.success === false) setToast({ type: 'error', message: `KOT print failed: ${kotRes?.errors?.join(', ') || 'Check printer'}` })
         } catch {}
       }

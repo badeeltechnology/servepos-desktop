@@ -148,12 +148,17 @@ const api = {
   // Printing
   print: {
     receipt: (orderId: string) => ipcRenderer.invoke('print:receipt', orderId),
-    kots: (orderId: string) => ipcRenderer.invoke('print:kots', orderId),
+    kots: (orderId: string, actorName?: string) => ipcRenderer.invoke('print:kots', orderId, actorName),
     amendmentKot: (orderId: string, amendments: any[]) => ipcRenderer.invoke('print:amendmentKot', orderId, amendments),
     waiterCopy: (orderId: string) => ipcRenderer.invoke('print:waiterCopy', orderId),
     prepDoc: (orderId: string) => ipcRenderer.invoke('print:prepDoc', orderId),
     invoice: (orderId: string) => ipcRenderer.invoke('print:invoice', orderId),
     pollReadyOrders: () => ipcRenderer.invoke('print:pollReadyOrders')
+  },
+
+  // Print log (history)
+  printLog: {
+    getForOrder: (orderId: string) => ipcRenderer.invoke('printLog:getForOrder', orderId)
   },
 
   // Waiters
