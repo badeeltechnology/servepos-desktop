@@ -373,7 +373,41 @@ export function registerIpcHandlers(): void {
     try {
       const database = getDb()
 
-      // Find orders that are "Ready to Serve" but invoice not yet printed
+      // Step 1: Cross-machine sync — if a waiter order was marked "Ready" on another machine,
+      // update the matching local order to "Ready to Serve" so the auto-print picks it up.
+      try {
+        const erpnextUrl = db.getConfig('erpnext_url')
+        const posProfile = db.getConfig('pos_profile') || ''
+        if (erpnextUrl && posProfile) {
+          const client = new ERPNextClient()
+          const remoteReady = await client.callMethod('servepos.api.registry.get_active_orders', {
+            pos_profile: posProfile,
+            statuses: 'Ready',
+          })
+          if (Array.isArray(remoteReady)) {
+            for (const wo of remoteReady) {
+              // Match on pos_order_id first, fallback to waiter_order_name
+              if (wo.pos_order_id) {
+                database.run(
+                  "UPDATE orders SET status = 'Ready to Serve' WHERE id = ? AND status NOT IN ('Ready to Serve', 'Invoiced', 'Completed', 'Void')",
+                  [wo.pos_order_id]
+                )
+              }
+              if (wo.name) {
+                database.run(
+                  "UPDATE orders SET status = 'Ready to Serve' WHERE waiter_order_name = ? AND status NOT IN ('Ready to Serve', 'Invoiced', 'Completed', 'Void')",
+                  [wo.name]
+                )
+              }
+            }
+            saveDatabase()
+          }
+        }
+      } catch (err) {
+        // Non-blocking — local poll still runs
+      }
+
+      // Step 2: Find local orders that are "Ready to Serve" but invoice not yet printed
       const readyStmt = database.prepare(
         "SELECT id FROM orders WHERE status = 'Ready to Serve' AND (invoice_printed IS NULL OR invoice_printed = 0)"
       )
