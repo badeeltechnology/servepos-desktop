@@ -576,8 +576,18 @@ export function registerIpcHandlers(): void {
         const remote = await client.callMethod('servepos.api.registry.get_active_orders', {
           pos_profile: posProfile,
           statuses: 'Accepted,In Kitchen,Ready',
+          days: 1,
         })
         if (Array.isArray(remote)) {
+          // Client-side fallback: filter to today only (in case server hasn't been updated yet)
+          const todayStart = new Date()
+          todayStart.setHours(0, 0, 0, 0)
+          const todayStartTs = todayStart.getTime()
+          const filteredRemote = remote.filter((wo: any) => {
+            if (!wo.creation) return true
+            const created = new Date(wo.creation).getTime()
+            return !isNaN(created) && created >= todayStartTs
+          })
           // Map ERPNext waiter orders to coordinator format
           // Skip orders that are already in localRows (matched by waiter_order_name = wo.name)
           const localWaiterNames = new Set(localRows.map((r) => r.waiter_order_name).filter(Boolean))
@@ -587,7 +597,7 @@ export function registerIpcHandlers(): void {
             'In Kitchen': 'Preparing',
             'Ready': 'Ready to Serve'
           }
-          remoteRows = remote
+          remoteRows = filteredRemote
             .filter((wo: any) => !localWaiterNames.has(wo.name))
             .map((wo: any) => ({
               id: wo.pos_order_id || wo.name,
