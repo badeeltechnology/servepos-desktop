@@ -550,13 +550,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('coordinator:getActiveOrders', async () => {
     const database = getDb()
 
-    // Local active orders (this machine)
+    // Local active orders (this machine) — today only
     const stmt = database.prepare(
       `SELECT o.*, GROUP_CONCAT(oi.item_name || ' x' || oi.qty, ', ') as items_summary,
               COUNT(oi.id) as item_count
        FROM orders o
        LEFT JOIN order_items oi ON oi.order_id = o.id
        WHERE o.status NOT IN ('Completed', 'Void', 'Returned')
+         AND date(o.created_at) = date('now', 'localtime')
        GROUP BY o.id
        ORDER BY o.created_at DESC`
     )
