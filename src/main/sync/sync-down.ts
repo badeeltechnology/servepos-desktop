@@ -127,7 +127,7 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
         db.run(
           `INSERT OR REPLACE INTO tables_list (name, table_name, room, capacity, status, current_order_id, is_active, branch, synced_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-          [t.name, t.table_name, t.room || null, t.capacity || 4, currentStatus, currentOrder, t.is_active ? 1 : 0, t.branch || null]
+          [t.name, t.table_name, t.room || null, t.capacity || 4, currentStatus, currentOrder, t.is_active === 0 ? 0 : 1, t.branch || null]
         )
       }
 
@@ -170,7 +170,7 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
         db.run(
           `INSERT OR REPLACE INTO rooms (name, room_name, description, is_active, branch, synced_at)
            VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-          [r.name, r.room_name, r.description || null, r.is_active ? 1 : 0, r.branch || null]
+          [r.name, r.room_name, r.description || null, r.is_active === 0 ? 0 : 1, r.branch || null]
         )
       }
 
