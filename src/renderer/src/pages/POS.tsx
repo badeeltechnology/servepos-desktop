@@ -290,11 +290,9 @@ export default function POS() {
         let receiptResult: any
         try { receiptResult = await window.api.print.receipt(orderId!) } catch (e: any) { receiptResult = { success: false, error: e.message } }
 
-        const completedOrderId = orderId
         cart.clearCart(); setIsOrderPlaced(false)
         setShowPayment(false)
         setActiveOrderId(null)
-        setReceiptPreviewId(completedOrderId)
         if (receiptResult?.success === false) {
           setToast({ type: 'error', message: `Order completed but receipt print failed: ${receiptResult?.error || 'Check printer'}` })
         } else {
@@ -391,7 +389,6 @@ export default function POS() {
 
 
   const [showOrderHistory, setShowOrderHistory] = useState(false)
-  const [receiptPreviewId, setReceiptPreviewId] = useState<string | null>(null)
   const [showCoordinator, setShowCoordinator] = useState(false)
 
   if (showSettings && user?.role === 'supervisor') {
@@ -730,11 +727,6 @@ export default function POS() {
           }}
           onCancel={() => setShowCloseShift(false)}
         />
-      )}
-
-      {/* Receipt Preview (shown after payment or from order history) */}
-      {receiptPreviewId && (
-        <ReceiptPreview orderId={receiptPreviewId} onClose={() => setReceiptPreviewId(null)} />
       )}
 
       {/* Toast notification */}
