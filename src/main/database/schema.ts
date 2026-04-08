@@ -642,6 +642,23 @@ function runMigrations(): void {
       database.run('PRAGMA foreign_keys = ON')
     }
   }
+
+  // Safety net: ensure all expected columns exist after any migration.
+  // Migration 12 recreated the orders table and may have dropped columns added earlier.
+  const ordersCols: [string, string][] = [
+    ['waiter_id', 'TEXT'],
+    ['waiter_name', 'TEXT'],
+    ['waiter_order_name', 'TEXT'],
+    ['order_notes', 'TEXT'],
+    ['invoice_printed', 'INTEGER DEFAULT 0'],
+    ['session_id', 'TEXT'],
+    ['promo_name', 'TEXT'],
+  ]
+  for (const [col, type] of ordersCols) {
+    if (!hasColumn('orders', col)) {
+      try { database.run(`ALTER TABLE orders ADD COLUMN ${col} ${type}`) } catch {}
+    }
+  }
 }
 
 export function saveDatabase(): void {
