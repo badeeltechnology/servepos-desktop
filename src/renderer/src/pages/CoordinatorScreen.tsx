@@ -42,10 +42,19 @@ function formatElapsed(minutes: number): string {
   return `${h}h ${m}m`
 }
 
+function todayLocal(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = {}) {
   const [orders, setOrders] = useState<ActiveOrder[]>([])
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [filter, setFilter] = useState<StatusFilter>('all')
+  const [dateFilter, setDateFilter] = useState<string>(todayLocal())
   const [selectedOrder, setSelectedOrder] = useState<ActiveOrder | null>(null)
   const [loading, setLoading] = useState(false)
   const user = useAuthStore((s) => s.user)
@@ -85,14 +94,27 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
     }
   }
 
-  const filtered = filter === 'all' ? orders : orders.filter((o) => o.status === filter)
+  // Filter by date first (using local date comparison)
+  const dateFiltered = orders.filter((o) => {
+    if (!o.created_at) return false
+    // created_at is stored in UTC (append 'Z' if not already timezone-aware)
+    const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(o.created_at)
+    const d = new Date(hasTz ? o.created_at : o.created_at + 'Z')
+    if (isNaN(d.getTime())) return false
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}` === dateFilter
+  })
+
+  const filtered = filter === 'all' ? dateFiltered : dateFiltered.filter((o) => o.status === filter)
 
   const statusCounts = {
-    all: orders.length,
-    Open: orders.filter((o) => o.status === 'Open' || o.status === 'Hold').length,
-    Preparing: orders.filter((o) => o.status === 'Preparing').length,
-    'Ready to Serve': orders.filter((o) => o.status === 'Ready to Serve').length,
-    Invoiced: orders.filter((o) => o.status === 'Invoiced').length
+    all: dateFiltered.length,
+    Open: dateFiltered.filter((o) => o.status === 'Open' || o.status === 'Hold').length,
+    Preparing: dateFiltered.filter((o) => o.status === 'Preparing').length,
+    'Ready to Serve': dateFiltered.filter((o) => o.status === 'Ready to Serve').length,
+    Invoiced: dateFiltered.filter((o) => o.status === 'Invoiced').length
   }
 
   return (
@@ -103,7 +125,7 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
           <ChefHat className="h-6 w-6 text-primary" />
           <div>
             <h1 className="text-lg font-bold">Coordinator</h1>
-            <p className="text-xs text-gray-500">{user?.name} | {orders.length} active orders</p>
+            <p className="text-xs text-gray-500">{user?.name} | {dateFiltered.length} active orders</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -137,8 +159,8 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
         </div>
       </div>
 
-      {/* Status filter tabs */}
-      <div className="flex gap-2 border-b bg-white px-6 py-2">
+      {/* Status filter tabs + Date picker */}
+      <div className="flex items-center gap-2 border-b bg-white px-6 py-2">
         {([
           { key: 'all', label: 'All' },
           { key: 'Open', label: 'Open' },
@@ -161,6 +183,22 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
             </span>
           </button>
         ))}
+        <div className="ml-auto flex items-center gap-2">
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 focus:border-primary focus:outline-none"
+          />
+          {dateFilter !== todayLocal() && (
+            <button
+              onClick={() => setDateFilter(todayLocal())}
+              className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-200"
+            >
+              Today
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main content */}

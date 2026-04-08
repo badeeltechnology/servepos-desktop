@@ -550,14 +550,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('coordinator:getActiveOrders', async () => {
     const database = getDb()
 
-    // Local active orders (this machine) — today only (both sides converted to local time)
+    // Local active orders (this machine) — last 7 days (UI filters to selected date)
     const stmt = database.prepare(
       `SELECT o.*, GROUP_CONCAT(oi.item_name || ' x' || oi.qty, ', ') as items_summary,
               COUNT(oi.id) as item_count
        FROM orders o
        LEFT JOIN order_items oi ON oi.order_id = o.id
        WHERE o.status NOT IN ('Completed', 'Void', 'Returned')
-         AND date(o.created_at, 'localtime') = date('now', 'localtime')
+         AND date(o.created_at, 'localtime') >= date('now', 'localtime', '-7 days')
        GROUP BY o.id
        ORDER BY o.created_at DESC`
     )
@@ -576,18 +576,11 @@ export function registerIpcHandlers(): void {
         const remote = await client.callMethod('servepos.api.registry.get_active_orders', {
           pos_profile: posProfile,
           statuses: 'Accepted,In Kitchen,Ready',
-          days: 1,
+          days: 7,
         })
         if (Array.isArray(remote)) {
-          // Client-side fallback: filter to today only (in case server hasn't been updated yet)
-          const todayStart = new Date()
-          todayStart.setHours(0, 0, 0, 0)
-          const todayStartTs = todayStart.getTime()
-          const filteredRemote = remote.filter((wo: any) => {
-            if (!wo.creation) return true
-            const created = new Date(wo.creation).getTime()
-            return !isNaN(created) && created >= todayStartTs
-          })
+          // Return all remote orders — UI filters to the selected date
+          const filteredRemote = remote
           // Map ERPNext waiter orders to coordinator format
           // Skip orders that are already in localRows (matched by waiter_order_name = wo.name)
           const localWaiterNames = new Set(localRows.map((r) => r.waiter_order_name).filter(Boolean))
