@@ -1,7 +1,7 @@
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js'
 import { app, dialog } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, renameSync, openSync, closeSync, fsyncSync } from 'fs'
+import { existsSync, readFileSync, mkdirSync, unlinkSync, renameSync, openSync, writeSync, closeSync, fsyncSync } from 'fs'
 
 let db: SqlJsDatabase | null = null
 let dbPath: string = ''
@@ -32,35 +32,43 @@ export async function initDatabase(): Promise<void> {
   let recoveredFromBackup = false
 
   // Helper: try to load and validate a database file
-  function tryLoadDb(filePath: string): SqlJsDatabase | null {
-    if (!existsSync(filePath)) return null
+  function tryLoadDb(filePath: string, label: string): SqlJsDatabase | null {
+    if (!existsSync(filePath)) {
+      console.log(`[DB Recovery] ${label}: file not found`)
+      return null
+    }
     try {
       const buffer = readFileSync(filePath)
-      if (buffer.length === 0) return null
+      console.log(`[DB Recovery] ${label}: file exists, ${buffer.length} bytes`)
+      if (buffer.length === 0) {
+        console.warn(`[DB Recovery] ${label}: file is empty`)
+        return null
+      }
       const candidate = new SQL.Database(buffer)
       const result = candidate.exec('PRAGMA integrity_check')
       const status = result[0]?.values[0]?.[0]
       if (status !== 'ok') {
+        console.error(`[DB Recovery] ${label}: integrity check failed — ${status}`)
         candidate.close()
         return null
       }
+      console.log(`[DB Recovery] ${label}: loaded successfully`)
       return candidate
     } catch (err) {
-      console.error(`Failed to load ${filePath}:`, err)
+      console.error(`[DB Recovery] ${label}: failed to load —`, err)
       return null
     }
   }
 
   // Recovery chain: main → backup → tmp (leftover from crashed rename) → fresh
-  db = tryLoadDb(dbPath)
+  console.log('[DB Recovery] Starting recovery chain...')
+  db = tryLoadDb(dbPath, 'main')
   if (!db) {
-    console.warn('Main database missing or corrupted, trying backup...')
-    db = tryLoadDb(dbBackupPath)
+    db = tryLoadDb(dbBackupPath, 'backup')
     if (db) {
       recoveredFromBackup = true
     } else {
-      console.warn('Backup also failed, trying tmp file...')
-      db = tryLoadDb(dbTmpPath)
+      db = tryLoadDb(dbTmpPath, 'tmp')
       if (db) {
         recoveredFromBackup = true
       }
@@ -741,10 +749,12 @@ function runMigrations(): void {
 /**
  * Write buffer to file and flush to disk (fsync) so the OS cannot lose
  * buffered data during a power cut.
+ * Uses a single file descriptor for write + fsync — opening in read mode
+ * for fsync does NOT flush the write cache on Windows.
  */
 function writeAndFlush(filePath: string, buffer: Buffer): void {
-  writeFileSync(filePath, buffer)
-  const fd = openSync(filePath, 'r')
+  const fd = openSync(filePath, 'w')
+  writeSync(fd, buffer)
   fsyncSync(fd)
   closeSync(fd)
 }
