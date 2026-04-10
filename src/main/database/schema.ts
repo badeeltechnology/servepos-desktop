@@ -1,11 +1,14 @@
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js'
-import { app } from 'electron'
+import { app, dialog } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, renameSync } from 'fs'
 
 let db: SqlJsDatabase | null = null
 let dbPath: string = ''
+let dbBackupPath: string = ''
+let dbTmpPath: string = ''
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let periodicSaveInterval: ReturnType<typeof setInterval> | null = null
 
 export function getDb(): SqlJsDatabase {
   if (!db) {
@@ -23,11 +26,60 @@ export async function initDatabase(): Promise<void> {
   }
 
   dbPath = join(userDataPath, 'servepos.db')
+  dbBackupPath = join(userDataPath, 'servepos.db.bak')
+  dbTmpPath = join(userDataPath, 'servepos.db.tmp')
 
+  // Clean up any leftover tmp file from a previous crashed write
+  if (existsSync(dbTmpPath)) {
+    try { unlinkSync(dbTmpPath) } catch {}
+  }
+
+  let recoveredFromBackup = false
+
+  // Layer 3: Try main file, then backup, then fresh
   if (existsSync(dbPath)) {
-    const buffer = readFileSync(dbPath)
-    db = new SQL.Database(buffer)
-  } else {
+    try {
+      const buffer = readFileSync(dbPath)
+      db = new SQL.Database(buffer)
+      // Integrity check — if corrupted, this throws
+      const result = db.exec('PRAGMA integrity_check')
+      const status = result[0]?.values[0]?.[0]
+      if (status !== 'ok') throw new Error('integrity_check failed')
+    } catch (err) {
+      console.error('Main database corrupted:', err)
+      db = null
+      // Try backup
+      if (existsSync(dbBackupPath)) {
+        try {
+          const backupBuffer = readFileSync(dbBackupPath)
+          db = new SQL.Database(backupBuffer)
+          const result = db.exec('PRAGMA integrity_check')
+          const status = result[0]?.values[0]?.[0]
+          if (status !== 'ok') throw new Error('backup integrity_check failed')
+          recoveredFromBackup = true
+        } catch (backupErr) {
+          console.error('Backup database also corrupted:', backupErr)
+          db = null
+        }
+      }
+    }
+  } else if (existsSync(dbBackupPath)) {
+    // Main file missing but backup exists (e.g. power cut during rename)
+    try {
+      const backupBuffer = readFileSync(dbBackupPath)
+      db = new SQL.Database(backupBuffer)
+      const result = db.exec('PRAGMA integrity_check')
+      const status = result[0]?.values[0]?.[0]
+      if (status !== 'ok') throw new Error('backup integrity_check failed')
+      recoveredFromBackup = true
+    } catch (err) {
+      console.error('Backup database corrupted:', err)
+      db = null
+    }
+  }
+
+  // If both failed, create fresh
+  if (!db) {
     db = new SQL.Database()
   }
 
@@ -35,6 +87,24 @@ export async function initDatabase(): Promise<void> {
   createTables()
   runMigrations()
   saveDatabase()
+
+  // Start periodic save every 30 seconds
+  periodicSaveInterval = setInterval(() => {
+    saveDatabaseSafe()
+  }, 30_000)
+
+  // Show recovery dialog after window is ready
+  if (recoveredFromBackup) {
+    app.whenReady().then(() => {
+      dialog.showMessageBox({
+        type: 'warning',
+        title: 'Database Recovered',
+        message: 'Database was restored from backup',
+        detail: 'The main database file was corrupted (possibly due to a power outage). It has been automatically restored from the last backup. There may be data loss of up to 30 seconds.',
+        buttons: ['OK']
+      })
+    })
+  }
 }
 
 function createTables(): void {
@@ -674,28 +744,48 @@ function runMigrations(): void {
   }
 }
 
+/**
+ * Atomic save: write to tmp file, backup old file, rename tmp to main.
+ * If power cuts during write, the original file is still intact.
+ * If power cuts during rename, we recover from backup on next startup.
+ */
+function saveDatabaseSafe(): void {
+  if (!db || !dbPath) return
+  try {
+    const data = db.export()
+    const buffer = Buffer.from(data)
+    // Step 1: Write to temp file
+    writeFileSync(dbTmpPath, buffer)
+    // Step 2: Backup current main file (if it exists)
+    if (existsSync(dbPath)) {
+      try { renameSync(dbPath, dbBackupPath) } catch {}
+    }
+    // Step 3: Rename temp to main (atomic on NTFS/APFS/ext4)
+    renameSync(dbTmpPath, dbPath)
+  } catch (err) {
+    console.error('Failed to save database:', err)
+  }
+}
+
 export function saveDatabase(): void {
   if (!db || !dbPath) return
   // Debounce saves to avoid excessive disk writes
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
-    if (db) {
-      const data = db.export()
-      const buffer = Buffer.from(data)
-      writeFileSync(dbPath, buffer)
-    }
+    saveDatabaseSafe()
   }, 100)
 }
 
 export function saveDatabaseSync(): void {
-  if (!db || !dbPath) return
-  const data = db.export()
-  const buffer = Buffer.from(data)
-  writeFileSync(dbPath, buffer)
+  saveDatabaseSafe()
 }
 
 export function closeDatabase(): void {
   if (saveTimer) clearTimeout(saveTimer)
+  if (periodicSaveInterval) {
+    clearInterval(periodicSaveInterval)
+    periodicSaveInterval = null
+  }
   saveDatabaseSync()
   if (db) {
     db.close()
@@ -706,12 +796,22 @@ export function closeDatabase(): void {
 export function deleteDatabase(): boolean {
   try {
     if (saveTimer) clearTimeout(saveTimer)
+    if (periodicSaveInterval) {
+      clearInterval(periodicSaveInterval)
+      periodicSaveInterval = null
+    }
     if (db) {
       db.close()
       db = null
     }
     if (dbPath && existsSync(dbPath)) {
       unlinkSync(dbPath)
+    }
+    if (dbBackupPath && existsSync(dbBackupPath)) {
+      unlinkSync(dbBackupPath)
+    }
+    if (dbTmpPath && existsSync(dbTmpPath)) {
+      unlinkSync(dbTmpPath)
     }
     return true
   } catch (err) {
