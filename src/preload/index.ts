@@ -193,6 +193,12 @@ const api = {
     reject: (name: string) => ipcRenderer.invoke('waiterOrders:reject', name)
   },
 
+  // Backup
+  backup: {
+    export: () => ipcRenderer.invoke('backup:export'),
+    import: () => ipcRenderer.invoke('backup:import')
+  },
+
   // Sync
   sync: {
     run: () => ipcRenderer.invoke('sync:run'),

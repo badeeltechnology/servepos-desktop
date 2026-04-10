@@ -1,7 +1,7 @@
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js'
 import { app, dialog } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, renameSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, renameSync, openSync, closeSync, fsyncSync } from 'fs'
 
 let db: SqlJsDatabase | null = null
 let dbPath: string = ''
@@ -29,56 +29,50 @@ export async function initDatabase(): Promise<void> {
   dbBackupPath = join(userDataPath, 'servepos.db.bak')
   dbTmpPath = join(userDataPath, 'servepos.db.tmp')
 
-  // Clean up any leftover tmp file from a previous crashed write
+  let recoveredFromBackup = false
+
+  // Helper: try to load and validate a database file
+  function tryLoadDb(filePath: string): SqlJsDatabase | null {
+    if (!existsSync(filePath)) return null
+    try {
+      const buffer = readFileSync(filePath)
+      if (buffer.length === 0) return null
+      const candidate = new SQL.Database(buffer)
+      const result = candidate.exec('PRAGMA integrity_check')
+      const status = result[0]?.values[0]?.[0]
+      if (status !== 'ok') {
+        candidate.close()
+        return null
+      }
+      return candidate
+    } catch (err) {
+      console.error(`Failed to load ${filePath}:`, err)
+      return null
+    }
+  }
+
+  // Recovery chain: main → backup → tmp (leftover from crashed rename) → fresh
+  db = tryLoadDb(dbPath)
+  if (!db) {
+    console.warn('Main database missing or corrupted, trying backup...')
+    db = tryLoadDb(dbBackupPath)
+    if (db) {
+      recoveredFromBackup = true
+    } else {
+      console.warn('Backup also failed, trying tmp file...')
+      db = tryLoadDb(dbTmpPath)
+      if (db) {
+        recoveredFromBackup = true
+      }
+    }
+  }
+
+  // Clean up tmp file after recovery attempt
   if (existsSync(dbTmpPath)) {
     try { unlinkSync(dbTmpPath) } catch {}
   }
 
-  let recoveredFromBackup = false
-
-  // Layer 3: Try main file, then backup, then fresh
-  if (existsSync(dbPath)) {
-    try {
-      const buffer = readFileSync(dbPath)
-      db = new SQL.Database(buffer)
-      // Integrity check — if corrupted, this throws
-      const result = db.exec('PRAGMA integrity_check')
-      const status = result[0]?.values[0]?.[0]
-      if (status !== 'ok') throw new Error('integrity_check failed')
-    } catch (err) {
-      console.error('Main database corrupted:', err)
-      db = null
-      // Try backup
-      if (existsSync(dbBackupPath)) {
-        try {
-          const backupBuffer = readFileSync(dbBackupPath)
-          db = new SQL.Database(backupBuffer)
-          const result = db.exec('PRAGMA integrity_check')
-          const status = result[0]?.values[0]?.[0]
-          if (status !== 'ok') throw new Error('backup integrity_check failed')
-          recoveredFromBackup = true
-        } catch (backupErr) {
-          console.error('Backup database also corrupted:', backupErr)
-          db = null
-        }
-      }
-    }
-  } else if (existsSync(dbBackupPath)) {
-    // Main file missing but backup exists (e.g. power cut during rename)
-    try {
-      const backupBuffer = readFileSync(dbBackupPath)
-      db = new SQL.Database(backupBuffer)
-      const result = db.exec('PRAGMA integrity_check')
-      const status = result[0]?.values[0]?.[0]
-      if (status !== 'ok') throw new Error('backup integrity_check failed')
-      recoveredFromBackup = true
-    } catch (err) {
-      console.error('Backup database corrupted:', err)
-      db = null
-    }
-  }
-
-  // If both failed, create fresh
+  // If all failed, create fresh
   if (!db) {
     db = new SQL.Database()
   }
@@ -745,17 +739,28 @@ function runMigrations(): void {
 }
 
 /**
- * Atomic save: write to tmp file, backup old file, rename tmp to main.
+ * Write buffer to file and flush to disk (fsync) so the OS cannot lose
+ * buffered data during a power cut.
+ */
+function writeAndFlush(filePath: string, buffer: Buffer): void {
+  writeFileSync(filePath, buffer)
+  const fd = openSync(filePath, 'r')
+  fsyncSync(fd)
+  closeSync(fd)
+}
+
+/**
+ * Atomic save: write to tmp file (+ fsync), backup old file, rename tmp to main.
  * If power cuts during write, the original file is still intact.
- * If power cuts during rename, we recover from backup on next startup.
+ * If power cuts during rename, we recover from backup/tmp on next startup.
  */
 function saveDatabaseSafe(): void {
   if (!db || !dbPath) return
   try {
     const data = db.export()
     const buffer = Buffer.from(data)
-    // Step 1: Write to temp file
-    writeFileSync(dbTmpPath, buffer)
+    // Step 1: Write to temp file and flush to disk
+    writeAndFlush(dbTmpPath, buffer)
     // Step 2: Backup current main file (if it exists)
     if (existsSync(dbPath)) {
       try { renameSync(dbPath, dbBackupPath) } catch {}

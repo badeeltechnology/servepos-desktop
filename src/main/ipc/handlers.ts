@@ -1,7 +1,8 @@
-import { ipcMain, app, BrowserWindow } from 'electron'
+import { ipcMain, app, BrowserWindow, dialog } from 'electron'
 import QRCode from 'qrcode'
 import * as db from '../database/queries'
-import { getDb, saveDatabase, deleteDatabase, initDatabase } from '../database/schema'
+import { getDb, saveDatabase, saveDatabaseSync, deleteDatabase, initDatabase } from '../database/schema'
+import { writeFileSync, readFileSync } from 'fs'
 import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
 import { ERPNextClient } from '../sync/erpnext-client'
 import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute, discoverUsbPrinters } from '../print/printer'
@@ -57,6 +58,109 @@ export function registerIpcHandlers(): void {
       if (win) win.webContents.reload()
     }, 500)
     return true
+  })
+
+  // ==================== Backup ====================
+  ipcMain.handle('backup:export', async () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Export Settings Backup',
+      defaultPath: `servepos-backup-${new Date().toISOString().slice(0, 10)}.spbak`,
+      filters: [{ name: 'ServePOS Backup', extensions: ['spbak'] }]
+    })
+    if (result.canceled || !result.filePath) return { success: false, canceled: true }
+
+    try {
+      // Ensure latest data is flushed to DB
+      saveDatabaseSync()
+      const database = getDb()
+
+      // Export settings tables (not transaction data like orders/sessions)
+      const backup: Record<string, any[]> = {}
+      const settingsTables = [
+        'config', 'receipt_config', 'admin', 'users',
+        'printers', 'print_routes', 'payment_methods',
+        'waiters', 'modifier_groups', 'modifiers', 'item_modifier_groups'
+      ]
+
+      for (const table of settingsTables) {
+        try {
+          const stmt = database.prepare(`SELECT * FROM ${table}`)
+          const rows: any[] = []
+          while (stmt.step()) {
+            rows.push(stmt.getAsObject())
+          }
+          stmt.free()
+          backup[table] = rows
+        } catch {
+          // Table may not exist, skip
+        }
+      }
+
+      backup._meta = [{ version: app.getVersion(), exported_at: new Date().toISOString() }]
+      writeFileSync(result.filePath, JSON.stringify(backup, null, 2))
+      return { success: true, path: result.filePath }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('backup:import', async () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Import Settings Backup',
+      filters: [{ name: 'ServePOS Backup', extensions: ['spbak'] }],
+      properties: ['openFile']
+    })
+    if (result.canceled || !result.filePaths[0]) return { success: false, canceled: true }
+
+    try {
+      const content = readFileSync(result.filePaths[0], 'utf-8')
+      const backup = JSON.parse(content)
+
+      if (!backup._meta || !backup.config) {
+        return { success: false, error: 'Invalid backup file' }
+      }
+
+      const database = getDb()
+
+      // Restore each settings table
+      const settingsTables = [
+        'config', 'receipt_config', 'admin', 'users',
+        'printers', 'print_routes', 'payment_methods',
+        'waiters', 'modifier_groups', 'modifiers', 'item_modifier_groups'
+      ]
+
+      database.run('PRAGMA foreign_keys = OFF')
+      for (const table of settingsTables) {
+        if (!backup[table] || backup[table].length === 0) continue
+        try {
+          // Clear existing data
+          database.run(`DELETE FROM ${table}`)
+          // Insert backup rows
+          const columns = Object.keys(backup[table][0])
+          const placeholders = columns.map(() => '?').join(', ')
+          const insertSql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`
+          for (const row of backup[table]) {
+            database.run(insertSql, columns.map((c) => row[c] ?? null))
+          }
+        } catch (err) {
+          console.error(`Failed to restore table ${table}:`, err)
+        }
+      }
+      database.run('PRAGMA foreign_keys = ON')
+
+      saveDatabaseSync()
+
+      // Reload app to apply restored settings
+      setTimeout(() => {
+        if (win) win.webContents.reload()
+      }, 500)
+
+      return { success: true, meta: backup._meta[0] }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
   })
 
   // ==================== Sync ====================

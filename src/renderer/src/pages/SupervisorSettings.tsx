@@ -3,10 +3,11 @@ import { useAuthStore } from '../stores/auth'
 import {
   Users, Settings, Printer, Package, LayoutGrid, ClipboardList,
   Plus, Trash2, Edit3, Eye, EyeOff, Save, RefreshCw, ArrowLeft,
-  CheckCircle, XCircle, AlertCircle, ChevronDown, BarChart3, Clock
+  CheckCircle, XCircle, AlertCircle, ChevronDown, BarChart3, Clock,
+  Download, Upload, HardDrive
 } from 'lucide-react'
 
-type Tab = 'users' | 'waiters' | 'waiter-orders' | 'modifiers' | 'items' | 'printers' | 'sync' | 'orders' | 'shifts' | 'reports'
+type Tab = 'users' | 'waiters' | 'waiter-orders' | 'modifiers' | 'items' | 'printers' | 'sync' | 'orders' | 'shifts' | 'reports' | 'backup'
 
 export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('users')
@@ -22,7 +23,8 @@ export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
     { key: 'printers', label: 'Printers', icon: <Printer className="h-4 w-4" /> },
     { key: 'orders', label: 'Order History', icon: <ClipboardList className="h-4 w-4" /> },
     { key: 'shifts', label: 'Shift History', icon: <Clock className="h-4 w-4" /> },
-    { key: 'sync', label: 'Sync', icon: <RefreshCw className="h-4 w-4" /> }
+    { key: 'sync', label: 'Sync', icon: <RefreshCw className="h-4 w-4" /> },
+    { key: 'backup', label: 'Backup', icon: <HardDrive className="h-4 w-4" /> }
   ]
 
   return (
@@ -64,6 +66,7 @@ export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
         {activeTab === 'sync' && <SyncDashboard />}
         {activeTab === 'shifts' && <ShiftHistory />}
         {activeTab === 'reports' && <ReportsDashboard />}
+        {activeTab === 'backup' && <BackupRestore />}
       </div>
     </div>
   )
@@ -1437,6 +1440,126 @@ function ReportsDashboard() {
               })}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ==================== Backup & Restore ====================
+function BackupRestore() {
+  const [status, setStatus] = useState<string | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    setStatus(null)
+    try {
+      const result = await window.api.backup.export()
+      if (result.canceled) {
+        setStatus(null)
+      } else if (result.success) {
+        setStatus('Backup exported successfully!')
+      } else {
+        setStatus(`Export failed: ${result.error}`)
+      }
+    } catch (err: any) {
+      setStatus(`Export failed: ${err.message}`)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleImport = async () => {
+    setIsImporting(true)
+    setStatus(null)
+    try {
+      const result = await window.api.backup.import()
+      if (result.canceled) {
+        setStatus(null)
+      } else if (result.success) {
+        setStatus(`Settings restored from backup (v${result.meta?.version}, ${result.meta?.exported_at ? new Date(result.meta.exported_at).toLocaleString() : ''}). Reloading...`)
+      } else {
+        setStatus(`Import failed: ${result.error}`)
+      }
+    } catch (err: any) {
+      setStatus(`Import failed: ${err.message}`)
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Backup & Restore</h2>
+        <p className="text-sm text-muted-foreground">Export or import your settings to protect against data loss</p>
+      </div>
+
+      {status && (
+        <div className={`flex items-center gap-2 rounded-lg p-3 text-sm ${
+          status.includes('failed') || status.includes('Failed')
+            ? 'bg-red-50 text-red-700'
+            : 'bg-green-50 text-green-700'
+        }`}>
+          {status.includes('failed') || status.includes('Failed')
+            ? <XCircle className="h-4 w-4" />
+            : <CheckCircle className="h-4 w-4" />
+          }
+          {status}
+        </div>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-xl border bg-white p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="rounded-lg bg-blue-50 p-2.5">
+              <Download className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-medium">Export Backup</h3>
+              <p className="text-xs text-muted-foreground">Save settings to a file</p>
+            </div>
+          </div>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Exports all settings including admin account, cashiers, printers, print routes, receipt config, payment methods, waiters, and modifiers.
+          </p>
+          <p className="mb-4 text-xs text-muted-foreground">
+            Note: Order history and transaction data are not included — they are synced from ERPNext.
+          </p>
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
+          >
+            {isExporting ? 'Exporting...' : 'Export Settings Backup'}
+          </button>
+        </div>
+
+        <div className="rounded-xl border bg-white p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="rounded-lg bg-amber-50 p-2.5">
+              <Upload className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <h3 className="font-medium">Restore Backup</h3>
+              <p className="text-xs text-muted-foreground">Load settings from a file</p>
+            </div>
+          </div>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Restores all settings from a previously exported backup file. Current settings will be replaced. The app will reload after restore.
+          </p>
+          <p className="mb-4 text-xs font-medium text-amber-600">
+            Warning: This will overwrite all current settings.
+          </p>
+          <button
+            onClick={handleImport}
+            disabled={isImporting}
+            className="w-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+          >
+            {isImporting ? 'Restoring...' : 'Import Settings Backup'}
+          </button>
         </div>
       </div>
     </div>
