@@ -305,7 +305,7 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
   // Catch-all route: one without item_group, or fallback to first route
   const catchAllRoute = kotRoutes.find((r) => !r.item_group && !r.kitchen_station) || kotRoutes[0]
 
-  // Build route -> items mapping (group by route, NOT by printer — separate KOTs per station)
+  // Build printer -> items mapping (group by printer — one KOT per printer)
   const routeItems: Record<string, { printer: PrinterConfig; station: string; items: any[] }> = {}
 
   for (const item of items) {
@@ -327,12 +327,12 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
     const printer = printers.find((p) => p.id === route!.printer_id)
     if (!printer) continue
 
-    // Group by route ID (not printer ID) so each item group gets its own KOT
-    const routeKey = route.id
+    // Group by printer ID — all items for the same printer get one KOT
+    const routeKey = printer.id
     if (!routeItems[routeKey]) {
       routeItems[routeKey] = {
         printer,
-        station: route.item_group || route.kitchen_station || 'Kitchen',
+        station: printer.printer_name,
         items: []
       }
     }
