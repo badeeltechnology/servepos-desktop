@@ -107,14 +107,14 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
 
   return (
     <div className="flex h-full flex-col bg-white">
-      {/* Order type selector */}
-      <div className="border-b p-4">
-        <div className="flex rounded-xl bg-gray-100 p-1">
+      {/* Order type selector — compact layout */}
+      <div className="border-b px-3 py-2">
+        <div className="flex rounded-lg bg-gray-100 p-0.5">
           {(['Dine In', 'Takeaway', 'Delivery'] as const).map((type) => (
             <button
               key={type}
               onClick={() => { setOrderType(type); if (type !== 'Dine In') setTable(null) }}
-              className={`flex-1 rounded-lg py-2.5 text-xs font-semibold transition-all ${
+              className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
                 orderType === type
                   ? 'bg-white text-primary shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
@@ -125,79 +125,80 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
           ))}
         </div>
 
-        {/* Table & Guests for Dine In */}
+        {/* Table & Guests + Waiter — single row for Dine In */}
         {orderType === 'Dine In' && (
-          <div className="mt-3 flex items-center gap-3">
+          <div className="mt-2 flex items-center gap-2">
             <button
               onClick={() => setShowTablePicker(true)}
-              className={`flex flex-1 items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-sm font-medium transition-all ${
+              className={`flex flex-1 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all ${
                 tableName
                   ? 'border-primary/20 bg-primary/5 text-primary'
-                  : 'border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-500'
+                  : 'border-dashed border-gray-300 text-gray-400 hover:border-gray-400'
               }`}
             >
-              <MapPin className="h-4 w-4" />
-              {tableName || 'Select Table'}
-              <ChevronDown className="ml-auto h-3.5 w-3.5 opacity-50" />
+              <MapPin className="h-3.5 w-3.5" />
+              {tableName || 'Table'}
+              <ChevronDown className="ml-auto h-3 w-3 opacity-50" />
             </button>
-            <div className="flex items-center gap-1.5 rounded-xl border-2 border-gray-200 px-2 py-1.5">
-              <Users className="h-3.5 w-3.5 text-gray-400" />
-              <button onClick={() => setGuests(Math.max(1, guests - 1))} className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">-</button>
-              <span className="min-w-[24px] text-center text-sm font-bold">{guests}</span>
-              <button onClick={() => setGuests(guests + 1)} className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">+</button>
+            <div className="flex items-center gap-1 rounded-lg border border-gray-200 px-1.5 py-1">
+              <Users className="h-3 w-3 text-gray-400" />
+              <button onClick={() => setGuests(Math.max(1, guests - 1))} className="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100">-</button>
+              <span className="min-w-[20px] text-center text-xs font-bold">{guests}</span>
+              <button onClick={() => setGuests(guests + 1)} className="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100">+</button>
             </div>
           </div>
         )}
 
-        {/* Waiter selector */}
-        {waitersList.length > 0 && (
-          <div className="relative mt-3">
-            <button
-              onClick={() => setShowWaiterPicker(!showWaiterPicker)}
-              className={`flex w-full items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-sm font-medium transition-all ${
-                waiterName
-                  ? 'border-green-200 bg-green-50 text-green-700'
-                  : 'border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-500'
-              }`}
-            >
-              <UserCheck className="h-4 w-4" />
-              {waiterName || 'Assign Waiter (Optional)'}
-              {waiterName && (
-                <span
-                  onClick={(e) => { e.stopPropagation(); setWaiter(null, null) }}
-                  className="ml-auto rounded-full p-0.5 text-green-400 hover:bg-green-100 hover:text-green-600"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </span>
-              )}
-              {!waiterName && <ChevronDown className="ml-auto h-3.5 w-3.5 opacity-50" />}
-            </button>
-            {showWaiterPicker && (
-              <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-xl border bg-white shadow-lg">
-                {waitersList.map((w) => (
-                  <button
-                    key={w.name}
-                    onClick={() => { setWaiter(w.name, w.waiter_name); setShowWaiterPicker(false) }}
-                    className={`flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-gray-50 ${
-                      waiterId === w.name ? 'bg-green-50 font-semibold text-green-700' : 'text-gray-700'
-                    }`}
+        {/* Waiter + Order notes — compact row */}
+        <div className="mt-2 flex items-center gap-2">
+          {waitersList.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowWaiterPicker(!showWaiterPicker)}
+                className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all ${
+                  waiterName
+                    ? 'border-green-200 bg-green-50 text-green-700'
+                    : 'border-dashed border-gray-300 text-gray-400 hover:border-gray-400'
+                }`}
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+                {waiterName || 'Waiter'}
+                {waiterName && (
+                  <span
+                    onClick={(e) => { e.stopPropagation(); setWaiter(null, null) }}
+                    className="ml-1 rounded-full p-0.5 text-green-400 hover:bg-green-100 hover:text-green-600"
                   >
-                    <UserCheck className="h-3.5 w-3.5" />
-                    {w.waiter_name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {/* Order-level notes */}
-        <input
-          type="text"
-          value={orderNotes}
-          onChange={(e) => setOrderNotes(e.target.value)}
-          placeholder="Order notes (optional)..."
-          className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:border-primary focus:outline-none"
-        />
+                    <X className="h-2.5 w-2.5" />
+                  </span>
+                )}
+                {!waiterName && <ChevronDown className="ml-1 h-3 w-3 opacity-50" />}
+              </button>
+              {showWaiterPicker && (
+                <div className="absolute left-0 top-full z-30 mt-1 max-h-48 min-w-[180px] overflow-y-auto rounded-xl border bg-white shadow-lg">
+                  {waitersList.map((w) => (
+                    <button
+                      key={w.name}
+                      onClick={() => { setWaiter(w.name, w.waiter_name); setShowWaiterPicker(false) }}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-50 ${
+                        waiterId === w.name ? 'bg-green-50 font-semibold text-green-700' : 'text-gray-700'
+                      }`}
+                    >
+                      <UserCheck className="h-3 w-3" />
+                      {w.waiter_name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <input
+            type="text"
+            value={orderNotes}
+            onChange={(e) => setOrderNotes(e.target.value)}
+            placeholder="Order notes..."
+            className="min-w-0 flex-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs focus:border-primary focus:outline-none"
+          />
+        </div>
       </div>
 
       {/* Cart items */}
