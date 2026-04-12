@@ -550,7 +550,15 @@ export default function POS() {
           <ItemGrid />
         </div>
         <div className="w-[360px] flex-shrink-0 border-l shadow-lg">
-          <Cart onPlaceOrder={handlePlaceOrder} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId} />
+          <Cart onPlaceOrder={handlePlaceOrder} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId}
+            onAutoVoid={activeOrderId ? async () => {
+              await window.api.orders.update(activeOrderId, { status: 'Void', voidReason: 'All items removed' })
+              const order = await window.api.orders.get(activeOrderId)
+              if (order?.table_name) await window.api.tables.updateStatus(order.table_name, 'Available').catch(() => {})
+              cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false)
+              setToast({ type: 'success', message: 'Order voided — all items removed' })
+            } : undefined}
+          />
         </div>
       </div>
 
@@ -757,6 +765,9 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [orderItems, setOrderItems] = useState<any[]>([])
   const [orderPayments, setOrderPayments] = useState<any[]>([])
+  const [voidPinRequest, setVoidPinRequest] = useState<string | null>(null)
+  const [voidPin, setVoidPin] = useState('')
+  const [voidPinError, setVoidPinError] = useState('')
 
   useEffect(() => { loadOrders() }, [filter])
 
@@ -780,10 +791,25 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
     setOrderPayments(payments)
   }
 
-  async function voidOrder(id: string) {
+  function voidOrder(id: string) {
+    if (isSupervisor) {
+      doVoidOrder(id)
+    } else {
+      setVoidPinRequest(id)
+      setVoidPin('')
+      setVoidPinError('')
+    }
+  }
+
+  async function doVoidOrder(id: string) {
     const reason = prompt('Reason for voiding this order:')
     if (!reason) return
     await window.api.orders.update(id, { status: 'Void', voidReason: reason })
+    // Free table if applicable
+    const order = orders.find((o) => o.id === id)
+    if (order?.table_name) {
+      await window.api.tables.updateStatus(order.table_name, 'Available').catch(() => {})
+    }
     loadOrders()
     setSelectedOrder(null)
   }
@@ -993,20 +1019,29 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                   </>
                 )}
                 {(selectedOrder.status === 'Open' || selectedOrder.status === 'Hold') && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        await window.api.print.invoice(selectedOrder.id)
-                        setToast({ type: 'success', message: 'Invoice printed' })
-                      } catch (e: any) {
-                        setToast({ type: 'error', message: `Invoice print failed: ${e.message}` })
-                      }
-                    }}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-blue-200 py-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 active:scale-95"
-                  >
-                    <Printer className="h-3.5 w-3.5" />
-                    Print Invoice
-                  </button>
+                  <>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await window.api.print.invoice(selectedOrder.id)
+                          setToast({ type: 'success', message: 'Invoice printed' })
+                        } catch (e: any) {
+                          setToast({ type: 'error', message: `Invoice print failed: ${e.message}` })
+                        }
+                      }}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-blue-200 py-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 active:scale-95"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                      Print Invoice
+                    </button>
+                    <button
+                      onClick={() => voidOrder(selectedOrder.id)}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-red-200 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-50 active:scale-95"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Void Order
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -1017,6 +1052,56 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
       {/* Receipt Preview */}
       {previewOrderId && (
         <ReceiptPreview orderId={previewOrderId} onClose={() => setPreviewOrderId(null)} />
+      )}
+
+      {/* Supervisor PIN modal for void */}
+      {voidPinRequest && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="mb-1 text-center text-lg font-bold">Supervisor PIN</h3>
+            <p className="mb-4 text-center text-xs text-gray-500">Enter supervisor PIN to void this order</p>
+            <input
+              type="password"
+              value={voidPin}
+              onChange={(e) => { setVoidPin(e.target.value); setVoidPinError('') }}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter' && voidPin.length >= 4) {
+                  const u = await window.api.users.verifyPin(voidPin)
+                  if (u && u.role === 'supervisor') {
+                    const id = voidPinRequest
+                    setVoidPinRequest(null); setVoidPin('')
+                    doVoidOrder(id)
+                  } else {
+                    setVoidPinError('Invalid PIN or not a supervisor')
+                  }
+                }
+              }}
+              autoFocus
+              placeholder="Enter PIN"
+              className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-center text-lg tracking-widest focus:border-primary focus:outline-none"
+            />
+            {voidPinError && <p className="mt-2 text-center text-xs text-red-500">{voidPinError}</p>}
+            <div className="mt-4 flex gap-3">
+              <button onClick={() => { setVoidPinRequest(null); setVoidPin(''); setVoidPinError('') }}
+                className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={async () => {
+                const u = await window.api.users.verifyPin(voidPin)
+                if (u && u.role === 'supervisor') {
+                  const id = voidPinRequest
+                  setVoidPinRequest(null); setVoidPin('')
+                  doVoidOrder(id)
+                } else {
+                  setVoidPinError('Invalid PIN or not a supervisor')
+                }
+              }}
+                className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

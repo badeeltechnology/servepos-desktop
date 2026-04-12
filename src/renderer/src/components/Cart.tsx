@@ -11,9 +11,10 @@ interface CartProps {
   taxLabel?: string
   isOrderPlaced?: boolean
   activeOrderId?: string | null
+  onAutoVoid?: () => void
 }
 
-export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId }: CartProps) {
+export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, onAutoVoid }: CartProps) {
   const [discountEnabled, setDiscountEnabled] = useState(false)
   const [discountPermission, setDiscountPermission] = useState<'supervisor_only' | 'all_users'>('supervisor_only')
 
@@ -279,6 +280,10 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
                           window.api.orderItems.remove((item as any).dbId).catch(() => {})
                         }
                         removeItem(item.id)
+                        // Auto-void if last item removed from a placed order
+                        if (isOrderPlaced && items.length === 1 && onAutoVoid) {
+                          onAutoVoid()
+                        }
                       }
                     }} className="rounded-lg p-1.5 text-red-300 hover:bg-red-50 hover:text-red-500" title="Remove">
                       <Trash2 className="h-3.5 w-3.5" />
@@ -429,6 +434,10 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
                       await window.api.orderItems.remove(removeRequest.dbId).catch(() => {})
                     }
                     removeItem(removeRequest.cartId)
+                    // Auto-void if last item removed from a placed order
+                    if (isOrderPlaced && items.length === 1 && onAutoVoid) {
+                      onAutoVoid()
+                    }
                     setRemoveRequest(null); setRemovePin('')
                   } else {
                     setRemoveError('Invalid PIN or not a supervisor')
@@ -452,6 +461,10 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
                     await window.api.orderItems.remove(removeRequest.dbId).catch(() => {})
                   }
                   removeItem(removeRequest.cartId)
+                  // Auto-void if last item removed from a placed order
+                  if (isOrderPlaced && items.length === 1 && onAutoVoid) {
+                    onAutoVoid()
+                  }
                   setRemoveRequest(null); setRemovePin('')
                 } else {
                   setRemoveError('Invalid PIN or not a supervisor')
