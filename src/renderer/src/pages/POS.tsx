@@ -765,7 +765,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [orderItems, setOrderItems] = useState<any[]>([])
   const [orderPayments, setOrderPayments] = useState<any[]>([])
-  const [voidPinRequest, setVoidPinRequest] = useState<string | null>(null)
+  const [voidRequest, setVoidRequest] = useState<{ orderId: string; step: 'pin' | 'reason'; reason: string } | null>(null)
   const [voidPin, setVoidPin] = useState('')
   const [voidPinError, setVoidPinError] = useState('')
 
@@ -793,17 +793,16 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
 
   function voidOrder(id: string) {
     if (isSupervisor) {
-      doVoidOrder(id)
+      // Supervisor skips PIN, goes straight to reason
+      setVoidRequest({ orderId: id, step: 'reason', reason: '' })
     } else {
-      setVoidPinRequest(id)
+      setVoidRequest({ orderId: id, step: 'pin', reason: '' })
       setVoidPin('')
       setVoidPinError('')
     }
   }
 
-  async function doVoidOrder(id: string) {
-    const reason = prompt('Reason for voiding this order:')
-    if (!reason) return
+  async function doVoidOrder(id: string, reason: string) {
     await window.api.orders.update(id, { status: 'Void', voidReason: reason })
     // Free table if applicable
     const order = orders.find((o) => o.id === id)
@@ -812,6 +811,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
     }
     loadOrders()
     setSelectedOrder(null)
+    setVoidRequest(null)
   }
 
   const [previewOrderId, setPreviewOrderId] = useState<string | null>(null)
@@ -1054,52 +1054,87 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
         <ReceiptPreview orderId={previewOrderId} onClose={() => setPreviewOrderId(null)} />
       )}
 
-      {/* Supervisor PIN modal for void */}
-      {voidPinRequest && (
+      {/* Void order modal — PIN step (cashier) then reason step */}
+      {voidRequest && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="mb-1 text-center text-lg font-bold">Supervisor PIN</h3>
-            <p className="mb-4 text-center text-xs text-gray-500">Enter supervisor PIN to void this order</p>
-            <input
-              type="password"
-              value={voidPin}
-              onChange={(e) => { setVoidPin(e.target.value); setVoidPinError('') }}
-              onKeyDown={async (e) => {
-                if (e.key === 'Enter' && voidPin.length >= 4) {
-                  const u = await window.api.users.verifyPin(voidPin)
-                  if (u && u.role === 'supervisor') {
-                    const id = voidPinRequest
-                    setVoidPinRequest(null); setVoidPin('')
-                    doVoidOrder(id)
-                  } else {
-                    setVoidPinError('Invalid PIN or not a supervisor')
-                  }
-                }
-              }}
-              autoFocus
-              placeholder="Enter PIN"
-              className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-center text-lg tracking-widest focus:border-primary focus:outline-none"
-            />
-            {voidPinError && <p className="mt-2 text-center text-xs text-red-500">{voidPinError}</p>}
-            <div className="mt-4 flex gap-3">
-              <button onClick={() => { setVoidPinRequest(null); setVoidPin(''); setVoidPinError('') }}
-                className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
-                Cancel
-              </button>
-              <button onClick={async () => {
-                const u = await window.api.users.verifyPin(voidPin)
-                if (u && u.role === 'supervisor') {
-                  const id = voidPinRequest
-                  setVoidPinRequest(null); setVoidPin('')
-                  doVoidOrder(id)
-                } else {
-                  setVoidPinError('Invalid PIN or not a supervisor')
-                }
-              }}
-                className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
-                Confirm
-              </button>
-            </div>
+            {voidRequest.step === 'pin' ? (
+              <>
+                <h3 className="mb-1 text-center text-lg font-bold">Supervisor PIN</h3>
+                <p className="mb-4 text-center text-xs text-gray-500">Enter supervisor PIN to void this order</p>
+                <input
+                  type="password"
+                  value={voidPin}
+                  onChange={(e) => { setVoidPin(e.target.value); setVoidPinError('') }}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter' && voidPin.length >= 4) {
+                      const u = await window.api.users.verifyPin(voidPin)
+                      if (u && u.role === 'supervisor') {
+                        setVoidPin('')
+                        setVoidRequest({ ...voidRequest, step: 'reason' })
+                      } else {
+                        setVoidPinError('Invalid PIN or not a supervisor')
+                      }
+                    }
+                  }}
+                  autoFocus
+                  placeholder="Enter PIN"
+                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-center text-lg tracking-widest focus:border-primary focus:outline-none"
+                />
+                {voidPinError && <p className="mt-2 text-center text-xs text-red-500">{voidPinError}</p>}
+                <div className="mt-4 flex gap-3">
+                  <button onClick={() => setVoidRequest(null)}
+                    className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button onClick={async () => {
+                    const u = await window.api.users.verifyPin(voidPin)
+                    if (u && u.role === 'supervisor') {
+                      setVoidPin('')
+                      setVoidRequest({ ...voidRequest, step: 'reason' })
+                    } else {
+                      setVoidPinError('Invalid PIN or not a supervisor')
+                    }
+                  }}
+                    className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
+                    Next
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="mb-1 text-center text-lg font-bold">Void Reason</h3>
+                <p className="mb-4 text-center text-xs text-gray-500">Enter reason for voiding this order</p>
+                <input
+                  type="text"
+                  value={voidRequest.reason}
+                  onChange={(e) => setVoidRequest({ ...voidRequest, reason: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && voidRequest.reason.trim()) {
+                      doVoidOrder(voidRequest.orderId, voidRequest.reason.trim())
+                    }
+                  }}
+                  autoFocus
+                  placeholder="Void reason..."
+                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none"
+                />
+                <div className="mt-4 flex gap-3">
+                  <button onClick={() => setVoidRequest(null)}
+                    className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button onClick={() => {
+                    if (voidRequest.reason.trim()) {
+                      doVoidOrder(voidRequest.orderId, voidRequest.reason.trim())
+                    }
+                  }}
+                    disabled={!voidRequest.reason.trim()}
+                    className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">
+                    Void Order
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
