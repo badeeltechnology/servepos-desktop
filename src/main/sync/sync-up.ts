@@ -57,10 +57,23 @@ export async function syncUp(): Promise<SyncResult> {
           amount: item.amount
         }))
 
-        const invoicePayments = payments.map((p) => ({
-          mode_of_payment: p.payment_method,
-          amount: p.amount
-        }))
+        // Cap payment amounts to grand_total — when customer overpays with
+        // cash (e.g. pays 50 on a 45 invoice), the change is a UI concept;
+        // ERPNext should record only the invoice value.
+        const grandTotal = order.grand_total || 0
+        const totalPaid = payments.reduce((s: number, p: any) => s + p.amount, 0)
+        const overpayment = Math.max(0, totalPaid - grandTotal)
+        let remainingReduction = overpayment
+
+        const invoicePayments = payments.map((p) => {
+          let amount = p.amount
+          if (remainingReduction > 0) {
+            const reduce = Math.min(remainingReduction, amount)
+            amount -= reduce
+            remainingReduction -= reduce
+          }
+          return { mode_of_payment: p.payment_method, amount }
+        }).filter((p) => p.amount > 0)
 
         // Create as Sales Invoice with is_pos=1 (works with all POS Profile modes)
         const posDate = order.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
@@ -134,12 +147,34 @@ export async function syncUp(): Promise<SyncResult> {
           invoice.discount_amount = order.discount_amount
         }
 
-        const created = await client.createDoc('Sales Invoice', invoice)
+        // Dedup: check if an invoice with this order_number already exists
+        // (handles the case where previous createDoc succeeded but the
+        // response was lost due to network timeout).
+        let docname: string | null = null
+        if (order.order_number) {
+          try {
+            const existing = await client.getList('Sales Invoice', {
+              filters: { servepos_order_number: order.order_number, docstatus: ['!=', 2] },
+              fields: ['name'],
+              limit: 1
+            })
+            if (existing.length > 0) {
+              docname = existing[0].name
+            }
+          } catch {
+            // Field may not exist on older sites — proceed with create
+          }
+        }
+
+        if (!docname) {
+          const created = await client.createDoc('Sales Invoice', invoice)
+          docname = created?.name || null
+        }
 
         // Submit the invoice
-        if (created?.name) {
+        if (docname) {
           try {
-            await client.submitDoc('Sales Invoice', created.name)
+            await client.submitDoc('Sales Invoice', docname)
           } catch {
             // Created but not submitted — still mark as synced
           }
@@ -147,7 +182,7 @@ export async function syncUp(): Promise<SyncResult> {
           // Update local order
           db.run(
             "UPDATE orders SET sync_status = 'synced', erpnext_docname = ? WHERE id = ?",
-            [created.name, order.id]
+            [docname, order.id]
           )
           result.synced++
         }
