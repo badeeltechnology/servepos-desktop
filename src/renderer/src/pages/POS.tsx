@@ -339,6 +339,9 @@ export default function POS() {
     const order = await window.api.orders.get(orderId)
     if (!order) return
 
+    // Skip already-completed or voided orders (prevents reloading a paid order)
+    if (order.status === 'Completed' || order.status === 'Void' || order.status === 'Returned') return
+
     // If cart has items linked to another order, ask to hold
     if (cart.items.length > 0 && activeOrderId && activeOrderId !== orderId) {
       const hold = confirm('Hold current order before switching?')
