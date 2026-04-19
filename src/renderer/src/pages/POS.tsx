@@ -24,6 +24,7 @@ export default function POS() {
   const [showSettings, setShowSettings] = useState(false)
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null)
   const [isOrderPlaced, setIsOrderPlaced] = useState(false)
+  const placedItemCount = useRef(0) // track item count at time of KOT
   const [taxRate, setTaxRate] = useState(0)
   const [taxLabel, setTaxLabel] = useState('VAT')
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
@@ -133,6 +134,13 @@ export default function POS() {
   }
 
 
+  // Re-show KOT button when new items are added after order was placed
+  useEffect(() => {
+    if (isOrderPlaced && activeOrderId && cart.items.length > placedItemCount.current) {
+      setIsOrderPlaced(false)
+    }
+  }, [cart.items.length, isOrderPlaced, activeOrderId])
+
   // ==================== ORDER LIFECYCLE ====================
   //
   // An order is created ONCE and persists. Never voided on resume.
@@ -195,7 +203,26 @@ export default function POS() {
       let order: any
 
       if (activeOrderId) {
-        // Order already exists (resumed from hold) — update status + print KOT
+        // Order already exists — sync any new cart items to order_items
+        for (const item of cart.items) {
+          if (!(item as any).dbId) {
+            const newId = await window.api.orderItems.add({
+              orderId: activeOrderId,
+              itemCode: item.itemCode,
+              itemName: item.itemName,
+              qty: item.qty,
+              rate: item.rate,
+              discountAmount: item.discountAmount,
+              discountPercent: item.discountPercent,
+              amount: item.amount,
+              modifiers: item.modifiers.length > 0 ? JSON.stringify(item.modifiers) : null,
+              modifierTotal: item.modifierTotal,
+              specialInstructions: item.specialInstructions || null
+            })
+            // Store dbId so item isn't re-added on next place
+            item.dbId = newId
+          }
+        }
         await window.api.orders.update(activeOrderId, {
           status: 'Open', kotPrinted: 1,
           subtotal: cart.getSubtotal(), grandTotal: cart.getGrandTotal(taxRate)
@@ -221,6 +248,7 @@ export default function POS() {
 
       setActiveOrderId(order.id)
       setIsOrderPlaced(true)
+      placedItemCount.current = cart.items.length
       if (kotResult?.success === false || (kotResult?.errors && kotResult.errors.length > 0)) {
         setToast({ type: 'error', message: `Order placed but KOT print failed: ${kotResult?.errors?.join(', ') || 'Unknown error'}` })
       } else {
@@ -260,22 +288,54 @@ export default function POS() {
 
         if (!order) throw new Error('Order not found')
 
+        // Sync any cart items not yet saved to order_items (added after KOT)
+        if (activeOrderId) {
+          for (const item of cart.items) {
+            if (!(item as any).dbId) {
+              await window.api.orderItems.add({
+                orderId: orderId!,
+                itemCode: item.itemCode,
+                itemName: item.itemName,
+                qty: item.qty,
+                rate: item.rate,
+                discountAmount: item.discountAmount,
+                discountPercent: item.discountPercent,
+                amount: item.amount,
+                modifiers: item.modifiers.length > 0 ? JSON.stringify(item.modifiers) : null,
+                modifierTotal: item.modifierTotal,
+                specialInstructions: item.specialInstructions || null
+              })
+            }
+          }
+        }
+
+        // Compute subtotal from order_items (source of truth for receipt)
+        const dbItems = await window.api.orderItems.get(orderId!)
+        const itemsSubtotal = dbItems.reduce((sum: number, i: any) => sum + i.amount, 0)
+
         // Add payments with waiter collection tracking
         for (const p of payments) {
           await window.api.orderPayments.add(orderId!, p.method, p.amount, p.reference || null, collectedByWaiter || undefined)
         }
 
+        // Compute discount & totals from order_items subtotal
+        const discountPct = cart.orderDiscountPercent
+        const discountAmt = cart.orderDiscountAmount
+        const orderDiscount = itemsSubtotal * (discountPct / 100) + discountAmt
+        const afterDiscount = Math.max(0, itemsSubtotal - orderDiscount)
+        const taxTotal = afterDiscount * (taxRate / 100)
+
         // Complete the order
         await window.api.orders.update(orderId!, {
           status: 'Completed',
-          subtotal: cart.getSubtotal(),
-          taxTotal: cart.getTaxTotal(taxRate),
-          discountAmount: cart.orderDiscountAmount,
-          discountPercent: cart.orderDiscountPercent,
+          subtotal: itemsSubtotal,
+          taxTotal,
+          discountAmount: discountAmt,
+          discountPercent: discountPct,
           discountReason: cart.orderDiscountReason || null,
           promoName: cart.promoName || null,
           orderNotes: cart.orderNotes || null,
-          grandTotal: cart.getGrandTotal(taxRate),
+          grandTotal: Math.max(0, afterDiscount + taxTotal),
           completedAt: new Date().toISOString()
         })
 
@@ -375,6 +435,7 @@ export default function POS() {
 
     setActiveOrderId(orderId)
     setIsOrderPlaced(order.kot_printed === 1)
+    placedItemCount.current = items.length
   }, [cart, activeOrderId, handleHoldOrder])
 
   // New order

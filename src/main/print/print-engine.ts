@@ -122,6 +122,10 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
 
   const totalPaid = payments.reduce((sum: number, p: any) => sum + p.amount, 0)
 
+  // Compute subtotal from actual items (source of truth) to avoid cart/DB drift
+  const itemsSubtotal = items.reduce((sum: number, item: any) => sum + item.amount, 0)
+  const subtotal = itemsSubtotal || order.subtotal || 0
+
   const receiptData = {
     orderNumber: order.order_number,
     orderType: order.order_type,
@@ -145,11 +149,11 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
         discountAmount: item.discount_amount
       }
     }),
-    subtotal: order.subtotal || 0,
+    subtotal,
     taxTotal: order.tax_total || 0,
     taxLabel,
     taxRate,
-    discountAmount: (order.discount_amount || 0) + (order.subtotal * (order.discount_percent || 0) / 100),
+    discountAmount: (order.discount_amount || 0) + (subtotal * (order.discount_percent || 0) / 100),
     grandTotal: order.grand_total || 0,
     payments: payments.map((p: any) => ({ method: p.payment_method, amount: p.amount })),
     change: Math.max(0, totalPaid - (order.grand_total || 0)),

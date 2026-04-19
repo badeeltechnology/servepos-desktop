@@ -369,8 +369,10 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
             )}
             {!isOrderPlaced && (
               <button onClick={onPlaceOrder}
-                className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 active:scale-[0.98]">
-                Place Order & Print KOT
+                className={`w-full rounded-xl py-3 text-sm font-bold text-white shadow-lg transition-all active:scale-[0.98] ${
+                  activeOrderId ? 'bg-orange-500 shadow-orange-500/25 hover:bg-orange-600' : 'bg-emerald-600 shadow-emerald-600/25 hover:bg-emerald-700'
+                }`}>
+                {activeOrderId ? 'Update Order & Print KOT' : 'Place Order & Print KOT'}
               </button>
             )}
             <button onClick={onPay}
