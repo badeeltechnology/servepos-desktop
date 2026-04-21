@@ -285,6 +285,43 @@ export default function POS() {
     }
   }, [cart, user, taxRate, activeOrderId, activeSession])
 
+  // Update order without printing KOT (e.g. adding water before payment)
+  const handleUpdateOnly = useCallback(async () => {
+    if (!activeOrderId || cart.items.length === 0) return
+    setProcessing(true)
+    try {
+      // Sync new cart items to order_items
+      for (const item of cart.items) {
+        if (!(item as any).dbId) {
+          const newId = await window.api.orderItems.add({
+            orderId: activeOrderId,
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            qty: item.qty,
+            rate: item.rate,
+            discountAmount: item.discountAmount,
+            discountPercent: item.discountPercent,
+            amount: item.amount,
+            modifiers: item.modifiers.length > 0 ? JSON.stringify(item.modifiers) : null,
+            modifierTotal: item.modifierTotal,
+            specialInstructions: item.specialInstructions || null
+          })
+          ;(item as any).dbId = newId
+        }
+      }
+      await window.api.orders.update(activeOrderId, {
+        subtotal: cart.getSubtotal(), grandTotal: cart.getGrandTotal(taxRate)
+      })
+      setIsOrderPlaced(true)
+      placedItemCount.current = cart.items.length
+      setToast({ type: 'success', message: 'Order updated (no KOT)' })
+    } catch (err: any) {
+      setToast({ type: 'error', message: `Update failed: ${err.message}` })
+    } finally {
+      setProcessing(false)
+    }
+  }, [cart, taxRate, activeOrderId])
+
   // Open payment dialog
   const handlePay = useCallback(() => {
     if (cart.items.length === 0) return
@@ -617,7 +654,7 @@ export default function POS() {
           <ItemGrid isOrderPlaced={isOrderPlaced} />
         </div>
         <div className="w-[360px] flex-shrink-0 border-l shadow-lg">
-          <Cart onPlaceOrder={handlePlaceOrder} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId}
+          <Cart onPlaceOrder={handlePlaceOrder} onUpdateOnly={activeOrderId ? handleUpdateOnly : undefined} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId}
             onAutoVoid={activeOrderId ? async () => {
               await window.api.orders.update(activeOrderId, { status: 'Void', voidReason: 'All items removed' })
               const order = await window.api.orders.get(activeOrderId)

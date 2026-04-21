@@ -6,6 +6,7 @@ import TablePicker from './TablePicker'
 
 interface CartProps {
   onPlaceOrder: () => void
+  onUpdateOnly?: () => void
   onPay: () => void
   taxRate: number
   taxLabel?: string
@@ -14,7 +15,7 @@ interface CartProps {
   onAutoVoid?: () => void
 }
 
-export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, onAutoVoid }: CartProps) {
+export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, onAutoVoid }: CartProps) {
   const [discountEnabled, setDiscountEnabled] = useState(false)
   const [discountPermission, setDiscountPermission] = useState<'supervisor_only' | 'all_users'>('supervisor_only')
 
@@ -368,10 +369,18 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
               </button>
             )}
             {!isOrderPlaced && activeOrderId ? (
-              <button onClick={onPlaceOrder}
-                className="w-full rounded-xl bg-orange-500 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition-all hover:bg-orange-600 active:scale-[0.98]">
-                Update Order & Print KOT
-              </button>
+              <>
+                <button onClick={onPlaceOrder}
+                  className="w-full rounded-xl bg-orange-500 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition-all hover:bg-orange-600 active:scale-[0.98]">
+                  Update Order & Print KOT
+                </button>
+                {onUpdateOnly && (
+                  <button onClick={onUpdateOnly}
+                    className="w-full rounded-xl border-2 border-orange-300 py-2.5 text-sm font-bold text-orange-600 transition-all hover:bg-orange-50 active:scale-[0.98]">
+                    Update Without KOT
+                  </button>
+                )}
+              </>
             ) : !isOrderPlaced ? (
               <>
                 <button onClick={onPlaceOrder}
