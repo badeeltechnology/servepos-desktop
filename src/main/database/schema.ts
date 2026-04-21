@@ -729,6 +729,15 @@ function runMigrations(): void {
   }
 
   // Safety net: ensure all expected columns exist after any migration.
+  // Migration 14: Add kot_printed flag to order_items so supplementary KOTs only print new items
+  if (!hasColumn('order_items', 'kot_printed')) {
+    try {
+      database.run('ALTER TABLE order_items ADD COLUMN kot_printed INTEGER DEFAULT 0')
+      // Backfill: mark items of orders that already had KOT printed
+      database.run('UPDATE order_items SET kot_printed = 1 WHERE order_id IN (SELECT id FROM orders WHERE kot_printed = 1)')
+    } catch {}
+  }
+
   // Migration 12 recreated the orders table and may have dropped columns added earlier.
   const ordersCols: [string, string][] = [
     ['waiter_id', 'TEXT'],

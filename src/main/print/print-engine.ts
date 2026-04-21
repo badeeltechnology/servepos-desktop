@@ -296,7 +296,10 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
   const order = orderStmt.getAsObject() as any
   orderStmt.free()
 
-  const items = getOrderItems(orderId)
+  const allItems = getOrderItems(orderId)
+  // For reprint: print all items. Otherwise: only items not yet printed on KOT.
+  const items = source === 'reprint' ? allItems : allItems.filter((i: any) => !i.kot_printed)
+  if (items.length === 0) return { success: true, printed: 0, errors: [] }
   const routes = getPrintRoutes()
   const printers = getPrinters()
 
@@ -382,8 +385,13 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
     }
   }
 
-  // Mark KOT as printed on order
+  // Mark KOT as printed on order + individual items
   db.run('UPDATE orders SET kot_printed = 1 WHERE id = ?', [orderId])
+  if (source !== 'reprint') {
+    for (const item of items) {
+      db.run('UPDATE order_items SET kot_printed = 1 WHERE id = ?', [item.id])
+    }
+  }
   saveDatabase()
 
   // Auto-print Prep Doc alongside KOT if enabled

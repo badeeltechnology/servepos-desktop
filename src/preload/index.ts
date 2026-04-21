@@ -148,7 +148,7 @@ const api = {
   // Printing
   print: {
     receipt: (orderId: string) => ipcRenderer.invoke('print:receipt', orderId),
-    kots: (orderId: string, actorName?: string) => ipcRenderer.invoke('print:kots', orderId, actorName),
+    kots: (orderId: string, actorName?: string, reprint?: boolean) => ipcRenderer.invoke('print:kots', orderId, actorName, reprint),
     amendmentKot: (orderId: string, amendments: any[]) => ipcRenderer.invoke('print:amendmentKot', orderId, amendments),
     waiterCopy: (orderId: string) => ipcRenderer.invoke('print:waiterCopy', orderId),
     prepDoc: (orderId: string) => ipcRenderer.invoke('print:prepDoc', orderId),

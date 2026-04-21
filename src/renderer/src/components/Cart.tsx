@@ -367,18 +367,28 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
                 Discount
               </button>
             )}
-            {!isOrderPlaced && (
+            {!isOrderPlaced && activeOrderId ? (
               <button onClick={onPlaceOrder}
-                className={`w-full rounded-xl py-3 text-sm font-bold text-white shadow-lg transition-all active:scale-[0.98] ${
-                  activeOrderId ? 'bg-orange-500 shadow-orange-500/25 hover:bg-orange-600' : 'bg-emerald-600 shadow-emerald-600/25 hover:bg-emerald-700'
-                }`}>
-                {activeOrderId ? 'Update Order & Print KOT' : 'Place Order & Print KOT'}
+                className="w-full rounded-xl bg-orange-500 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition-all hover:bg-orange-600 active:scale-[0.98]">
+                Update Order & Print KOT
+              </button>
+            ) : !isOrderPlaced ? (
+              <>
+                <button onClick={onPlaceOrder}
+                  className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 active:scale-[0.98]">
+                  Place Order & Print KOT
+                </button>
+                <button onClick={onPay}
+                  className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98]">
+                  Quick Pay — {grandTotal.toFixed(2)}
+                </button>
+              </>
+            ) : (
+              <button onClick={onPay}
+                className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98]">
+                Payment — {grandTotal.toFixed(2)}
               </button>
             )}
-            <button onClick={onPay}
-              className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98]">
-              {isOrderPlaced ? `Payment — ${grandTotal.toFixed(2)}` : `Quick Pay — ${grandTotal.toFixed(2)}`}
-            </button>
             {isOrderPlaced && activeOrderId && (
               <div className="relative">
                 <button onClick={() => setShowPrintMenu(!showPrintMenu)}
@@ -389,11 +399,11 @@ export default function Cart({ onPlaceOrder, onPay, taxRate, taxLabel = 'VAT', i
                 </button>
                 {showPrintMenu && (
                   <div className="absolute bottom-full left-0 right-0 z-30 mb-1 rounded-xl border bg-white shadow-lg overflow-hidden">
-                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name); const w = await window.api.print.waiterCopy(activeOrderId); alert(r?.success && w?.success ? 'KOT + Waiter copy printed' : 'Print error — check printer') }}
+                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name, true); const w = await window.api.print.waiterCopy(activeOrderId); alert(r?.success && w?.success ? 'KOT + Waiter copy printed' : 'Print error — check printer') }}
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> KOT + Waiter Copy
                     </button>
-                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name); alert(r?.success ? 'KOT reprinted' : 'KOT failed') }}
+                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name, true); alert(r?.success ? 'KOT reprinted' : 'KOT failed') }}
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
                       <span className="h-1.5 w-1.5 rounded-full bg-orange-500" /> Reprint KOT
                     </button>

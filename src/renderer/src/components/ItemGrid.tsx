@@ -39,7 +39,7 @@ const catColors = [
 
 type ViewMode = 'categories' | 'grid' | 'list'
 
-function ItemGrid() {
+function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
   const [items, setItems] = useState<Item[]>([])
   const [groups, setGroups] = useState<ItemGroup[]>([])
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
@@ -53,6 +53,8 @@ function ItemGrid() {
   const [detailItem, setDetailItem] = useState<Item | null>(null)
   const [showDescription, setShowDescription] = useState(false)
   const [lang, setLang] = useState<'en' | 'ar' | 'both'>('en')
+  const [confirmItem, setConfirmItem] = useState<Item | null>(null)
+  const [confirmModifiers, setConfirmModifiers] = useState<{ modifiers: CartModifier[]; instructions: string } | null>(null)
 
   const addItem = useCartStore((s) => s.addItem)
 
@@ -111,6 +113,27 @@ function ItemGrid() {
     return groups.filter((g) => (groupCounts[g.name] || 0) > 0)
   }, [groups, groupCounts])
 
+  function doAddItem(item: Item, modifiers?: CartModifier[], instructions?: string) {
+    addItem({
+      itemCode: item.item_code, itemName: item.item_name, qty: 1, rate: item.rate,
+      ...(modifiers ? { modifiers, specialInstructions: instructions } : {})
+    })
+  }
+
+  function addWithConfirm(item: Item, modifiers?: CartModifier[], instructions?: string) {
+    if (isOrderPlaced) {
+      setConfirmItem(item)
+      setConfirmModifiers(modifiers ? { modifiers, instructions: instructions || '' } : null)
+    } else {
+      doAddItem(item, modifiers, instructions)
+    }
+  }
+
+  function confirmAddItem() {
+    if (confirmItem) doAddItem(confirmItem, confirmModifiers?.modifiers, confirmModifiers?.instructions)
+    setConfirmItem(null); setConfirmModifiers(null)
+  }
+
   async function handleItemClick(item: Item) {
     if (item.has_variants) {
       const variants = await window.api.items.getVariants(item.item_code)
@@ -125,7 +148,7 @@ function ItemGrid() {
       setShowModifiers(true)
       return
     }
-    addItem({ itemCode: item.item_code, itemName: item.item_name, qty: 1, rate: item.rate })
+    addWithConfirm(item)
   }
 
   async function handleVariantSelect(variant: Item) {
@@ -136,15 +159,12 @@ function ItemGrid() {
       setShowModifiers(true)
       return
     }
-    addItem({ itemCode: variant.item_code, itemName: variant.item_name, qty: 1, rate: variant.rate })
+    addWithConfirm(variant)
   }
 
   function handleModifierConfirm(modifiers: CartModifier[], instructions: string) {
     if (pendingItem) {
-      addItem({
-        itemCode: pendingItem.item_code, itemName: pendingItem.item_name,
-        qty: 1, rate: pendingItem.rate, modifiers, specialInstructions: instructions
-      })
+      addWithConfirm(pendingItem, modifiers, instructions)
     }
     setPendingItem(null)
     setShowModifiers(false)
@@ -504,6 +524,29 @@ function ItemGrid() {
       {showModifiers && pendingItem && (
         <ModifierModal itemCode={pendingItem.item_code} itemName={pendingItem.item_name}
           onConfirm={handleModifierConfirm} onCancel={() => { setShowModifiers(false); setPendingItem(null) }} />
+      )}
+
+      {/* Confirm add item after KOT */}
+      {confirmItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="mb-2 text-center text-lg font-bold">KOT Already Printed</h3>
+            <p className="mb-5 text-center text-sm text-gray-500">
+              Add <span className="font-semibold text-gray-800">{confirmItem.item_name}</span> to this order?
+              You'll need to update the KOT for the kitchen.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => { setConfirmItem(null); setConfirmModifiers(null) }}
+                className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={confirmAddItem}
+                className="flex-1 rounded-xl bg-orange-500 py-2.5 text-sm font-semibold text-white hover:bg-orange-600">
+                Add Item
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

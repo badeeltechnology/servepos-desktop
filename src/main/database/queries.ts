@@ -326,7 +326,7 @@ export function getOrders(filters?: { status?: string; cashierId?: string; date?
 
   if (filters?.status) { conditions.push('status = ?'); values.push(filters.status) }
   if (filters?.cashierId) { conditions.push('cashier_id = ?'); values.push(filters.cashierId) }
-  if (filters?.date) { conditions.push('date(created_at) = ?'); values.push(filters.date) }
+  if (filters?.date) { conditions.push("date(created_at, 'localtime') = ?"); values.push(filters.date) }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
   return queryAll(`SELECT * FROM orders ${where} ORDER BY created_at DESC`, values)

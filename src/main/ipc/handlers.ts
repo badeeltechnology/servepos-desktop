@@ -500,14 +500,8 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('print:receipt', (_e, orderId: string) => printReceipt(orderId))
-  ipcMain.handle('print:kots', (_e, orderId: string, actorName?: string) => {
-    // Determine manual vs reprint based on whether KOT was already printed
-    const database = getDb()
-    const stmt = database.prepare('SELECT kot_printed FROM orders WHERE id = ?')
-    stmt.bind([orderId])
-    const already = stmt.step() ? (stmt.getAsObject() as any).kot_printed === 1 : false
-    stmt.free()
-    return printKots(orderId, already ? 'reprint' : 'manual', actorName)
+  ipcMain.handle('print:kots', (_e, orderId: string, actorName?: string, reprint?: boolean) => {
+    return printKots(orderId, reprint ? 'reprint' : 'manual', actorName)
   })
   ipcMain.handle('print:amendmentKot', (_e, orderId: string, amendments: any[]) => printAmendmentKot(orderId, amendments))
 

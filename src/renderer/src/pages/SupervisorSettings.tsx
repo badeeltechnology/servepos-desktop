@@ -1023,7 +1023,8 @@ function OrderHistory() {
   useEffect(() => { loadOrders() }, [filter])
 
   async function loadOrders() {
-    const today = new Date().toISOString().split('T')[0]
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     const filters: any = { date: today }
     if (filter !== 'all') filters.status = filter
     const data = await window.api.orders.getAll(filters)
@@ -1292,7 +1293,8 @@ function ReportsDashboard() {
   useEffect(() => { loadData() }, [dateRange])
 
   async function loadData() {
-    const today = new Date().toISOString().split('T')[0]
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     const allOrders = await window.api.orders.getAll({ date: today })
     setOrders(allOrders)
     const allSessions = await window.api.sessions.getAll(20)

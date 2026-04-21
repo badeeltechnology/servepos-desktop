@@ -88,7 +88,14 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, onComplete,
       setError(`Payment is short by ${(grandTotal - totalPaid).toFixed(2)}`)
       return
     }
-    onComplete(payments, collectedBy || null)
+    // Cap payment amounts so stored total = order value (excess cash is change, not payment)
+    let remaining = grandTotal
+    const capped = payments.map((p) => {
+      const amt = Math.min(p.amount, remaining)
+      remaining = Math.max(0, remaining - amt)
+      return { ...p, amount: Math.round(amt * 100) / 100 }
+    }).filter((p) => p.amount > 0)
+    onComplete(capped, collectedBy || null)
   }
 
   // Quick cash amounts
