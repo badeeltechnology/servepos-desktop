@@ -188,7 +188,7 @@ export default function POS() {
     })
 
     for (const item of cart.items) {
-      await window.api.orderItems.add({
+      const dbId = await window.api.orderItems.add({
         orderId: order.id,
         itemCode: item.itemCode,
         itemName: item.itemName,
@@ -201,6 +201,8 @@ export default function POS() {
         modifierTotal: item.modifierTotal,
         specialInstructions: item.specialInstructions || null
       })
+      // Mark item as saved so it won't be re-added on subsequent syncs
+      ;(item as any).dbId = dbId
     }
 
     await window.api.orders.update(order.id, {
@@ -309,27 +311,6 @@ export default function POS() {
         }
 
         if (!order) throw new Error('Order not found')
-
-        // Sync any cart items not yet saved to order_items (added after KOT)
-        if (activeOrderId) {
-          for (const item of cart.items) {
-            if (!(item as any).dbId) {
-              await window.api.orderItems.add({
-                orderId: orderId!,
-                itemCode: item.itemCode,
-                itemName: item.itemName,
-                qty: item.qty,
-                rate: item.rate,
-                discountAmount: item.discountAmount,
-                discountPercent: item.discountPercent,
-                amount: item.amount,
-                modifiers: item.modifiers.length > 0 ? JSON.stringify(item.modifiers) : null,
-                modifierTotal: item.modifierTotal,
-                specialInstructions: item.specialInstructions || null
-              })
-            }
-          }
-        }
 
         // Compute subtotal from order_items (source of truth for receipt)
         const dbItems = await window.api.orderItems.get(orderId!)
