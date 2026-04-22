@@ -747,6 +747,7 @@ function runMigrations(): void {
     ['invoice_printed', 'INTEGER DEFAULT 0'],
     ['session_id', 'TEXT'],
     ['promo_name', 'TEXT'],
+    ['voucher_code', 'TEXT'],
   ]
   for (const [col, type] of ordersCols) {
     if (!hasColumn('orders', col)) {

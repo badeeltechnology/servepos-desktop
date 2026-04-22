@@ -175,6 +175,12 @@ const api = {
     list: () => ipcRenderer.invoke('promos:list')
   },
 
+  // Vouchers
+  vouchers: {
+    validate: (code: string) => ipcRenderer.invoke('vouchers:validate', code),
+    use: (code: string, orderNumber: string) => ipcRenderer.invoke('vouchers:use', code, orderNumber)
+  },
+
   // Touch keyboard
   keyboard: {
     show: () => ipcRenderer.invoke('keyboard:show')

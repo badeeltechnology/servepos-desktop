@@ -374,6 +374,7 @@ export default function POS() {
           discountPercent: discountPct,
           discountReason: cart.orderDiscountReason || null,
           promoName: cart.promoName || null,
+          voucherCode: cart.voucherCode || null,
           orderNotes: cart.orderNotes || null,
           grandTotal: Math.max(0, afterDiscount + taxTotal),
           completedAt: new Date().toISOString()
@@ -382,6 +383,11 @@ export default function POS() {
         // Free table
         if (cart.tableName) {
           await window.api.tables.updateStatus(cart.tableName, 'Available')
+        }
+
+        // Mark voucher as used on ERPNext (fire-and-forget, don't block payment)
+        if (cart.voucherCode) {
+          window.api.vouchers.use(cart.voucherCode, order.order_number).catch(() => {})
         }
 
         // Print receipt — show an intermediate indicator so the cashier

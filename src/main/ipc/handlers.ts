@@ -685,6 +685,26 @@ export function registerIpcHandlers(): void {
   // Promos
   ipcMain.handle('promos:list', () => db.getPromos())
 
+  // Vouchers — validated and consumed via ERPNext
+  ipcMain.handle('vouchers:validate', async (_e, code: string) => {
+    try {
+      const client = new ERPNextClient()
+      const res = await client.callMethod('servepos.api.voucher.validate_voucher', { code })
+      return res
+    } catch (err: any) {
+      return { valid: false, reason: err.message || 'Server error' }
+    }
+  })
+  ipcMain.handle('vouchers:use', async (_e, code: string, orderNumber: string) => {
+    try {
+      const client = new ERPNextClient()
+      await client.callMethod('servepos.api.voucher.use_voucher', { code, order_number: orderNumber })
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
   // Waiter accountability — orders per waiter in a session
   ipcMain.handle('sessions:getWaiterSummary', (_e, sessionId: string) => {
     const database = getDb()

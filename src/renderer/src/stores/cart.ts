@@ -34,6 +34,7 @@ interface CartState {
   orderDiscountAmount: number
   orderDiscountReason: string
   promoName: string | null
+  voucherCode: string | null
   orderNotes: string
 
   // Actions
@@ -49,6 +50,7 @@ interface CartState {
   setWaiter: (waiterId: string | null, waiterName?: string | null) => void
   setOrderDiscount: (percent: number, amount: number, reason: string) => void
   setPromo: (promoName: string | null, discountType?: string, discountValue?: number) => void
+  setVoucher: (code: string | null, discountPercent?: number) => void
   setOrderNotes: (notes: string) => void
   clearCart: () => void
   getSubtotal: () => number
@@ -80,6 +82,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   orderDiscountAmount: 0,
   orderDiscountReason: '',
   promoName: null,
+  voucherCode: null,
   orderNotes: '',
 
   addItem: (item) => {
@@ -165,15 +168,30 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   setPromo: (promoName, discountType, discountValue) => {
     if (!promoName) {
-      set({ promoName: null, orderDiscountPercent: 0, orderDiscountAmount: 0, orderDiscountReason: '' })
+      set({ promoName: null, voucherCode: null, orderDiscountPercent: 0, orderDiscountAmount: 0, orderDiscountReason: '' })
     } else {
       const percent = discountType === 'Percentage' ? (discountValue || 0) : 0
       const amount = discountType === 'Amount' ? (discountValue || 0) : 0
       set({
         promoName,
+        voucherCode: null,
         orderDiscountPercent: percent,
         orderDiscountAmount: amount,
         orderDiscountReason: `Promo: ${promoName}`
+      })
+    }
+  },
+
+  setVoucher: (code, discountPercent) => {
+    if (!code) {
+      set({ voucherCode: null, orderDiscountPercent: 0, orderDiscountAmount: 0, orderDiscountReason: '' })
+    } else {
+      set({
+        voucherCode: code,
+        promoName: null,
+        orderDiscountPercent: discountPercent || 0,
+        orderDiscountAmount: 0,
+        orderDiscountReason: `Voucher: ${code}`
       })
     }
   },
@@ -191,6 +209,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       orderDiscountAmount: 0,
       orderDiscountReason: '',
       promoName: null,
+      voucherCode: null,
       orderNotes: ''
     }),
 

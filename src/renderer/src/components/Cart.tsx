@@ -32,7 +32,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
     waiterId, waiterName, setWaiter,
     updateItemQty, removeItem, updateItemInstructions, updateItemDiscount,
     orderDiscountPercent, orderDiscountAmount, orderDiscountReason,
-    setOrderDiscount, promoName, setPromo,
+    setOrderDiscount, promoName, setPromo, voucherCode, setVoucher,
     orderNotes, setOrderNotes,
     getSubtotal, getOrderDiscountValue, getTaxTotal, getGrandTotal
   } = useCartStore()
@@ -59,6 +59,10 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
   const [showWaiterPicker, setShowWaiterPicker] = useState(false)
   const [promosList, setPromosList] = useState<{ name: string; promo_name: string; discount_type: string; discount_value: number }[]>([])
   const [showPromoPicker, setShowPromoPicker] = useState(false)
+  const [showVoucherInput, setShowVoucherInput] = useState(false)
+  const [voucherInput, setVoucherInput] = useState('')
+  const [voucherError, setVoucherError] = useState('')
+  const [voucherLoading, setVoucherLoading] = useState(false)
 
   useEffect(() => { loadWaiters(); loadPromos() }, [])
 
@@ -325,7 +329,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
 
           <div className="mt-3 space-y-1.5">
             {/* Promo selector */}
-            {promosList.length > 0 && (
+            {promosList.length > 0 && !voucherCode && (
               <div className="relative">
                 {promoName ? (
                   <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5">
@@ -361,7 +365,68 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                 )}
               </div>
             )}
-            {canDiscount && !promoName && (
+            {/* Voucher code input */}
+            {!promoName && !voucherCode && (
+              <div>
+                {showVoucherInput ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={voucherInput}
+                      onChange={(e) => { setVoucherInput(e.target.value.replace(/\D/g, '').slice(0, 6)); setVoucherError('') }}
+                      placeholder="6-digit code"
+                      maxLength={6}
+                      className={`flex-1 rounded-lg border px-3 py-1.5 text-center text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-primary ${voucherError ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}
+                      autoFocus
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter' && voucherInput.length === 6) {
+                          setVoucherLoading(true); setVoucherError('')
+                          const res = await window.api.vouchers.validate(voucherInput)
+                          setVoucherLoading(false)
+                          if (res?.valid) { setVoucher(voucherInput, res.discount_percent); setShowVoucherInput(false); setVoucherInput('') }
+                          else { setVoucherError(res?.reason || 'Invalid code') }
+                        }
+                        if (e.key === 'Escape') { setShowVoucherInput(false); setVoucherInput(''); setVoucherError('') }
+                      }}
+                    />
+                    <button
+                      disabled={voucherInput.length !== 6 || voucherLoading}
+                      onClick={async () => {
+                        setVoucherLoading(true); setVoucherError('')
+                        const res = await window.api.vouchers.validate(voucherInput)
+                        setVoucherLoading(false)
+                        if (res?.valid) { setVoucher(voucherInput, res.discount_percent); setShowVoucherInput(false); setVoucherInput('') }
+                        else { setVoucherError(res?.reason || 'Invalid code') }
+                      }}
+                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {voucherLoading ? '...' : 'Apply'}
+                    </button>
+                    <button onClick={() => { setShowVoucherInput(false); setVoucherInput(''); setVoucherError('') }}
+                      className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowVoucherInput(true)}
+                    className="w-full rounded-lg border border-dashed border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
+                    <Tag className="inline h-3 w-3 mr-1" />
+                    Enter Voucher Code
+                  </button>
+                )}
+                {voucherError && <p className="mt-1 text-xs text-red-500 text-center">{voucherError}</p>}
+              </div>
+            )}
+            {voucherCode && (
+              <div className="flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5">
+                <Tag className="h-3 w-3 text-purple-600" />
+                <span className="flex-1 text-xs font-semibold text-purple-700">Voucher: {voucherCode} ({orderDiscountPercent}% off)</span>
+                <button onClick={() => setVoucher(null)} className="rounded p-0.5 text-purple-400 hover:bg-purple-100 hover:text-purple-600">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+            {canDiscount && !promoName && !voucherCode && (
               <button onClick={openOrderDiscount}
                 className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
                 <Percent className="inline h-3 w-3 mr-1" />
