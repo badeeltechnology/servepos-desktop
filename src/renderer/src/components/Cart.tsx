@@ -371,10 +371,11 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                 {showVoucherInput ? (
                   <div className="flex items-center gap-1.5">
                     <input
-                      type="text"
+                      type="password"
+                      inputMode="numeric"
                       value={voucherInput}
                       onChange={(e) => { setVoucherInput(e.target.value.replace(/\D/g, '').slice(0, 6)); setVoucherError('') }}
-                      placeholder="6-digit code"
+                      placeholder="••••••"
                       maxLength={6}
                       className={`flex-1 rounded-lg border px-3 py-1.5 text-center text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-primary ${voucherError ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}
                       autoFocus
@@ -420,7 +421,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
             {voucherCode && (
               <div className="flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5">
                 <Tag className="h-3 w-3 text-purple-600" />
-                <span className="flex-1 text-xs font-semibold text-purple-700">Voucher: {voucherCode} ({orderDiscountPercent}% off)</span>
+                <span className="flex-1 text-xs font-semibold text-purple-700">Voucher Applied ({orderDiscountPercent}% off)</span>
                 <button onClick={() => setVoucher(null)} className="rounded p-0.5 text-purple-400 hover:bg-purple-100 hover:text-purple-600">
                   <X className="h-3 w-3" />
                 </button>
