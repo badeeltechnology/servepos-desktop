@@ -136,6 +136,15 @@ export async function syncUp(): Promise<SyncResult> {
         if (order.promo_name) {
           invoice.servepos_promo = order.promo_name
         }
+        if (order.voucher_code) {
+          invoice.servepos_voucher = order.voucher_code
+        }
+        if (order.discount_reason) {
+          invoice.servepos_discount_reason = order.discount_reason
+        }
+        if (order.waiter_name) {
+          invoice.servepos_waiter = order.waiter_name
+        }
         if (order.order_notes) {
           invoice.remarks = order.order_notes
         }
@@ -177,6 +186,18 @@ export async function syncUp(): Promise<SyncResult> {
             await client.submitDoc('Sales Invoice', docname)
           } catch {
             // Created but not submitted — still mark as synced
+          }
+
+          // Mark voucher as used on ERPNext (server tracks usage count)
+          if (order.voucher_code) {
+            try {
+              await client.callMethod('servepos.api.voucher.use_voucher', {
+                code: order.voucher_code,
+                order_number: order.order_number
+              })
+            } catch {
+              // Non-critical — voucher was already validated at POS time
+            }
           }
 
           // Update local order

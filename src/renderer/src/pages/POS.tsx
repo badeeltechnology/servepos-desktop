@@ -385,11 +385,6 @@ export default function POS() {
           await window.api.tables.updateStatus(cart.tableName, 'Available')
         }
 
-        // Mark voucher as used on ERPNext (fire-and-forget, don't block payment)
-        if (cart.voucherCode) {
-          window.api.vouchers.use(cart.voucherCode, order.order_number).catch(() => {})
-        }
-
         // Print receipt — show an intermediate indicator so the cashier
         // knows something is happening while the printer warms up.
         setToast({ type: 'info', message: 'Printing receipt…' })
