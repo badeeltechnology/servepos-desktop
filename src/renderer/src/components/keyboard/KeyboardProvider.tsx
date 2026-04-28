@@ -113,13 +113,13 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
       hideKeyboard()
     }
 
-    document.addEventListener('focusin', handleFocusIn)
-    document.addEventListener('focusout', handleFocusOut)
+    document.addEventListener('focusin', handleFocusIn, true)
+    document.addEventListener('focusout', handleFocusOut, true)
     document.addEventListener('mousedown', handleClickOutside)
 
     return () => {
-      document.removeEventListener('focusin', handleFocusIn)
-      document.removeEventListener('focusout', handleFocusOut)
+      document.removeEventListener('focusin', handleFocusIn, true)
+      document.removeEventListener('focusout', handleFocusOut, true)
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [keyboardType, hideKeyboard])
