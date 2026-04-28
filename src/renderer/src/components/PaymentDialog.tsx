@@ -92,12 +92,17 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, processing,
       setError(`Payment is short by ${(grandTotal - totalPaid).toFixed(2)}`)
       return
     }
-    // Cap payment amounts so stored total = order value (excess cash is change, not payment)
+    // Cap only cash payments (excess cash = change returned, not stored)
+    // Card payments keep full amount (excess = tip, actually charged to card)
     let remaining = grandTotal
     const capped = payments.map((p) => {
-      const amt = Math.min(p.amount, remaining)
-      remaining = Math.max(0, remaining - amt)
-      return { ...p, amount: Math.round(amt * 100) / 100 }
+      if (p.method === 'Cash') {
+        const amt = Math.min(p.amount, remaining)
+        remaining = Math.max(0, remaining - amt)
+        return { ...p, amount: Math.round(amt * 100) / 100 }
+      }
+      remaining = Math.max(0, remaining - p.amount)
+      return p
     }).filter((p) => p.amount > 0)
     onComplete(capped, collectedBy || null, tipAmount > 0 ? tipAmount : undefined)
   }
