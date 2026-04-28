@@ -216,7 +216,7 @@ export async function printPrepDoc(orderId: string): Promise<{ success: boolean;
   return result
 }
 
-export async function printInvoice(orderId: string): Promise<{ success: boolean; error?: string }> {
+export async function printInvoice(orderId: string, cartDiscount?: { percent: number; amount: number; promoName?: string; grandTotal?: number }): Promise<{ success: boolean; error?: string }> {
   const db = getDb()
 
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
@@ -242,6 +242,16 @@ export async function printInvoice(orderId: string): Promise<{ success: boolean;
   const taxRate = taxEnabled ? parseFloat(config.tax_rate || '0') : 0
   const taxLabel = config.tax_label || 'VAT'
 
+  // Use cart discount if provided (invoice printed before payment saves to DB)
+  const itemsSubtotal = items.reduce((sum: number, item: any) => sum + item.amount, 0)
+  const subtotal = itemsSubtotal || order.subtotal || 0
+  const discPct = cartDiscount?.percent ?? order.discount_percent ?? 0
+  const discAmt = cartDiscount?.amount ?? order.discount_amount ?? 0
+  const totalDiscount = subtotal * (discPct / 100) + discAmt
+  const afterDiscount = Math.max(0, subtotal - totalDiscount)
+  const taxTotal = afterDiscount * (taxRate / 100)
+  const promoName = cartDiscount?.promoName ?? order.promo_name
+
   const invoiceData = {
     orderNumber: order.order_number,
     orderType: order.order_type,
@@ -265,15 +275,15 @@ export async function printInvoice(orderId: string): Promise<{ success: boolean;
         discountAmount: item.discount_amount
       }
     }),
-    subtotal: order.subtotal || 0,
-    taxTotal: order.tax_total || 0,
+    subtotal,
+    taxTotal,
     taxLabel,
     taxRate,
-    discountAmount: (order.discount_amount || 0) + (order.subtotal * (order.discount_percent || 0) / 100),
-    grandTotal: order.grand_total || 0,
+    discountAmount: totalDiscount,
+    grandTotal: cartDiscount?.grandTotal ?? order.grand_total ?? Math.max(0, afterDiscount + taxTotal),
     payments: [],
     change: 0,
-    promoName: order.promo_name || undefined,
+    promoName: promoName || undefined,
     orderNotes: order.order_notes || undefined
   }
 

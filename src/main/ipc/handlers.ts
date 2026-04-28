@@ -525,7 +525,7 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('print:waiterCopy', (_e, orderId: string) => printWaiterCopy(orderId))
   ipcMain.handle('print:prepDoc', (_e, orderId: string) => printPrepDoc(orderId))
-  ipcMain.handle('print:invoice', (_e, orderId: string) => printInvoice(orderId))
+  ipcMain.handle('print:invoice', (_e, orderId: string, cartDiscount?: any) => printInvoice(orderId, cartDiscount))
   ipcMain.handle('print:voidSlip', (_e, orderId: string, voidReason: string, voidedBy: string) => printVoidSlip(orderId, voidReason, voidedBy))
 
   // Poll for "Ready to Serve" orders that need invoice printing

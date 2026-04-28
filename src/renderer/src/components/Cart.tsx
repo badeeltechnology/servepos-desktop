@@ -486,7 +486,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
                       <span className="h-1.5 w-1.5 rounded-full bg-blue-500" /> Waiter Copy
                     </button>
-                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.invoice(activeOrderId); alert(r?.success ? 'Invoice printed' : 'Failed') }}
+                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.invoice(activeOrderId, { percent: orderDiscountPercent, amount: orderDiscountAmount, promoName: promoName || undefined, grandTotal: grandTotal }); alert(r?.success ? 'Invoice printed' : 'Failed') }}
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
                       <span className="h-1.5 w-1.5 rounded-full bg-purple-500" /> Print Invoice
                     </button>
