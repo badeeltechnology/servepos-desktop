@@ -222,79 +222,67 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
             <p className="mt-1 text-xs text-gray-300">Tap menu items to add them</p>
           </div>
         ) : (
-          <div className="divide-y">
+          <div className="divide-y divide-gray-100">
             {items.map((item) => (
-              <div key={item.id} className="px-4 py-3 hover:bg-gray-50/50">
-                <div className="flex items-start justify-between gap-2">
+              <div key={item.id} className="group px-3 py-2 hover:bg-gray-50/50">
+                {/* Row 1: Name + Amount + Delete */}
+                <div className="flex items-center gap-1.5">
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-semibold text-gray-800">{item.itemName}</h4>
-                    {item.modifiers.length > 0 && (
-                      <div className="mt-1 space-y-0.5">
-                        {item.modifiers.map((m, i) => (
-                          <p key={i} className="text-xs text-gray-500">
-                            + {m.name}
-                            {m.price > 0 && <span className="ml-1 font-medium text-emerald-600">+{m.price.toFixed(2)}</span>}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                    {item.specialInstructions && (
-                      <p className="mt-1 rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-                        {item.specialInstructions}
-                      </p>
-                    )}
-                    {(item.discountPercent > 0 || item.discountAmount > 0) && (
-                      <p className="mt-0.5 text-xs font-medium text-emerald-600">
-                        Discount: {item.discountPercent > 0 ? `${item.discountPercent}%` : ''} {item.discountAmount > 0 ? `-${item.discountAmount.toFixed(2)}` : ''}
-                      </p>
-                    )}
+                    <span className="text-[13px] font-semibold text-gray-800 truncate block">{item.itemName}</span>
                   </div>
-                  <span className="whitespace-nowrap text-sm font-bold text-gray-800">{item.amount.toFixed(2)}</span>
+                  <span className="text-[13px] font-bold text-gray-800 whitespace-nowrap">{item.amount.toFixed(2)}</span>
+                  <button onClick={() => {
+                    if (isOrderPlaced && user?.role !== 'supervisor') {
+                      setRemoveRequest({ cartId: item.id, dbId: (item as any).dbId })
+                      setRemovePin(''); setRemoveError('')
+                    } else {
+                      if (isOrderPlaced && (item as any).dbId) {
+                        window.api.orderItems.remove((item as any).dbId).catch(() => {})
+                      }
+                      removeItem(item.id)
+                      if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid()
+                    }
+                  }} className="rounded p-1 text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500" title="Remove">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
                 </div>
-                {/* Controls */}
-                <div className="mt-2 flex items-center justify-between">
+                {/* Row 2: Modifiers/instructions (compact) */}
+                {item.modifiers.length > 0 && (
+                  <p className="text-[11px] text-gray-500 truncate">
+                    {item.modifiers.map((m) => `+ ${m.name}${m.price > 0 ? ` +${m.price.toFixed(2)}` : ''}`).join(', ')}
+                  </p>
+                )}
+                {item.specialInstructions && (
+                  <p className="text-[11px] text-amber-600 truncate">* {item.specialInstructions}</p>
+                )}
+                {(item.discountPercent > 0 || item.discountAmount > 0) && (
+                  <p className="text-[11px] font-medium text-emerald-600">
+                    -{item.discountPercent > 0 ? `${item.discountPercent}%` : `${item.discountAmount.toFixed(2)}`}
+                  </p>
+                )}
+                {/* Row 3: Qty controls + actions */}
+                <div className="mt-1 flex items-center justify-between">
                   <div className="flex items-center">
-                    <div className="flex items-center rounded-lg border border-gray-200">
-                      <button onClick={() => updateItemQty(item.id, item.qty - 1)}
-                        className="flex h-8 w-8 items-center justify-center rounded-l-lg text-gray-500 hover:bg-gray-100">
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-                      <span className="w-10 text-center text-sm font-bold">{item.qty}</span>
-                      <button onClick={() => updateItemQty(item.id, item.qty + 1)}
-                        className="flex h-8 w-8 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-100">
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <span className="ml-3 text-xs text-gray-400">@ {item.rate.toFixed(2)}</span>
+                    <button onClick={() => updateItemQty(item.id, item.qty - 1)}
+                      className="flex h-7 w-7 items-center justify-center rounded-l-md border border-gray-200 text-gray-500 hover:bg-gray-100 active:bg-gray-200">
+                      <Minus className="h-3 w-3" />
+                    </button>
+                    <span className="flex h-7 w-8 items-center justify-center border-y border-gray-200 text-xs font-bold">{item.qty}</span>
+                    <button onClick={() => updateItemQty(item.id, item.qty + 1)}
+                      className="flex h-7 w-7 items-center justify-center rounded-r-md border border-gray-200 text-gray-500 hover:bg-gray-100 active:bg-gray-200">
+                      <Plus className="h-3 w-3" />
+                    </button>
+                    <span className="ml-2 text-[11px] text-gray-400">@ {item.rate.toFixed(2)}</span>
                   </div>
                   <div className="flex items-center gap-0.5">
-                    <button onClick={() => openInstructions(item)} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="Notes">
-                      <MessageSquare className="h-3.5 w-3.5" />
+                    <button onClick={() => openInstructions(item)} className="rounded p-1 text-gray-400 hover:text-gray-600" title="Notes">
+                      <MessageSquare className="h-3 w-3" />
                     </button>
                     {canDiscount && (
-                      <button onClick={() => openItemDiscount(item)} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="Discount">
-                        <Percent className="h-3.5 w-3.5" />
+                      <button onClick={() => openItemDiscount(item)} className="rounded p-1 text-gray-400 hover:text-gray-600" title="Discount">
+                        <Percent className="h-3 w-3" />
                       </button>
                     )}
-                    <button onClick={() => {
-                      // For placed orders, require supervisor PIN to remove
-                      if (isOrderPlaced && user?.role !== 'supervisor') {
-                        setRemoveRequest({ cartId: item.id, dbId: (item as any).dbId })
-                        setRemovePin(''); setRemoveError('')
-                      } else {
-                        // Supervisor or unplaced order — remove directly
-                        if (isOrderPlaced && (item as any).dbId) {
-                          window.api.orderItems.remove((item as any).dbId).catch(() => {})
-                        }
-                        removeItem(item.id)
-                        // Auto-void if last item removed from a placed order
-                        if (isOrderPlaced && items.length === 1 && onAutoVoid) {
-                          onAutoVoid()
-                        }
-                      }
-                    }} className="rounded-lg p-1.5 text-red-300 hover:bg-red-50 hover:text-red-500" title="Remove">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -305,15 +293,15 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
 
       {/* Totals & Pay */}
       {items.length > 0 && (
-        <div className="border-t bg-gray-50 px-4 py-3">
-          <div className="space-y-1.5 text-sm">
+        <div className="border-t bg-gray-50 px-3 py-2">
+          <div className="space-y-0.5 text-[13px]">
             <div className="flex justify-between text-gray-500">
-              <span>Subtotal ({items.length} items)</span>
+              <span>Subtotal ({items.length})</span>
               <span className="font-medium text-gray-700">{subtotal.toFixed(2)}</span>
             </div>
             {orderDiscVal > 0 && (
               <div className="flex justify-between text-emerald-600">
-                <span>Discount{promoName ? ` (${promoName}${orderDiscountPercent > 0 ? ` ${orderDiscountPercent}%` : ''})` : ''}</span>
+                <span className="truncate mr-2">Disc{promoName ? ` (${promoName})` : ''}</span>
                 <span className="font-medium">-{orderDiscVal.toFixed(2)}</span>
               </div>
             )}
@@ -323,65 +311,56 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                 <span className="font-medium text-gray-700">{tax.toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between border-t border-gray-200 pt-2 text-lg font-bold">
+            <div className="flex justify-between pt-1 text-base font-bold">
               <span>Total</span>
               <span className="text-primary">{grandTotal.toFixed(2)}</span>
             </div>
           </div>
 
-          <div className="mt-3 space-y-1.5">
-            {/* Promo selector */}
-            {promosList.length > 0 && !voucherCode && (
-              <div className="relative">
-                {promoName ? (
-                  <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5">
-                    <Tag className="h-3 w-3 text-emerald-600" />
-                    <span className="flex-1 text-xs font-semibold text-emerald-700">{promoName}</span>
-                    <button onClick={() => setPromo(null)} className="rounded p-0.5 text-emerald-400 hover:bg-emerald-100 hover:text-emerald-600">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={() => setShowPromoPicker(!showPromoPicker)}
-                    className="w-full rounded-lg border border-dashed border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
-                    <Tag className="inline h-3 w-3 mr-1" />
-                    Apply Promo
-                    <ChevronDown className="inline h-3 w-3 ml-1 opacity-50" />
-                  </button>
-                )}
-                {showPromoPicker && !promoName && (
-                  <div className="absolute bottom-full left-0 right-0 z-30 mb-1 max-h-48 overflow-y-auto rounded-xl border bg-white shadow-lg">
-                    {promosList.map((p) => (
-                      <button
-                        key={p.name}
-                        onClick={() => { setPromo(p.promo_name, p.discount_type, p.discount_value); setShowPromoPicker(false) }}
-                        className="flex w-full items-center justify-between px-4 py-2.5 text-left text-xs hover:bg-gray-50"
-                      >
-                        <span className="font-semibold text-gray-700">{p.promo_name}</span>
-                        <span className="text-emerald-600 font-medium">
-                          {p.discount_type === 'Percentage' ? `${p.discount_value}%` : `${p.discount_value}`}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+          <div className="mt-2 space-y-1.5">
+            {/* Active promo/voucher badge */}
+            {promoName && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1">
+                <Tag className="h-3 w-3 text-emerald-600" />
+                <span className="flex-1 text-[11px] font-semibold text-emerald-700 truncate">{promoName} {orderDiscountPercent > 0 ? `${orderDiscountPercent}%` : ''}</span>
+                <button onClick={() => setPromo(null)} className="rounded p-0.5 text-emerald-400 hover:text-emerald-600"><X className="h-3 w-3" /></button>
               </div>
             )}
-            {/* Voucher code input */}
+            {voucherCode && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1">
+                <Tag className="h-3 w-3 text-purple-600" />
+                <span className="flex-1 text-[11px] font-semibold text-purple-700">Voucher ({orderDiscountPercent}% off)</span>
+                <button onClick={() => setVoucher(null)} className="rounded p-0.5 text-purple-400 hover:text-purple-600"><X className="h-3 w-3" /></button>
+              </div>
+            )}
+            {/* Promo + Voucher + Discount — single row */}
             {!promoName && !voucherCode && (
-              <div>
+              <div className="flex gap-1.5">
+                {promosList.length > 0 && (
+                  <div className="relative flex-1">
+                    <button onClick={() => setShowPromoPicker(!showPromoPicker)}
+                      className="w-full rounded-lg border border-dashed border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-500 hover:bg-white">
+                      <Tag className="inline h-3 w-3 mr-0.5" />Promo
+                    </button>
+                    {showPromoPicker && (
+                      <div className="absolute bottom-full left-0 right-0 z-30 mb-1 max-h-48 overflow-y-auto rounded-xl border bg-white shadow-lg">
+                        {promosList.map((p) => (
+                          <button key={p.name}
+                            onClick={() => { setPromo(p.promo_name, p.discount_type, p.discount_value); setShowPromoPicker(false) }}
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-gray-50">
+                            <span className="font-semibold text-gray-700">{p.promo_name}</span>
+                            <span className="text-emerald-600 font-medium">{p.discount_type === 'Percentage' ? `${p.discount_value}%` : p.discount_value}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {showVoucherInput ? (
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      data-keyboard="numpad"
-                      value={voucherInput}
+                  <div className="flex flex-1 items-center gap-1">
+                    <input type="password" inputMode="numeric" data-keyboard="numpad" value={voucherInput}
                       onChange={(e) => { setVoucherInput(e.target.value.replace(/\D/g, '').slice(0, 6)); setVoucherError('') }}
-                      placeholder="••••••"
-                      maxLength={6}
-                      className={`flex-1 rounded-lg border px-3 py-1.5 text-center text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-primary ${voucherError ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}
-                      autoFocus
+                      placeholder="••••••" maxLength={6} autoFocus
                       onKeyDown={async (e) => {
                         if (e.key === 'Enter' && voucherInput.length === 6) {
                           setVoucherLoading(true); setVoucherError('')
@@ -392,9 +371,9 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                         }
                         if (e.key === 'Escape') { setShowVoucherInput(false); setVoucherInput(''); setVoucherError('') }
                       }}
+                      className={`w-20 rounded-lg border px-2 py-1 text-center text-xs font-mono tracking-wider focus:outline-none focus:ring-1 focus:ring-primary ${voucherError ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}
                     />
-                    <button
-                      disabled={voucherInput.length !== 6 || voucherLoading}
+                    <button disabled={voucherInput.length !== 6 || voucherLoading}
                       onClick={async () => {
                         setVoucherLoading(true); setVoucherError('')
                         const res = await window.api.vouchers.validate(voucherInput)
@@ -402,50 +381,36 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                         if (res?.valid) { setVoucher(voucherInput, res.discount_percent); setShowVoucherInput(false); setVoucherInput('') }
                         else { setVoucherError(res?.reason || 'Invalid code') }
                       }}
-                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      {voucherLoading ? '...' : 'Apply'}
+                      className="rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
+                      {voucherLoading ? '..' : 'OK'}
                     </button>
                     <button onClick={() => { setShowVoucherInput(false); setVoucherInput(''); setVoucherError('') }}
-                      className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                      className="rounded p-0.5 text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
                   </div>
                 ) : (
                   <button onClick={() => setShowVoucherInput(true)}
-                    className="w-full rounded-lg border border-dashed border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
-                    <Tag className="inline h-3 w-3 mr-1" />
-                    Enter Voucher Code
+                    className="flex-1 rounded-lg border border-dashed border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-500 hover:bg-white">
+                    <Tag className="inline h-3 w-3 mr-0.5" />Voucher
                   </button>
                 )}
-                {voucherError && <p className="mt-1 text-xs text-red-500 text-center">{voucherError}</p>}
+                {canDiscount && (
+                  <button onClick={openOrderDiscount}
+                    className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-500 hover:bg-white">
+                    <Percent className="inline h-3 w-3" />
+                  </button>
+                )}
               </div>
             )}
-            {voucherCode && (
-              <div className="flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5">
-                <Tag className="h-3 w-3 text-purple-600" />
-                <span className="flex-1 text-xs font-semibold text-purple-700">Voucher Applied ({orderDiscountPercent}% off)</span>
-                <button onClick={() => setVoucher(null)} className="rounded p-0.5 text-purple-400 hover:bg-purple-100 hover:text-purple-600">
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-            {canDiscount && !promoName && !voucherCode && (
-              <button onClick={openOrderDiscount}
-                className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
-                <Percent className="inline h-3 w-3 mr-1" />
-                Discount
-              </button>
-            )}
+            {voucherError && <p className="text-[11px] text-red-500 text-center">{voucherError}</p>}
             {!isOrderPlaced && activeOrderId ? (
               <>
                 <button onClick={onPlaceOrder} disabled={processing}
-                  className="w-full rounded-xl bg-orange-500 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition-all hover:bg-orange-600 active:scale-[0.98] disabled:opacity-50">
+                  className="w-full rounded-xl bg-orange-500 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:bg-orange-600 active:scale-[0.98] disabled:opacity-50">
                   {processing ? 'Processing...' : 'Update Order & Print KOT'}
                 </button>
                 {onUpdateOnly && (
                   <button onClick={onUpdateOnly} disabled={processing}
-                    className="w-full rounded-xl border-2 border-orange-300 py-2.5 text-sm font-bold text-orange-600 transition-all hover:bg-orange-50 active:scale-[0.98] disabled:opacity-50">
+                    className="w-full rounded-xl border-2 border-orange-300 py-2 text-xs font-bold text-orange-600 transition-all hover:bg-orange-50 active:scale-[0.98] disabled:opacity-50">
                     Update Without KOT
                   </button>
                 )}
@@ -453,46 +418,46 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
             ) : !isOrderPlaced ? (
               <>
                 <button onClick={onPlaceOrder} disabled={processing}
-                  className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50">
+                  className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50">
                   {processing ? 'Processing...' : 'Place Order & Print KOT'}
                 </button>
                 <button onClick={onPay} disabled={processing}
-                  className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50">
+                  className="w-full rounded-xl bg-primary py-2.5 text-sm font-bold text-white shadow-md transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50">
                   Quick Pay — {grandTotal.toFixed(2)}
                 </button>
               </>
             ) : (
-              <button onClick={onPay} disabled={processing}
-                className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50">
-                Payment — {grandTotal.toFixed(2)}
-              </button>
-            )}
-            {isOrderPlaced && activeOrderId && (
-              <div className="relative">
-                <button onClick={() => setShowPrintMenu(!showPrintMenu)}
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 hover:bg-white hover:border-gray-300">
-                  <Printer className="inline h-3.5 w-3.5 mr-1" />
-                  Print
-                  <ChevronDown className="inline h-3 w-3 ml-1 opacity-50" />
+              <div className="flex gap-2">
+                <button onClick={onPay} disabled={processing}
+                  className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-bold text-white shadow-md transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50">
+                  Payment — {grandTotal.toFixed(2)}
                 </button>
-                {showPrintMenu && (
-                  <div className="absolute bottom-full left-0 right-0 z-30 mb-1 rounded-xl border bg-white shadow-lg overflow-hidden">
-                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name, true); const w = await window.api.print.waiterCopy(activeOrderId); alert(r?.success && w?.success ? 'KOT + Waiter copy printed' : 'Print error — check printer') }}
-                      className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> KOT + Waiter Copy
+                {activeOrderId && (
+                  <div className="relative">
+                    <button onClick={() => setShowPrintMenu(!showPrintMenu)}
+                      className="flex h-full items-center rounded-xl border-2 border-gray-200 px-3 text-gray-500 hover:bg-white hover:border-gray-300">
+                      <Printer className="h-4 w-4" />
                     </button>
-                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name, true); alert(r?.success ? 'KOT reprinted' : 'KOT failed') }}
-                      className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
-                      <span className="h-1.5 w-1.5 rounded-full bg-orange-500" /> Reprint KOT
-                    </button>
-                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.waiterCopy(activeOrderId); alert(r?.success ? 'Waiter copy printed' : 'Failed') }}
-                      className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
-                      <span className="h-1.5 w-1.5 rounded-full bg-blue-500" /> Waiter Copy
-                    </button>
-                    <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.invoice(activeOrderId, { percent: orderDiscountPercent, amount: orderDiscountAmount, promoName: promoName || undefined, grandTotal: grandTotal }); alert(r?.success ? 'Invoice printed' : 'Failed') }}
-                      className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                      <span className="h-1.5 w-1.5 rounded-full bg-purple-500" /> Print Invoice
-                    </button>
+                    {showPrintMenu && (
+                      <div className="absolute bottom-full right-0 z-30 mb-1 w-48 rounded-xl border bg-white shadow-lg overflow-hidden">
+                        <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name, true); const w = await window.api.print.waiterCopy(activeOrderId); alert(r?.success && w?.success ? 'KOT + Waiter copy printed' : 'Print error') }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> KOT + Waiter
+                        </button>
+                        <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name, true); alert(r?.success ? 'KOT reprinted' : 'Failed') }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
+                          <span className="h-1.5 w-1.5 rounded-full bg-orange-500" /> Reprint KOT
+                        </button>
+                        <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.waiterCopy(activeOrderId); alert(r?.success ? 'Printed' : 'Failed') }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
+                          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" /> Waiter Copy
+                        </button>
+                        <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.invoice(activeOrderId, { percent: orderDiscountPercent, amount: orderDiscountAmount, promoName: promoName || undefined, grandTotal: grandTotal }); alert(r?.success ? 'Printed' : 'Failed') }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                          <span className="h-1.5 w-1.5 rounded-full bg-purple-500" /> Invoice
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
