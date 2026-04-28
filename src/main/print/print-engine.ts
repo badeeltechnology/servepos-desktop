@@ -125,6 +125,12 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
   // Compute subtotal from actual items (source of truth) to avoid cart/DB drift
   const itemsSubtotal = items.reduce((sum: number, item: any) => sum + item.amount, 0)
   const subtotal = itemsSubtotal || order.subtotal || 0
+  const discPct = order.discount_percent || 0
+  const discAmt = order.discount_amount || 0
+  const totalDiscount = subtotal * (discPct / 100) + discAmt
+  const afterDiscount = Math.max(0, subtotal - totalDiscount)
+  const computedTax = afterDiscount * (taxRate / 100)
+  const computedGrandTotal = Math.max(0, afterDiscount + computedTax)
 
   const receiptData = {
     orderNumber: order.order_number,
@@ -150,13 +156,13 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
       }
     }),
     subtotal,
-    taxTotal: order.tax_total || 0,
+    taxTotal: computedTax,
     taxLabel,
     taxRate,
-    discountAmount: (order.discount_amount || 0) + (subtotal * (order.discount_percent || 0) / 100),
-    grandTotal: order.grand_total || 0,
+    discountAmount: totalDiscount,
+    grandTotal: computedGrandTotal,
     payments: payments.map((p: any) => ({ method: p.payment_method, amount: p.amount })),
-    change: Math.max(0, totalPaid - (order.grand_total || 0)),
+    change: Math.max(0, totalPaid - computedGrandTotal),
     promoName: order.promo_name || undefined,
     orderNotes: order.order_notes || undefined
   }
@@ -496,7 +502,7 @@ export async function printWaiterCopy(orderId: string): Promise<{ success: boole
         specialInstructions: item.special_instructions
       }
     }),
-    grandTotal: order.grand_total || 0
+    grandTotal: items.reduce((s: number, i: any) => s + i.amount, 0) || order.grand_total || 0
   }
 
   const copy = generateWaiterCopy(waiterData)
@@ -539,7 +545,7 @@ export async function printVoidSlip(orderId: string, voidReason: string, voidedB
       rate: item.rate,
       amount: item.amount
     })),
-    grandTotal: order.grand_total || items.reduce((s: number, i: any) => s + i.amount, 0)
+    grandTotal: items.reduce((s: number, i: any) => s + i.amount, 0) || order.grand_total || 0
   }
 
   const slip = generateVoidSlip(voidData)
