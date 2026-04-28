@@ -82,56 +82,7 @@ export default function POS() {
     return () => { polling = false; clearInterval(pollTimer) }
   }, []) // No dependencies — interval runs once, uses refs for current state
 
-  // Auto-close shift: runs on mount + every 60s.
-  // Handles both real-time trigger AND stale shifts from previous days (e.g. system was off).
-  useEffect(() => {
-    async function checkAutoClose() {
-      if (!activeSession) return
-      try {
-        const config = await window.api.config.getAll()
-        const autoCloseTime = config.auto_close_shift_time
-        if (!autoCloseTime) return
-
-        const now = new Date()
-        const [h, m] = autoCloseTime.split(':').map(Number)
-
-        // Check if session is from a previous local day — always auto-close stale shifts
-        const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-        let isStaleShift = false
-        if (activeSession.opened_at) {
-          // opened_at is UTC from SQLite datetime('now') — parse as UTC then get local date
-          const utcStr = activeSession.opened_at.replace(' ', 'T') + (activeSession.opened_at.includes('Z') ? '' : 'Z')
-          const opened = new Date(utcStr)
-          const openedLocal = `${opened.getFullYear()}-${String(opened.getMonth() + 1).padStart(2, '0')}-${String(opened.getDate()).padStart(2, '0')}`
-          isStaleShift = openedLocal < todayLocal
-        }
-
-        // For same-day: only trigger within a 2-minute window after the target time
-        const target = new Date(now)
-        target.setHours(h, m, 0, 0)
-        const diff = now.getTime() - target.getTime()
-        const isSameDayTrigger = diff >= 0 && diff < 120000 && config.last_auto_close_date !== todayLocal
-
-        if (isStaleShift || isSameDayTrigger) {
-          await window.api.config.set('last_auto_close_date', todayLocal)
-          const result = await window.api.sessions.autoClose()
-          if (result.success) {
-            setActiveSession(null)
-            cart.clearCart(); setIsOrderPlaced(false); setActiveOrderId(null)
-            setToast({ type: 'success', message: isStaleShift
-              ? `Previous shift auto-closed. ${result.voided || 0} order(s) voided.`
-              : `Shift auto-closed. ${result.voided || 0} order(s) voided.`
-            })
-          }
-        }
-      } catch {}
-    }
-
-    // Check immediately on mount (catches stale shifts from previous days)
-    checkAutoClose()
-    const autoCloseTimer = setInterval(checkAutoClose, 60000)
-    return () => clearInterval(autoCloseTimer)
-  }, [activeSession])
+  // Shift is closed only manually by the user via "Close Shift" button.
 
   // Auto-dismiss toast
   useEffect(() => {
