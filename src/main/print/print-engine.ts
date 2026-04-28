@@ -162,7 +162,7 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
     discountAmount: totalDiscount,
     grandTotal: computedGrandTotal,
     payments: payments.map((p: any) => ({ method: p.payment_method, amount: p.amount })),
-    change: Math.max(0, totalPaid - computedGrandTotal),
+    change: payments.some((p: any) => p.payment_method === 'Card') ? 0 : Math.max(0, totalPaid - computedGrandTotal),
     promoName: order.promo_name || undefined,
     orderNotes: order.order_notes || undefined,
     tipAmount: order.tip_amount || 0
