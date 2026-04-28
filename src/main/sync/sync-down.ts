@@ -306,6 +306,22 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       counts.promos = 0
     }
 
+    // Sync void reasons from ERPNext
+    try {
+      const voidReasons = await client.getVoidReasons(posProfile || undefined)
+      db.run('DELETE FROM void_reasons')
+      for (const r of voidReasons) {
+        db.run(
+          `INSERT INTO void_reasons (name, reason_name, display_order, enabled, synced_at)
+           VALUES (?, ?, ?, 1, datetime('now'))`,
+          [r.name, r.reason_name, r.display_order || 0]
+        )
+      }
+      counts.voidReasons = voidReasons.length
+    } catch {
+      counts.voidReasons = 0
+    }
+
     // Waiter orders are NOT auto-accepted during sync.
     // They are handled via the POS screen "Waiter" button where cashier manually accepts/rejects.
     // The POS screen polls ERPNext every 15 seconds for pending waiter orders.

@@ -411,6 +411,16 @@ export default function POS() {
     if (order.table_name) cart.setTable(order.table_name, order.room)
     if (order.guests) cart.setGuests(order.guests)
     if (order.order_notes) cart.setOrderNotes(order.order_notes)
+    if (order.waiter_id || order.waiter_name) cart.setWaiter(order.waiter_id || null, order.waiter_name || null)
+
+    // Restore discount/promo/voucher
+    if (order.voucher_code) {
+      cart.setVoucher(order.voucher_code, order.discount_percent || 0)
+    } else if (order.promo_name) {
+      cart.setPromo(order.promo_name, 'Percentage', order.discount_percent || 0)
+    } else if (order.discount_percent > 0 || order.discount_amount > 0) {
+      cart.setOrderDiscount(order.discount_percent || 0, order.discount_amount || 0, order.discount_reason || '')
+    }
 
     for (const item of items) {
       cart.addItem({
@@ -828,8 +838,17 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
   const [voidRequest, setVoidRequest] = useState<{ orderId: string; step: 'pin' | 'reason'; reason: string } | null>(null)
   const [voidPin, setVoidPin] = useState('')
   const [voidPinError, setVoidPinError] = useState('')
+  const [voidReasons, setVoidReasons] = useState<{ name: string; reason_name: string }[]>([])
+  const [showCustomReason, setShowCustomReason] = useState(false)
 
-  useEffect(() => { loadOrders() }, [filter])
+  useEffect(() => { loadOrders(); loadVoidReasons() }, [filter])
+
+  async function loadVoidReasons() {
+    try {
+      const reasons = await window.api.voidReasons.list()
+      setVoidReasons(reasons || [])
+    } catch {}
+  }
 
   async function loadOrders() {
     const now = new Date()
@@ -1167,28 +1186,47 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
             ) : (
               <>
                 <h3 className="mb-1 text-center text-lg font-bold">Void Reason</h3>
-                <p className="mb-4 text-center text-xs text-gray-500">Enter reason for voiding this order</p>
-                <input
-                  type="text"
-                  value={voidRequest.reason}
-                  onChange={(e) => setVoidRequest({ ...voidRequest, reason: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && voidRequest.reason.trim()) {
-                      doVoidOrder(voidRequest.orderId, voidRequest.reason.trim())
-                    }
-                  }}
-                  autoFocus
-                  placeholder="Void reason..."
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none"
-                />
+                <p className="mb-4 text-center text-xs text-gray-500">Select reason for voiding this order</p>
+                {voidReasons.length > 0 && !showCustomReason ? (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {voidReasons.map((r) => (
+                      <button key={r.name}
+                        onClick={() => doVoidOrder(voidRequest.orderId, r.reason_name)}
+                        className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-left text-sm font-medium hover:bg-red-50 hover:border-red-200 transition-colors">
+                        {r.reason_name}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setShowCustomReason(true)}
+                      className="w-full rounded-xl border-2 border-dashed border-gray-200 px-4 py-3 text-left text-sm text-gray-500 hover:bg-gray-50">
+                      Other (custom reason)...
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={voidRequest.reason}
+                    onChange={(e) => setVoidRequest({ ...voidRequest, reason: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && voidRequest.reason.trim()) {
+                        doVoidOrder(voidRequest.orderId, voidRequest.reason.trim())
+                      }
+                    }}
+                    autoFocus
+                    placeholder="Enter void reason..."
+                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none"
+                  />
+                )}
                 <div className="mt-4 flex gap-3">
-                  <button onClick={() => setVoidRequest(null)}
+                  <button onClick={() => { setVoidRequest(null); setShowCustomReason(false) }}
                     className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
                     Cancel
                   </button>
+                  {(showCustomReason || voidReasons.length === 0) && (
                   <button onClick={() => {
                     if (voidRequest.reason.trim()) {
                       doVoidOrder(voidRequest.orderId, voidRequest.reason.trim())
+                      setShowCustomReason(false)
                     }
                   }}
                     disabled={!voidRequest.reason.trim()}

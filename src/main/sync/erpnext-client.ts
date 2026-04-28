@@ -182,6 +182,11 @@ export class ERPNextClient {
     return this.callMethod('servepos.api.registry.get_promos', { pos_profile })
   }
 
+  async getVoidReasons(posProfile?: string): Promise<any[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_void_reasons', { pos_profile })
+  }
+
   async getPendingWaiterOrders(posProfile?: string): Promise<any[]> {
     const pos_profile = this.requireProfile(posProfile)
     return this.callMethod('servepos.api.registry.get_active_orders', {

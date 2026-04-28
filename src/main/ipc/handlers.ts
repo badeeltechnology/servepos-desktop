@@ -685,6 +685,7 @@ export function registerIpcHandlers(): void {
 
   // Promos
   ipcMain.handle('promos:list', () => db.getPromos())
+  ipcMain.handle('voidReasons:list', () => db.getVoidReasons())
 
   // Vouchers — validated and consumed via ERPNext
   ipcMain.handle('vouchers:validate', async (_e, code: string) => {

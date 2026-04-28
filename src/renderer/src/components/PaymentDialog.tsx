@@ -100,11 +100,11 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, processing,
     onComplete(capped, collectedBy || null, tipAmount || undefined)
   }
 
-  // Quick cash amounts — exact + QAR note denominations
+  // Quick cash amounts — exact + QAR note denominations (5, 10, 50, 100, 200, 500)
   const quickAmounts = [
     Math.ceil(grandTotal),
-    100, 200, 500
-  ].filter((v, i, a) => v >= grandTotal && a.indexOf(v) === i).slice(0, 4)
+    ...[5, 10, 50, 100, 200, 500].filter((n) => n >= grandTotal)
+  ].filter((v, i, a) => a.indexOf(v) === i).slice(0, 5)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">

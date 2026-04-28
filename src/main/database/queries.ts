@@ -814,6 +814,12 @@ export function getPromos(): any[] {
   return queryAll('SELECT * FROM promos WHERE enabled = 1 ORDER BY promo_name')
 }
 
+// ==================== Void Reasons ====================
+
+export function getVoidReasons(): any[] {
+  return queryAll('SELECT * FROM void_reasons WHERE enabled = 1 ORDER BY display_order')
+}
+
 // ==================== Setup Check ====================
 
 export function isSetupComplete(): boolean {

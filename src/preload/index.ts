@@ -176,6 +176,11 @@ const api = {
     list: () => ipcRenderer.invoke('promos:list')
   },
 
+  // Void Reasons
+  voidReasons: {
+    list: () => ipcRenderer.invoke('voidReasons:list')
+  },
+
   // Vouchers
   vouchers: {
     validate: (code: string) => ipcRenderer.invoke('vouchers:validate', code),

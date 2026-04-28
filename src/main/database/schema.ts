@@ -457,6 +457,16 @@ function createTables(): void {
     )
   `)
 
+  database.run(`
+    CREATE TABLE IF NOT EXISTS void_reasons (
+      name TEXT PRIMARY KEY,
+      reason_name TEXT NOT NULL,
+      display_order INTEGER DEFAULT 0,
+      enabled INTEGER DEFAULT 1,
+      synced_at TEXT
+    )
+  `)
+
   // Indexes
   const indexes = [
     'CREATE INDEX IF NOT EXISTS idx_items_group ON items(item_group)',
