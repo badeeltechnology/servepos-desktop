@@ -1146,6 +1146,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                 <p className="mb-4 text-center text-xs text-gray-500">Enter supervisor PIN to void this order</p>
                 <input
                   type="password"
+                  data-keyboard="numpad"
                   value={voidPin}
                   onChange={(e) => { setVoidPin(e.target.value); setVoidPinError('') }}
                   onKeyDown={async (e) => {
@@ -1205,6 +1206,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                 ) : (
                   <input
                     type="text"
+                    data-keyboard="full"
                     value={voidRequest.reason}
                     onChange={(e) => setVoidRequest({ ...voidRequest, reason: e.target.value })}
                     onKeyDown={(e) => {
@@ -1223,16 +1225,17 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                     Cancel
                   </button>
                   {(showCustomReason || voidReasons.length === 0) && (
-                  <button onClick={() => {
-                    if (voidRequest.reason.trim()) {
-                      doVoidOrder(voidRequest.orderId, voidRequest.reason.trim())
-                      setShowCustomReason(false)
-                    }
-                  }}
-                    disabled={!voidRequest.reason.trim()}
-                    className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">
-                    Void Order
-                  </button>
+                    <button onClick={() => {
+                      if (voidRequest.reason.trim()) {
+                        doVoidOrder(voidRequest.orderId, voidRequest.reason.trim())
+                        setShowCustomReason(false)
+                      }
+                    }}
+                      disabled={!voidRequest.reason.trim()}
+                      className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">
+                      Void Order
+                    </button>
+                  )}
                 </div>
               </>
             )}

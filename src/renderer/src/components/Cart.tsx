@@ -200,6 +200,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
           )}
           <input
             type="text"
+            data-keyboard="full"
             value={orderNotes}
             onChange={(e) => setOrderNotes(e.target.value)}
             placeholder="Order notes..."
@@ -374,6 +375,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                     <input
                       type="password"
                       inputMode="numeric"
+                      data-keyboard="numpad"
                       value={voucherInput}
                       onChange={(e) => { setVoucherInput(e.target.value.replace(/\D/g, '').slice(0, 6)); setVoucherError('') }}
                       placeholder="••••••"
@@ -512,6 +514,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
             <p className="mb-4 text-xs text-gray-500">Enter supervisor PIN to remove this item</p>
             <input
               type="password"
+              data-keyboard="numpad"
               value={removePin}
               onChange={(e) => { setRemovePin(e.target.value); setRemoveError('') }}
               onKeyDown={async (e) => {
@@ -572,6 +575,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
           <div className="w-96 rounded-2xl bg-white p-6 shadow-2xl">
             <h3 className="mb-3 text-lg font-bold">Special Instructions</h3>
             <textarea value={tempInstructions} onChange={(e) => setTempInstructions(e.target.value)}
+              data-keyboard="full"
               placeholder="e.g., No onions, allergic to nuts..."
               className="w-full resize-none rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" rows={3} autoFocus />
             <div className="mt-4 flex gap-3">
@@ -589,10 +593,10 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
             <h3 className="mb-4 text-lg font-bold">Item Discount</h3>
             <div className="space-y-3">
               <div><label className="mb-1 block text-xs font-semibold text-gray-500">Discount %</label>
-                <input type="number" value={itemDiscPct || ''} onChange={(e) => setItemDiscPct(parseFloat(e.target.value) || 0)}
+                <input type="number" data-keyboard="numpad" value={itemDiscPct || ''} onChange={(e) => setItemDiscPct(parseFloat(e.target.value) || 0)}
                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none" min={0} max={100} /></div>
               <div><label className="mb-1 block text-xs font-semibold text-gray-500">Fixed Amount</label>
-                <input type="number" value={itemDiscAmt || ''} onChange={(e) => setItemDiscAmt(parseFloat(e.target.value) || 0)}
+                <input type="number" data-keyboard="numpad" value={itemDiscAmt || ''} onChange={(e) => setItemDiscAmt(parseFloat(e.target.value) || 0)}
                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none" min={0} /></div>
             </div>
             {discountError && <p className="mt-2 text-sm text-red-500">{discountError}</p>}
@@ -611,13 +615,13 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
             <h3 className="mb-4 text-lg font-bold">Order Discount</h3>
             <div className="space-y-3">
               <div><label className="mb-1 block text-xs font-semibold text-gray-500">Discount %</label>
-                <input type="number" value={discPct || ''} onChange={(e) => setDiscPct(parseFloat(e.target.value) || 0)}
+                <input type="number" data-keyboard="numpad" value={discPct || ''} onChange={(e) => setDiscPct(parseFloat(e.target.value) || 0)}
                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none" min={0} max={100} /></div>
               <div><label className="mb-1 block text-xs font-semibold text-gray-500">Fixed Amount</label>
-                <input type="number" value={discAmt || ''} onChange={(e) => setDiscAmt(parseFloat(e.target.value) || 0)}
+                <input type="number" data-keyboard="numpad" value={discAmt || ''} onChange={(e) => setDiscAmt(parseFloat(e.target.value) || 0)}
                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none" min={0} /></div>
               <div><label className="mb-1 block text-xs font-semibold text-gray-500">Reason</label>
-                <input type="text" value={discReason} onChange={(e) => setDiscReason(e.target.value)}
+                <input type="text" data-keyboard="full" value={discReason} onChange={(e) => setDiscReason(e.target.value)}
                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none" placeholder="Manager discount" /></div>
             </div>
             {discountError && <p className="mt-2 text-sm text-red-500">{discountError}</p>}

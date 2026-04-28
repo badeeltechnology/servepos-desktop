@@ -198,6 +198,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
           <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
+            data-keyboard="full"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={activeGroup ? `Search in ${activeGroup}...` : 'Search all items...'}

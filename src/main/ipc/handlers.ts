@@ -683,6 +683,140 @@ export function registerIpcHandlers(): void {
     }
   })
 
+  // ==================== Reports ====================
+  ipcMain.handle('reports:todaySummary', (_e, date?: string) => {
+    const database = getDb()
+    const filterDate = date || new Date().toLocaleDateString('en-CA') // YYYY-MM-DD local
+    const stmt = database.prepare(
+      `SELECT
+        COALESCE(SUM(CASE WHEN status = 'Completed' THEN grand_total ELSE 0 END), 0) as totalSales,
+        SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as orderCount,
+        CASE WHEN SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) > 0
+          THEN COALESCE(SUM(CASE WHEN status = 'Completed' THEN grand_total ELSE 0 END), 0)
+               / SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END)
+          ELSE 0 END as avgOrderValue,
+        SUM(CASE WHEN status = 'Void' THEN 1 ELSE 0 END) as voidCount,
+        COALESCE(SUM(CASE WHEN status = 'Void' THEN grand_total ELSE 0 END), 0) as voidAmount
+       FROM orders
+       WHERE date(created_at, 'localtime') = ?`
+    )
+    stmt.bind([filterDate])
+    const row = stmt.step() ? stmt.getAsObject() : { totalSales: 0, orderCount: 0, avgOrderValue: 0, voidCount: 0, voidAmount: 0 }
+    stmt.free()
+    return row
+  })
+
+  ipcMain.handle('reports:bestSellingItems', (_e, date?: string, limit?: number) => {
+    const database = getDb()
+    const filterDate = date || new Date().toLocaleDateString('en-CA')
+    const maxItems = limit || 10
+    const stmt = database.prepare(
+      `SELECT oi.item_name, SUM(oi.qty) as qty_sold, SUM(oi.amount) as revenue
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       WHERE o.status = 'Completed' AND date(o.created_at, 'localtime') = ?
+       GROUP BY oi.item_code
+       ORDER BY qty_sold DESC
+       LIMIT ?`
+    )
+    stmt.bind([filterDate, maxItems])
+    const rows: any[] = []
+    while (stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
+
+  ipcMain.handle('reports:categorySales', (_e, date?: string) => {
+    const database = getDb()
+    const filterDate = date || new Date().toLocaleDateString('en-CA')
+    const stmt = database.prepare(
+      `SELECT COALESCE(i.item_group, 'Uncategorized') as item_group,
+              SUM(oi.qty) as qty_sold, SUM(oi.amount) as revenue
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       LEFT JOIN items i ON i.item_code = oi.item_code
+       WHERE o.status = 'Completed' AND date(o.created_at, 'localtime') = ?
+       GROUP BY i.item_group
+       ORDER BY revenue DESC`
+    )
+    stmt.bind([filterDate])
+    const rows: any[] = []
+    while (stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
+
+  ipcMain.handle('reports:paymentBreakdown', (_e, date?: string) => {
+    const database = getDb()
+    const filterDate = date || new Date().toLocaleDateString('en-CA')
+    const stmt = database.prepare(
+      `SELECT op.payment_method, SUM(op.amount) as total, COUNT(*) as count
+       FROM order_payments op
+       JOIN orders o ON o.id = op.order_id
+       WHERE o.status = 'Completed' AND date(o.created_at, 'localtime') = ?
+       GROUP BY op.payment_method
+       ORDER BY total DESC`
+    )
+    stmt.bind([filterDate])
+    const rows: any[] = []
+    while (stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
+
+  ipcMain.handle('reports:hourlySales', (_e, date?: string) => {
+    const database = getDb()
+    const filterDate = date || new Date().toLocaleDateString('en-CA')
+    const stmt = database.prepare(
+      `SELECT strftime('%H', created_at, 'localtime') as hour,
+              COUNT(*) as orders, SUM(grand_total) as revenue
+       FROM orders
+       WHERE status = 'Completed' AND date(created_at, 'localtime') = ?
+       GROUP BY hour
+       ORDER BY hour`
+    )
+    stmt.bind([filterDate])
+    const rows: any[] = []
+    while (stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
+
+  ipcMain.handle('reports:voidReport', (_e, date?: string) => {
+    const database = getDb()
+    const filterDate = date || new Date().toLocaleDateString('en-CA')
+    const stmt = database.prepare(
+      `SELECT order_number, void_reason, grand_total, cashier_name, created_at
+       FROM orders
+       WHERE status = 'Void' AND date(created_at, 'localtime') = ?
+       ORDER BY created_at DESC`
+    )
+    stmt.bind([filterDate])
+    const rows: any[] = []
+    while (stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
+
+  ipcMain.handle('reports:waiterPerformance', (_e, date?: string) => {
+    const database = getDb()
+    const filterDate = date || new Date().toLocaleDateString('en-CA')
+    const stmt = database.prepare(
+      `SELECT COALESCE(waiter_name, 'No Waiter') as waiter_name,
+              COUNT(*) as orders, SUM(grand_total) as revenue,
+              COALESCE(SUM(tip_amount), 0) as tips
+       FROM orders
+       WHERE status = 'Completed' AND date(created_at, 'localtime') = ?
+       GROUP BY COALESCE(waiter_name, 'No Waiter')
+       ORDER BY revenue DESC`
+    )
+    stmt.bind([filterDate])
+    const rows: any[] = []
+    while (stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
+
   // Promos
   ipcMain.handle('promos:list', () => db.getPromos())
   ipcMain.handle('voidReasons:list', () => db.getVoidReasons())

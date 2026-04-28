@@ -211,6 +211,17 @@ const api = {
     import: () => ipcRenderer.invoke('backup:import')
   },
 
+  // Reports
+  reports: {
+    todaySummary: (date?: string) => ipcRenderer.invoke('reports:todaySummary', date),
+    bestSellingItems: (date?: string, limit?: number) => ipcRenderer.invoke('reports:bestSellingItems', date, limit),
+    categorySales: (date?: string) => ipcRenderer.invoke('reports:categorySales', date),
+    paymentBreakdown: (date?: string) => ipcRenderer.invoke('reports:paymentBreakdown', date),
+    hourlySales: (date?: string) => ipcRenderer.invoke('reports:hourlySales', date),
+    voidReport: (date?: string) => ipcRenderer.invoke('reports:voidReport', date),
+    waiterPerformance: (date?: string) => ipcRenderer.invoke('reports:waiterPerformance', date)
+  },
+
   // Sync
   sync: {
     run: () => ipcRenderer.invoke('sync:run'),

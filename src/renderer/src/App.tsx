@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import AdminPanel from './pages/AdminPanel'
 import POS from './pages/POS'
 import CoordinatorScreen from './pages/CoordinatorScreen'
+import { KeyboardProvider } from './components/keyboard'
 
 function App() {
   const [loading, setLoading] = useState(true)
@@ -100,11 +101,19 @@ function App() {
 
   // Coordinator role → coordinator screen
   if (user.role === 'coordinator') {
-    return <CoordinatorScreen />
+    return (
+      <KeyboardProvider>
+        <CoordinatorScreen />
+      </KeyboardProvider>
+    )
   }
 
   // Cashier / Supervisor → POS
-  return <POS />
+  return (
+    <KeyboardProvider>
+      <POS />
+    </KeyboardProvider>
+  )
 }
 
 export default App

@@ -141,6 +141,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
                   <span className="text-right font-mono text-sm font-semibold text-gray-700">{cashExp.toFixed(2)}</span>
                   <input
                     type="number"
+                    data-keyboard="numpad"
                     value={closingBalances['Cash'] || ''}
                     onChange={(e) => setClosingBalances({ ...closingBalances, Cash: parseFloat(e.target.value) || 0 })}
                     className="w-full rounded-lg border-2 border-gray-200 px-3 py-2 text-right font-mono text-sm font-bold focus:border-primary focus:outline-none"
@@ -245,6 +246,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
             <textarea
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
+              data-keyboard="full"
               placeholder="Any notes about this shift — discrepancies, incidents, etc."
               className="w-full resize-none rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none"
               rows={3}

@@ -69,6 +69,7 @@ export default function OpenShift({ userName, userId, onOpen }: Props) {
             </div>
             <input
               type="number"
+              data-keyboard="numpad"
               value={balances['Cash'] || ''}
               onChange={(e) => setBalances({ ...balances, Cash: parseFloat(e.target.value) || 0 })}
               className="w-40 rounded-lg border border-gray-200 px-3 py-2.5 text-right font-mono text-base focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"

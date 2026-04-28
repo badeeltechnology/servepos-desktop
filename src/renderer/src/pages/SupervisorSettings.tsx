@@ -1286,163 +1286,274 @@ function ShiftHistory() {
 
 // ==================== Reports Dashboard ====================
 function ReportsDashboard() {
-  const [orders, setOrders] = useState<any[]>([])
-  const [sessions, setSessions] = useState<any[]>([])
-  const [dateRange, setDateRange] = useState<'today' | 'week' | 'month'>('today')
+  const [date, setDate] = useState(() => new Date().toLocaleDateString('en-CA'))
+  const [loading, setLoading] = useState(true)
+  const [summary, setSummary] = useState<any>({ totalSales: 0, orderCount: 0, avgOrderValue: 0, voidCount: 0, voidAmount: 0 })
+  const [bestItems, setBestItems] = useState<any[]>([])
+  const [categories, setCategories] = useState<any[]>([])
+  const [payments, setPayments] = useState<any[]>([])
+  const [hourly, setHourly] = useState<any[]>([])
+  const [voids, setVoids] = useState<any[]>([])
+  const [waiters, setWaiters] = useState<any[]>([])
 
-  useEffect(() => { loadData() }, [dateRange])
-
-  async function loadData() {
-    const now = new Date()
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    const allOrders = await window.api.orders.getAll({ date: today })
-    setOrders(allOrders)
-    const allSessions = await window.api.sessions.getAll(20)
-    setSessions(allSessions)
+  async function loadAll(d: string) {
+    setLoading(true)
+    const [s, bi, cs, pb, hs, vr, wp] = await Promise.all([
+      window.api.reports.todaySummary(d),
+      window.api.reports.bestSellingItems(d, 10),
+      window.api.reports.categorySales(d),
+      window.api.reports.paymentBreakdown(d),
+      window.api.reports.hourlySales(d),
+      window.api.reports.voidReport(d),
+      window.api.reports.waiterPerformance(d)
+    ])
+    setSummary(s)
+    setBestItems(bi)
+    setCategories(cs)
+    setPayments(pb)
+    setHourly(hs)
+    setVoids(vr)
+    setWaiters(wp)
+    setLoading(false)
   }
 
-  const completedOrders = orders.filter((o) => o.status === 'Completed')
-  const voidedOrders = orders.filter((o) => o.status === 'Void')
-  const totalSales = completedOrders.reduce((s, o) => s + (o.grand_total || 0), 0)
-  const totalOrders = completedOrders.length
-  const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0
+  useEffect(() => { loadAll(date) }, [date])
 
-  // Top items
-  const [topItems, setTopItems] = useState<{ name: string; qty: number; amount: number }[]>([])
-  useEffect(() => {
-    async function loadTopItems() {
-      const itemCounts: Record<string, { name: string; qty: number; amount: number }> = {}
-      for (const order of completedOrders) {
-        const items = await window.api.orderItems.get(order.id)
-        for (const item of items) {
-          if (!itemCounts[item.item_code]) {
-            itemCounts[item.item_code] = { name: item.item_name, qty: 0, amount: 0 }
-          }
-          itemCounts[item.item_code].qty += item.qty
-          itemCounts[item.item_code].amount += item.amount
-        }
-      }
-      const sorted = Object.values(itemCounts).sort((a, b) => b.qty - a.qty).slice(0, 10)
-      setTopItems(sorted)
-    }
-    if (completedOrders.length > 0) loadTopItems()
-  }, [completedOrders.length])
+  const fmt = (n: number) => (n || 0).toFixed(2)
+  const maxCatRevenue = categories.length > 0 ? Math.max(...categories.map((c) => c.revenue || 0)) : 0
+  const paymentColors: Record<string, string> = { Cash: 'bg-emerald-500', Card: 'bg-blue-500', Mobile: 'bg-purple-500' }
 
-  // Payment method breakdown
-  const [paymentBreakdown, setPaymentBreakdown] = useState<Record<string, number>>({})
-  useEffect(() => {
-    async function loadPayments() {
-      const breakdown: Record<string, number> = {}
-      for (const order of completedOrders) {
-        const payments = await window.api.orderPayments.get(order.id)
-        for (const p of payments) {
-          breakdown[p.payment_method] = (breakdown[p.payment_method] || 0) + p.amount
-        }
-      }
-      setPaymentBreakdown(breakdown)
-    }
-    if (completedOrders.length > 0) loadPayments()
-  }, [completedOrders.length])
-
-  // Hourly sales
-  const hourlySales: Record<string, number> = {}
-  for (const order of completedOrders) {
-    const hour = new Date(order.created_at + 'Z').getHours()
-    const label = `${String(hour).padStart(2, '0')}:00`
-    hourlySales[label] = (hourlySales[label] || 0) + (order.grand_total || 0)
+  // Build full hour range 06–23
+  const hourMap: Record<string, { orders: number; revenue: number }> = {}
+  for (let h = 6; h <= 23; h++) hourMap[String(h).padStart(2, '0')] = { orders: 0, revenue: 0 }
+  for (const h of hourly) {
+    hourMap[h.hour] = { orders: h.orders, revenue: h.revenue }
   }
+  const hourEntries = Object.entries(hourMap).sort(([a], [b]) => a.localeCompare(b))
+  const maxHourRevenue = Math.max(...hourEntries.map(([, v]) => v.revenue), 1)
 
   return (
-    <div className="max-w-4xl">
-      <h2 className="mb-4 text-xl font-bold">Dashboard</h2>
-
-      {/* Summary cards */}
-      <div className="mb-6 grid grid-cols-4 gap-3">
-        <div className="rounded-xl bg-white border p-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase">Total Sales</p>
-          <p className="mt-1 text-2xl font-bold text-primary">{totalSales.toFixed(2)}</p>
-        </div>
-        <div className="rounded-xl bg-white border p-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase">Orders</p>
-          <p className="mt-1 text-2xl font-bold text-gray-800">{totalOrders}</p>
-        </div>
-        <div className="rounded-xl bg-white border p-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase">Avg Order Value</p>
-          <p className="mt-1 text-2xl font-bold text-gray-800">{avgOrderValue.toFixed(2)}</p>
-        </div>
-        <div className="rounded-xl bg-white border p-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase">Voided</p>
-          <p className="mt-1 text-2xl font-bold text-red-500">{voidedOrders.length}</p>
+    <div className="w-full">
+      {/* Header */}
+      <div className="mb-5 flex items-center justify-between">
+        <h2 className="text-xl font-bold">Reports Dashboard</h2>
+        <div className="flex items-center gap-3">
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <button
+            onClick={() => loadAll(date)}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        {/* Payment breakdown */}
-        <div className="rounded-xl border bg-white p-5">
-          <h3 className="mb-3 text-sm font-bold text-gray-500 uppercase">Payment Methods</h3>
-          {Object.entries(paymentBreakdown).length === 0 ? (
-            <p className="text-sm text-gray-400">No data</p>
-          ) : (
-            <div className="space-y-2">
-              {Object.entries(paymentBreakdown).map(([method, amount]) => (
-                <div key={method} className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{method}</span>
-                  <div className="flex items-center gap-3">
-                    <div className="h-2 w-32 rounded-full bg-gray-100 overflow-hidden">
-                      <div className="h-full rounded-full bg-primary" style={{ width: `${totalSales > 0 ? (amount / totalSales) * 100 : 0}%` }} />
+      {/* Summary Cards */}
+      <div className="mb-5 grid grid-cols-4 gap-3">
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-xs font-bold uppercase text-gray-400 mb-1">Total Sales</p>
+          <p className="text-2xl font-bold text-primary">{fmt(summary.totalSales)}</p>
+        </div>
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-xs font-bold uppercase text-gray-400 mb-1">Orders</p>
+          <p className="text-2xl font-bold text-gray-800">{summary.orderCount || 0}</p>
+        </div>
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-xs font-bold uppercase text-gray-400 mb-1">Avg Order Value</p>
+          <p className="text-2xl font-bold text-gray-800">{fmt(summary.avgOrderValue)}</p>
+        </div>
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <p className="text-xs font-bold uppercase text-gray-400 mb-1">Voids</p>
+          <p className="text-2xl font-bold text-red-500">{summary.voidCount || 0}</p>
+          {summary.voidAmount > 0 && <p className="text-xs text-red-400 mt-0.5">{fmt(summary.voidAmount)} lost</p>}
+        </div>
+      </div>
+
+      {/* Two column layout */}
+      <div className="grid grid-cols-2 gap-4 mb-5">
+        {/* Left column */}
+        <div className="space-y-4">
+          {/* Best Selling Items */}
+          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+            <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Best Selling Items</h3>
+            {bestItems.length === 0 ? (
+              <p className="text-sm text-gray-400">No data</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-gray-400">
+                    <th className="pb-2">#</th>
+                    <th className="pb-2">Item</th>
+                    <th className="pb-2 text-right">Qty</th>
+                    <th className="pb-2 text-right">Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bestItems.map((item, idx) => (
+                    <tr key={item.item_name} className={idx % 2 === 1 ? 'bg-gray-50' : ''}>
+                      <td className="py-1.5 text-gray-400">{idx + 1}</td>
+                      <td className="py-1.5 font-medium">{item.item_name}</td>
+                      <td className="py-1.5 text-right">{item.qty_sold}</td>
+                      <td className="py-1.5 text-right font-semibold">{fmt(item.revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Void Report */}
+          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+            <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Void Report</h3>
+            {voids.length === 0 ? (
+              <p className="text-sm text-gray-400">No voided orders</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-gray-400">
+                    <th className="pb-2">Order #</th>
+                    <th className="pb-2">Reason</th>
+                    <th className="pb-2 text-right">Amount</th>
+                    <th className="pb-2">Cashier</th>
+                    <th className="pb-2">Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {voids.map((v, idx) => (
+                    <tr key={v.order_number} className={idx % 2 === 1 ? 'bg-gray-50' : ''}>
+                      <td className="py-1.5 font-mono text-xs">{v.order_number}</td>
+                      <td className="py-1.5 text-xs max-w-[120px] truncate">{v.void_reason || '-'}</td>
+                      <td className="py-1.5 text-right font-semibold text-red-500">{fmt(v.grand_total)}</td>
+                      <td className="py-1.5 text-xs text-gray-500">{v.cashier_name || '-'}</td>
+                      <td className="py-1.5 text-xs text-gray-400">
+                        {v.created_at ? new Date(v.created_at + 'Z').toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Right column */}
+        <div className="space-y-4">
+          {/* Payment Breakdown */}
+          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+            <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Payment Breakdown</h3>
+            {payments.length === 0 ? (
+              <p className="text-sm text-gray-400">No data</p>
+            ) : (
+              <div className="space-y-3">
+                {payments.map((p) => {
+                  const colorClass = paymentColors[p.payment_method] || 'bg-gray-400'
+                  return (
+                    <div key={p.payment_method}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-block h-2.5 w-2.5 rounded-full ${colorClass}`} />
+                          <span className="text-sm font-medium">{p.payment_method}</span>
+                          <span className="text-xs text-gray-400">({p.count})</span>
+                        </div>
+                        <span className="text-sm font-bold">{fmt(p.total)}</span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                        <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${summary.totalSales > 0 ? (p.total / summary.totalSales) * 100 : 0}%` }} />
+                      </div>
                     </div>
-                    <span className="text-sm font-bold w-20 text-right">{amount.toFixed(2)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
 
-        {/* Top selling items */}
-        <div className="rounded-xl border bg-white p-5">
-          <h3 className="mb-3 text-sm font-bold text-gray-500 uppercase">Top Items</h3>
-          {topItems.length === 0 ? (
-            <p className="text-sm text-gray-400">No data</p>
-          ) : (
-            <div className="space-y-2">
-              {topItems.map((item, idx) => (
-                <div key={item.name} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[10px] font-bold text-gray-500">{idx + 1}</span>
-                    <span className="text-sm font-medium">{item.name}</span>
+          {/* Category Sales */}
+          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+            <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Category Sales</h3>
+            {categories.length === 0 ? (
+              <p className="text-sm text-gray-400">No data</p>
+            ) : (
+              <div className="space-y-2.5">
+                {categories.map((c) => (
+                  <div key={c.item_group}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium">{c.item_group}</span>
+                      <div className="text-right">
+                        <span className="text-sm font-bold">{fmt(c.revenue)}</span>
+                        <span className="ml-2 text-xs text-gray-400">x{c.qty_sold}</span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                      <div className="h-full rounded-full bg-primary/70" style={{ width: `${maxCatRevenue > 0 ? (c.revenue / maxCatRevenue) * 100 : 0}%` }} />
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-sm font-bold">{item.amount.toFixed(2)}</span>
-                    <span className="ml-2 text-xs text-gray-400">x{item.qty}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-        {/* Hourly sales */}
-        <div className="rounded-xl border bg-white p-5 col-span-2">
-          <h3 className="mb-3 text-sm font-bold text-gray-500 uppercase">Sales by Hour</h3>
-          {Object.keys(hourlySales).length === 0 ? (
-            <p className="text-sm text-gray-400">No data</p>
-          ) : (
-            <div className="flex items-end gap-1 h-32">
-              {Object.entries(hourlySales).sort().map(([hour, amount]) => {
-                const maxSale = Math.max(...Object.values(hourlySales))
-                const height = maxSale > 0 ? (amount / maxSale) * 100 : 0
-                return (
-                  <div key={hour} className="flex flex-1 flex-col items-center gap-1">
-                    <span className="text-[9px] font-bold text-gray-500">{amount.toFixed(0)}</span>
-                    <div className="w-full rounded-t bg-primary/80" style={{ height: `${height}%`, minHeight: '2px' }} />
-                    <span className="text-[9px] text-gray-400">{hour}</span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+          {/* Waiter Performance */}
+          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+            <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Waiter Performance</h3>
+            {waiters.length === 0 ? (
+              <p className="text-sm text-gray-400">No data</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-gray-400">
+                    <th className="pb-2">Waiter</th>
+                    <th className="pb-2 text-right">Orders</th>
+                    <th className="pb-2 text-right">Revenue</th>
+                    <th className="pb-2 text-right">Tips</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {waiters.map((w, idx) => (
+                    <tr key={w.waiter_name} className={idx % 2 === 1 ? 'bg-gray-50' : ''}>
+                      <td className="py-1.5 font-medium">{w.waiter_name}</td>
+                      <td className="py-1.5 text-right">{w.orders}</td>
+                      <td className="py-1.5 text-right font-semibold">{fmt(w.revenue)}</td>
+                      <td className="py-1.5 text-right text-emerald-600">{fmt(w.tips)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
+      </div>
+
+      {/* Hourly Sales — full width bar chart */}
+      <div className="rounded-2xl border bg-white p-5 shadow-sm">
+        <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Hourly Sales</h3>
+        {hourEntries.every(([, v]) => v.revenue === 0) ? (
+          <p className="text-sm text-gray-400">No data</p>
+        ) : (
+          <div className="flex items-end gap-1" style={{ height: '140px' }}>
+            {hourEntries.map(([hour, data]) => {
+              const pct = maxHourRevenue > 0 ? (data.revenue / maxHourRevenue) * 100 : 0
+              return (
+                <div key={hour} className="flex flex-1 flex-col items-center gap-1 h-full justify-end">
+                  {data.revenue > 0 && (
+                    <span className="text-[8px] font-bold text-gray-500">{data.revenue.toFixed(0)}</span>
+                  )}
+                  <div
+                    className="w-full rounded-t bg-primary/80 transition-all"
+                    style={{ height: `${pct}%`, minHeight: data.revenue > 0 ? '4px' : '0px' }}
+                  />
+                  <span className="text-[9px] text-gray-400">{hour}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
