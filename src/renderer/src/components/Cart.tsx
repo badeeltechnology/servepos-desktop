@@ -440,7 +440,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                     </button>
                     {showPrintMenu && (
                       <div className="absolute bottom-full right-0 z-30 mb-1 w-48 rounded-xl border bg-white shadow-lg overflow-hidden">
-                        <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name, true); const w = await window.api.print.waiterCopy(activeOrderId); alert(r?.success && w?.success ? 'KOT + Waiter copy printed' : 'Print error') }}
+                        <button onClick={async () => { setShowPrintMenu(false); const cd = { percent: orderDiscountPercent, amount: orderDiscountAmount, promoName: promoName || undefined }; const r = await window.api.print.kots(activeOrderId, user?.name, true); const w = await window.api.print.waiterCopy(activeOrderId, cd); alert(r?.success && w?.success ? 'KOT + Waiter copy printed' : 'Print error') }}
                           className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
                           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> KOT + Waiter
                         </button>
@@ -448,7 +448,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                           className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
                           <span className="h-1.5 w-1.5 rounded-full bg-orange-500" /> Reprint KOT
                         </button>
-                        <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.waiterCopy(activeOrderId); alert(r?.success ? 'Printed' : 'Failed') }}
+                        <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.waiterCopy(activeOrderId, { percent: orderDiscountPercent, amount: orderDiscountAmount, promoName: promoName || undefined }); alert(r?.success ? 'Printed' : 'Failed') }}
                           className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
                           <span className="h-1.5 w-1.5 rounded-full bg-blue-500" /> Waiter Copy
                         </button>

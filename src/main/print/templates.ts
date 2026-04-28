@@ -396,6 +396,9 @@ interface WaiterCopyData {
     modifiers?: { name: string; price: number }[]
     specialInstructions?: string
   }[]
+  subtotal: number
+  discountAmount: number
+  promoName?: string
   grandTotal: number
   orderNotes?: string
 }
@@ -459,6 +462,14 @@ export function generateWaiterCopy(data: WaiterCopyData): string {
   }
 
   lines.push(getSeparatorLine())
+
+  // Subtotal + discount
+  lines.push(CMD.ALIGN_LEFT)
+  lines.push(formatLine('Subtotal:', fmtAmt(data.subtotal)))
+  if (data.discountAmount > 0) {
+    const discLabel = data.promoName ? `Discount (${data.promoName}):` : 'Discount:'
+    lines.push(formatLine(discLabel, `-${fmtAmt(data.discountAmount)}`))
+  }
 
   // Total
   lines.push(CMD.ALIGN_CENTER)

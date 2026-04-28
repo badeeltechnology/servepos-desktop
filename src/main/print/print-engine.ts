@@ -460,7 +460,7 @@ export async function printAmendmentKot(orderId: string, amendments: { action: s
   return result
 }
 
-export async function printWaiterCopy(orderId: string): Promise<{ success: boolean; error?: string }> {
+export async function printWaiterCopy(orderId: string, cartDiscount?: { percent: number; amount: number; promoName?: string }): Promise<{ success: boolean; error?: string }> {
   const db = getDb()
 
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
@@ -480,9 +480,12 @@ export async function printWaiterCopy(orderId: string): Promise<{ success: boole
   const printer = printers.find((p) => p.id === receiptRoute.printer_id)
   if (!printer) return { success: false, error: 'Receipt printer not found' }
 
-  const config = getAllReceiptConfig()
-  const taxEnabled = config.tax_enabled === '1'
-  const taxRate = taxEnabled ? parseFloat(config.tax_rate || '0') : 0
+  const itemsSubtotal = items.reduce((s: number, i: any) => s + i.amount, 0)
+  const subtotal = itemsSubtotal || order.subtotal || 0
+  const discPct = cartDiscount?.percent ?? order.discount_percent ?? 0
+  const discAmt = cartDiscount?.amount ?? order.discount_amount ?? 0
+  const totalDiscount = subtotal * (discPct / 100) + discAmt
+  const afterDiscount = Math.max(0, subtotal - totalDiscount)
 
   const waiterData = {
     orderNumber: order.order_number,
@@ -503,7 +506,10 @@ export async function printWaiterCopy(orderId: string): Promise<{ success: boole
         specialInstructions: item.special_instructions
       }
     }),
-    grandTotal: items.reduce((s: number, i: any) => s + i.amount, 0) || order.grand_total || 0
+    subtotal,
+    discountAmount: totalDiscount,
+    promoName: cartDiscount?.promoName ?? order.promo_name ?? undefined,
+    grandTotal: afterDiscount
   }
 
   const copy = generateWaiterCopy(waiterData)
