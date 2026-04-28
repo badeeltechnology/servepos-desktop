@@ -437,7 +437,7 @@ export default function POS() {
     }
 
     setActiveOrderId(orderId)
-    setIsOrderPlaced(order.kot_printed === 1)
+    setIsOrderPlaced(!!order.kot_printed)
     placedItemCount.current = items.length
   }, [cart, activeOrderId, handleHoldOrder])
 
