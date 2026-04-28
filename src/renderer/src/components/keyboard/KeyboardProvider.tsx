@@ -20,6 +20,7 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
   const [numpadPos, setNumpadPos] = useState<{ top: number; left: number } | null>(null)
   const activeInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
   const keyboardRef = useRef<HTMLDivElement>(null)
+  const dragState = useRef<{ startX: number; startY: number; origLeft: number; origTop: number } | null>(null)
 
   const hideKeyboard = useCallback(() => {
     if (activeInputRef.current) {
@@ -171,15 +172,57 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
+  function handleDragStart(e: React.MouseEvent | React.TouchEvent) {
+    if (!numpadPos) return
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    dragState.current = { startX: clientX, startY: clientY, origLeft: numpadPos.left, origTop: numpadPos.top }
+
+    function onMove(ev: MouseEvent | TouchEvent) {
+      if (!dragState.current) return
+      const cx = 'touches' in ev ? ev.touches[0].clientX : ev.clientX
+      const cy = 'touches' in ev ? ev.touches[0].clientY : ev.clientY
+      const dx = cx - dragState.current.startX
+      const dy = cy - dragState.current.startY
+      setNumpadPos({
+        left: Math.max(0, Math.min(window.innerWidth - 240, dragState.current.origLeft + dx)),
+        top: Math.max(0, Math.min(window.innerHeight - 100, dragState.current.origTop + dy))
+      })
+    }
+
+    function onEnd() {
+      dragState.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onEnd)
+      document.removeEventListener('touchmove', onMove)
+      document.removeEventListener('touchend', onEnd)
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onEnd)
+    document.addEventListener('touchmove', onMove)
+    document.addEventListener('touchend', onEnd)
+  }
+
   const keyboard = keyboardType && createPortal(
     keyboardType === 'numpad' && numpadPos ? (
       <div
         ref={keyboardRef}
-        className="fixed z-[9999] rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl"
+        className="fixed z-[9999] rounded-2xl border border-gray-200 bg-white shadow-2xl"
         style={{ top: numpadPos.top, left: numpadPos.left, width: 240 }}
-        onMouseDown={(e) => e.preventDefault()}
+        onMouseDown={(e) => { if ((e.target as HTMLElement).closest('[data-drag-handle]')) return; e.preventDefault() }}
       >
-        <NumPad onKey={handleKey} />
+        <div
+          data-drag-handle
+          className="flex cursor-grab items-center justify-center rounded-t-2xl bg-gray-100 py-1.5 active:cursor-grabbing"
+          onMouseDown={(e) => { e.preventDefault(); handleDragStart(e) }}
+          onTouchStart={handleDragStart}
+        >
+          <div className="h-1 w-10 rounded-full bg-gray-300" />
+        </div>
+        <div className="p-3 pt-2">
+          <NumPad onKey={handleKey} />
+        </div>
       </div>
     ) : (
       <div
