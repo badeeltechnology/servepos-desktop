@@ -748,6 +748,7 @@ function runMigrations(): void {
     ['session_id', 'TEXT'],
     ['promo_name', 'TEXT'],
     ['voucher_code', 'TEXT'],
+    ['tip_amount', 'REAL DEFAULT 0'],
   ]
   for (const [col, type] of ordersCols) {
     if (!hasColumn('orders', col)) {

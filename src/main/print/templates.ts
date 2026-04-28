@@ -65,6 +65,7 @@ interface ReceiptData {
   waiterName?: string
   promoName?: string
   orderNotes?: string
+  tipAmount?: number
 }
 
 export function generateReceipt(data: ReceiptData): string {
@@ -196,6 +197,9 @@ function generateReceiptClassic(data: ReceiptData, config: Record<string, string
   }
   if (data.change > 0) {
     lines.push(formatLine('Change:', fmtAmt(data.change)))
+  }
+  if (data.tipAmount && data.tipAmount > 0) {
+    lines.push(formatLine('Tip:', fmtAmt(data.tipAmount)))
   }
   if (data.waiterName) {
     lines.push(formatLine('Waiter:', data.waiterName))
@@ -350,6 +354,9 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
   }
   if (data.change > 0) {
     lines.push(CMD.BOLD_ON + formatLine('  Change', fmtAmt(data.change)) + CMD.BOLD_OFF)
+  }
+  if (data.tipAmount && data.tipAmount > 0) {
+    lines.push(formatLine('  Tip', fmtAmt(data.tipAmount)))
   }
   if (data.waiterName) {
     lines.push(formatLine('  Waiter', data.waiterName))

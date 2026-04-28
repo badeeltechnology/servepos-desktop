@@ -619,8 +619,9 @@ function GridCard({ order, onSelect, isSelected }: { order: ActiveOrder; onSelec
       {order.waiter_name && (
         <div className="text-xs text-gray-500">Waiter: {order.waiter_name}</div>
       )}
-      <div className="mt-1 text-[10px] text-gray-400">
-        {order.item_count} items | {order.order_type}
+      <div className="mt-1 flex items-center justify-between text-[10px] text-gray-400">
+        <span>{order.item_count} items | {order.order_type}</span>
+        <span>{new Date(order.created_at + 'Z').toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
       </div>
     </button>
   )
@@ -645,7 +646,10 @@ function ListRow({ order, onSelect, onUpdateStatus, loading }: {
           {config.label}
         </span>
       </td>
-      <td className="px-4 py-3 text-xs text-gray-500">{formatElapsed(elapsed)}</td>
+      <td className="px-4 py-3 text-xs text-gray-500">
+        {new Date(order.created_at + 'Z').toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+        <span className="ml-1 text-gray-400">({formatElapsed(elapsed)})</span>
+      </td>
       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
         {(order.status === 'Open' || order.status === 'Hold' || order.status === 'Preparing') && (
           <button disabled={loading} onClick={() => onUpdateStatus(order.id, 'Ready to Serve')} className="rounded-lg bg-green-600 px-3 py-1 text-[10px] font-bold text-white hover:bg-green-700 disabled:opacity-50">

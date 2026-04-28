@@ -1,4 +1,4 @@
-import { getDb, saveDatabase } from './schema'
+import { getDb, saveDatabase, saveDatabaseSync } from './schema'
 import { v4 as uuidv4 } from 'uuid'
 import bcrypt from 'bcryptjs'
 
@@ -33,11 +33,18 @@ function queryOne(sql: string, params: any[] = []): any | null {
   return row
 }
 
-// Helper to run an INSERT/UPDATE/DELETE
+// Helper to run an INSERT/UPDATE/DELETE (debounced save — for non-critical ops)
 function execute(sql: string, params: any[] = []): void {
   const db = getDb()
   db.run(sql, sanitizeParams(params))
   saveDatabase()
+}
+
+// Helper for critical operations — flushes to disk immediately
+function executeSync(sql: string, params: any[] = []): void {
+  const db = getDb()
+  db.run(sql, sanitizeParams(params))
+  saveDatabaseSync()
 }
 
 // ==================== Config ====================
@@ -297,7 +304,7 @@ export function createOrder(data: {
   const id = uuidv4()
   const orderNumber = generateOrderNumber()
 
-  execute(
+  executeSync(
     `INSERT INTO orders (id, order_number, order_type, table_name, room, guests, cashier_id, cashier_name, session_id, waiter_id, waiter_name)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, orderNumber, data.orderType, data.tableName ?? null, data.room ?? null, data.guests ?? null, data.cashierId, data.cashierName, data.sessionId ?? null, data.waiterId ?? null, data.waiterName ?? null]
@@ -340,8 +347,8 @@ export function updateOrder(id: string, updates: Record<string, any>): boolean {
     grandTotal: 'grand_total', voidReason: 'void_reason', kotPrinted: 'kot_printed',
     completedAt: 'completed_at', syncStatus: 'sync_status', syncError: 'sync_error',
     erpnextDocname: 'erpnext_docname', waiterId: 'waiter_id', waiterName: 'waiter_name',
-    promoName: 'promo_name', voucherCode: 'voucher_code', invoicePrinted: 'invoice_printed',
-    waiterOrderName: 'waiter_order_name', orderNotes: 'order_notes'
+    promoName: 'promo_name', voucherCode: 'voucher_code', tipAmount: 'tip_amount',
+    invoicePrinted: 'invoice_printed', waiterOrderName: 'waiter_order_name', orderNotes: 'order_notes'
   }
 
   const sets: string[] = []
@@ -354,13 +361,13 @@ export function updateOrder(id: string, updates: Record<string, any>): boolean {
 
   if (sets.length === 0) return false
   values.push(id)
-  execute(`UPDATE orders SET ${sets.join(', ')} WHERE id = ?`, values)
+  executeSync(`UPDATE orders SET ${sets.join(', ')} WHERE id = ?`, values)
 
   // If voiding a synced order, reset sync_status so cancellation syncs to ERPNext
   if (updates.status === 'Void') {
     const order = queryOne('SELECT sync_status, erpnext_docname FROM orders WHERE id = ?', [id])
     if (order && order.erpnext_docname && order.sync_status === 'synced') {
-      execute("UPDATE orders SET sync_status = 'pending', sync_error = NULL WHERE id = ?", [id])
+      executeSync("UPDATE orders SET sync_status = 'pending', sync_error = NULL WHERE id = ?", [id])
     }
   }
 
@@ -375,7 +382,7 @@ export function addOrderItem(data: {
   modifiers?: string; modifierTotal?: number; specialInstructions?: string
 }): string {
   const id = uuidv4()
-  execute(
+  executeSync(
     `INSERT INTO order_items (id, order_id, item_code, item_name, qty, rate, discount_amount, discount_percent, amount, modifiers, modifier_total, special_instructions)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, data.orderId, data.itemCode, data.itemName, data.qty, data.rate,
@@ -415,7 +422,7 @@ export function removeOrderItem(id: string): boolean {
 
 export function addOrderPayment(orderId: string, method: string, amount: number, reference?: string, collectedByWaiter?: string): string {
   const id = uuidv4()
-  execute('INSERT INTO order_payments (id, order_id, payment_method, amount, reference, collected_by_waiter) VALUES (?, ?, ?, ?, ?, ?)',
+  executeSync('INSERT INTO order_payments (id, order_id, payment_method, amount, reference, collected_by_waiter) VALUES (?, ?, ?, ?, ?, ?)',
     [id, orderId, method, amount, reference ?? null, collectedByWaiter ?? null])
   return id
 }
@@ -648,7 +655,7 @@ export function openSession(data: {
   if (existing) throw new Error('A shift is already open. Close it first.')
 
   const id = uuidv4()
-  execute(
+  executeSync(
     `INSERT INTO sessions (id, user_id, user_name, status, opening_cash, opening_balance)
      VALUES (?, ?, ?, 'Open', ?, ?)`,
     [id, data.userId, data.userName,
@@ -728,7 +735,7 @@ export function closeSession(sessionId: string, closingBalance: { mode: string; 
     }
   }
 
-  execute(
+  executeSync(
     `UPDATE sessions SET
       status = 'Closed',
       closed_at = datetime('now'),

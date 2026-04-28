@@ -145,6 +145,9 @@ export async function syncUp(): Promise<SyncResult> {
         if (order.waiter_name) {
           invoice.servepos_waiter = order.waiter_name
         }
+        if (order.tip_amount && order.tip_amount > 0) {
+          invoice.servepos_tip = order.tip_amount
+        }
         if (order.order_notes) {
           invoice.remarks = order.order_notes
         }

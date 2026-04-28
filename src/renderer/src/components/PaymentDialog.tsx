@@ -10,7 +10,8 @@ interface PaymentEntry {
 interface Props {
   grandTotal: number
   orderWaiterName?: string | null
-  onComplete: (payments: PaymentEntry[], collectedByWaiter: string | null) => void
+  processing?: boolean
+  onComplete: (payments: PaymentEntry[], collectedByWaiter: string | null, tipAmount?: number) => void
   onCancel: () => void
 }
 
@@ -20,12 +21,13 @@ const methodIcons: Record<string, React.ReactNode> = {
   'Mobile Payment': <Smartphone className="h-5 w-5" />
 }
 
-export default function PaymentDialog({ grandTotal, orderWaiterName, onComplete, onCancel }: Props) {
+export default function PaymentDialog({ grandTotal, orderWaiterName, processing, onComplete, onCancel }: Props) {
   const [paymentMethods, setPaymentMethods] = useState<{ name: string; mode_of_payment: string; is_default: number }[]>([])
   const [payments, setPayments] = useState<PaymentEntry[]>([])
   const [error, setError] = useState('')
   const [waitersList, setWaitersList] = useState<{ name: string; waiter_name: string }[]>([])
   const [collectedBy, setCollectedBy] = useState<string>(orderWaiterName || '')
+  const [tipAmount, setTipAmount] = useState(0)
 
   useEffect(() => {
     loadPaymentMethods()
@@ -95,15 +97,13 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, onComplete,
       remaining = Math.max(0, remaining - amt)
       return { ...p, amount: Math.round(amt * 100) / 100 }
     }).filter((p) => p.amount > 0)
-    onComplete(capped, collectedBy || null)
+    onComplete(capped, collectedBy || null, tipAmount || undefined)
   }
 
-  // Quick cash amounts
+  // Quick cash amounts — exact + QAR note denominations
   const quickAmounts = [
     Math.ceil(grandTotal),
-    Math.ceil(grandTotal / 10) * 10,
-    Math.ceil(grandTotal / 50) * 50,
-    Math.ceil(grandTotal / 100) * 100
+    100, 200, 500
   ].filter((v, i, a) => v >= grandTotal && a.indexOf(v) === i).slice(0, 4)
 
   return (
@@ -206,6 +206,48 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, onComplete,
             </div>
           )}
 
+          {/* Tip — only for card payments */}
+          {payments.some((p) => p.method === 'Card') && (
+            <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+              <label className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-blue-700">
+                <CreditCard className="h-3.5 w-3.5" />
+                Tip (Card)
+              </label>
+              <div className="flex gap-2 mb-2">
+                {[5, 10, 15].map((pct) => (
+                  <button
+                    key={pct}
+                    onClick={() => setTipAmount(Math.round(grandTotal * pct) / 100)}
+                    className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                      tipAmount === Math.round(grandTotal * pct) / 100
+                        ? 'border-blue-400 bg-blue-100 text-blue-700'
+                        : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+                <button
+                  onClick={() => setTipAmount(0)}
+                  className={`rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                    tipAmount === 0 ? 'border-blue-400 bg-blue-100 text-blue-700' : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  No Tip
+                </button>
+              </div>
+              <input
+                type="number"
+                value={tipAmount || ''}
+                onChange={(e) => setTipAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                placeholder="Custom amount"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                min={0}
+                step={0.01}
+              />
+            </div>
+          )}
+
           {/* Collected by waiter */}
           {waitersList.length > 0 && (
             <div className="mt-4">
@@ -244,6 +286,12 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, onComplete,
                 <span className="font-bold">{change.toFixed(2)}</span>
               </div>
             )}
+            {tipAmount > 0 && (
+              <div className="flex justify-between text-sm text-blue-600">
+                <span>Tip</span>
+                <span className="font-bold">{tipAmount.toFixed(2)}</span>
+              </div>
+            )}
           </div>
 
           {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
@@ -259,10 +307,10 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, onComplete,
           </button>
           <button
             onClick={handleComplete}
-            disabled={totalPaid < grandTotal}
+            disabled={totalPaid < grandTotal || processing}
             className="flex-1 rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            Complete Payment
+            {processing ? 'Processing...' : 'Complete Payment'}
           </button>
         </div>
       </div>

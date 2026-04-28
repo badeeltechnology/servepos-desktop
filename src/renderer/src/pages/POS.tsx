@@ -281,7 +281,7 @@ export default function POS() {
 
   // Complete payment
   const handlePaymentComplete = useCallback(
-    async (payments: { method: string; amount: number; reference: string }[], collectedByWaiter: string | null) => {
+    async (payments: { method: string; amount: number; reference: string }[], collectedByWaiter: string | null, tipAmount?: number) => {
       setProcessing(true)
       try {
         let orderId = activeOrderId
@@ -326,6 +326,7 @@ export default function POS() {
           discountReason: cart.orderDiscountReason || null,
           promoName: cart.promoName || null,
           voucherCode: cart.voucherCode || null,
+          tipAmount: tipAmount || 0,
           orderNotes: cart.orderNotes || null,
           grandTotal: Math.max(0, afterDiscount + taxTotal),
           completedAt: new Date().toISOString()
@@ -608,7 +609,7 @@ export default function POS() {
           <ItemGrid isOrderPlaced={isOrderPlaced} />
         </div>
         <div className="w-[360px] flex-shrink-0 border-l shadow-lg">
-          <Cart onPlaceOrder={handlePlaceOrder} onUpdateOnly={activeOrderId ? handleUpdateOnly : undefined} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId}
+          <Cart onPlaceOrder={handlePlaceOrder} onUpdateOnly={activeOrderId ? handleUpdateOnly : undefined} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId} processing={processing}
             onAutoVoid={activeOrderId ? async () => {
               await window.api.orders.update(activeOrderId, { status: 'Void', voidReason: 'All items removed' })
               try { await window.api.print.voidSlip(activeOrderId, 'All items removed', user?.name || '') } catch {}
@@ -623,7 +624,7 @@ export default function POS() {
 
       {/* Payment dialog */}
       {showPayment && (
-        <PaymentDialog grandTotal={cart.getGrandTotal(taxRate)} orderWaiterName={cart.waiterName} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />
+        <PaymentDialog grandTotal={cart.getGrandTotal(taxRate)} orderWaiterName={cart.waiterName} processing={processing} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />
       )}
 
       {/* Waiter Orders Panel — Full screen for supervisor/coordinator, corner toast for cashier */}

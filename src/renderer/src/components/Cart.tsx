@@ -12,10 +12,11 @@ interface CartProps {
   taxLabel?: string
   isOrderPlaced?: boolean
   activeOrderId?: string | null
+  processing?: boolean
   onAutoVoid?: () => void
 }
 
-export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, onAutoVoid }: CartProps) {
+export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, processing, onAutoVoid }: CartProps) {
   const [discountEnabled, setDiscountEnabled] = useState(false)
   const [discountPermission, setDiscountPermission] = useState<'supervisor_only' | 'all_users'>('supervisor_only')
 
@@ -436,31 +437,31 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
             )}
             {!isOrderPlaced && activeOrderId ? (
               <>
-                <button onClick={onPlaceOrder}
-                  className="w-full rounded-xl bg-orange-500 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition-all hover:bg-orange-600 active:scale-[0.98]">
-                  Update Order & Print KOT
+                <button onClick={onPlaceOrder} disabled={processing}
+                  className="w-full rounded-xl bg-orange-500 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/25 transition-all hover:bg-orange-600 active:scale-[0.98] disabled:opacity-50">
+                  {processing ? 'Processing...' : 'Update Order & Print KOT'}
                 </button>
                 {onUpdateOnly && (
-                  <button onClick={onUpdateOnly}
-                    className="w-full rounded-xl border-2 border-orange-300 py-2.5 text-sm font-bold text-orange-600 transition-all hover:bg-orange-50 active:scale-[0.98]">
+                  <button onClick={onUpdateOnly} disabled={processing}
+                    className="w-full rounded-xl border-2 border-orange-300 py-2.5 text-sm font-bold text-orange-600 transition-all hover:bg-orange-50 active:scale-[0.98] disabled:opacity-50">
                     Update Without KOT
                   </button>
                 )}
               </>
             ) : !isOrderPlaced ? (
               <>
-                <button onClick={onPlaceOrder}
-                  className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 active:scale-[0.98]">
-                  Place Order & Print KOT
+                <button onClick={onPlaceOrder} disabled={processing}
+                  className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50">
+                  {processing ? 'Processing...' : 'Place Order & Print KOT'}
                 </button>
-                <button onClick={onPay}
-                  className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98]">
+                <button onClick={onPay} disabled={processing}
+                  className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50">
                   Quick Pay — {grandTotal.toFixed(2)}
                 </button>
               </>
             ) : (
-              <button onClick={onPay}
-                className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98]">
+              <button onClick={onPay} disabled={processing}
+                className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50">
                 Payment — {grandTotal.toFixed(2)}
               </button>
             )}

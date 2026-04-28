@@ -164,7 +164,8 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
     payments: payments.map((p: any) => ({ method: p.payment_method, amount: p.amount })),
     change: Math.max(0, totalPaid - computedGrandTotal),
     promoName: order.promo_name || undefined,
-    orderNotes: order.order_notes || undefined
+    orderNotes: order.order_notes || undefined,
+    tipAmount: order.tip_amount || 0
   }
 
   const receipt = generateReceipt(receiptData)
