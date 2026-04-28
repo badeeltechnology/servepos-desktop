@@ -590,6 +590,8 @@ export default function POS() {
           const reason = prompt('Reason for voiding this order:')
           if (!reason) return
           await window.api.orders.update(orderId, { status: 'Void', voidReason: reason })
+          // Print void slip
+          try { await window.api.print.voidSlip(orderId, reason, user?.name || 'Supervisor') } catch {}
           // If the voided order was the active one, clear cart
           if (activeOrderId === orderId) {
             cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false)
@@ -609,6 +611,7 @@ export default function POS() {
           <Cart onPlaceOrder={handlePlaceOrder} onUpdateOnly={activeOrderId ? handleUpdateOnly : undefined} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId}
             onAutoVoid={activeOrderId ? async () => {
               await window.api.orders.update(activeOrderId, { status: 'Void', voidReason: 'All items removed' })
+              try { await window.api.print.voidSlip(activeOrderId, 'All items removed', user?.name || '') } catch {}
               const order = await window.api.orders.get(activeOrderId)
               if (order?.table_name) await window.api.tables.updateStatus(order.table_name, 'Available').catch(() => {})
               cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false)
@@ -861,6 +864,8 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
 
   async function doVoidOrder(id: string, reason: string) {
     await window.api.orders.update(id, { status: 'Void', voidReason: reason })
+    // Print void slip
+    try { await window.api.print.voidSlip(id, reason, cashierId ? 'Cashier' : 'Supervisor') } catch {}
     // Free table if applicable
     const order = orders.find((o) => o.id === id)
     if (order?.table_name) {

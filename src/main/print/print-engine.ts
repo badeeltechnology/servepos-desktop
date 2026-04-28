@@ -1,7 +1,7 @@
 import { getDb, saveDatabase } from '../database/schema'
 import { getConfig, getAllReceiptConfig, getOrderItems, getOrderPayments } from '../database/queries'
 import { sendToPrinter, getPrinters, getPrintRoutes, PrinterConfig } from './printer'
-import { generateReceipt, generateKot, generateWaiterCopy, generatePrepDoc, generateInvoice } from './templates'
+import { generateReceipt, generateKot, generateWaiterCopy, generatePrepDoc, generateInvoice, generateVoidSlip } from './templates'
 import { processForPrinter } from './arabic-bitmap'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -493,5 +493,48 @@ export async function printWaiterCopy(orderId: string): Promise<{ success: boole
   const copyBuffer = await processForPrinter(copy, printer.paper_width || 80)
   const result = await sendToPrinter(printer, copyBuffer)
   logPrint(orderId, 'waiter_copy', printer.id, result.success, result.error)
+  return result
+}
+
+export async function printVoidSlip(orderId: string, voidReason: string, voidedBy: string): Promise<{ success: boolean; error?: string }> {
+  const db = getDb()
+
+  const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
+  orderStmt.bind([orderId])
+  if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
+  const order = orderStmt.getAsObject() as any
+  orderStmt.free()
+
+  const items = getOrderItems(orderId)
+
+  // Use receipt printer
+  const routes = getPrintRoutes()
+  const receiptRoute = routes.find((r) => r.print_type === 'receipt')
+  if (!receiptRoute) return { success: false, error: 'No receipt printer configured' }
+
+  const printers = getPrinters()
+  const printer = printers.find((p) => p.id === receiptRoute.printer_id)
+  if (!printer) return { success: false, error: 'Receipt printer not found' }
+
+  const voidData = {
+    orderNumber: order.order_number,
+    orderType: order.order_type,
+    tableName: order.table_name,
+    cashierName: order.cashier_name || '',
+    voidReason,
+    voidedBy,
+    items: items.map((item: any) => ({
+      itemName: item.item_name,
+      qty: item.qty,
+      rate: item.rate,
+      amount: item.amount
+    })),
+    grandTotal: order.grand_total || items.reduce((s: number, i: any) => s + i.amount, 0)
+  }
+
+  const slip = generateVoidSlip(voidData)
+  const printBuffer = await processForPrinter(slip, printer.paper_width || 80)
+  const result = await sendToPrinter(printer, printBuffer)
+  logPrint(orderId, 'void_slip', printer.id, result.success, result.error)
   return result
 }

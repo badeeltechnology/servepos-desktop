@@ -865,3 +865,62 @@ function generateInvoiceModern(data: ReceiptData, config: Record<string, string>
 
   return lines.join(LF)
 }
+
+// ==================== Void Slip ====================
+
+interface VoidSlipData {
+  orderNumber: string
+  orderType: string
+  tableName?: string
+  cashierName: string
+  voidReason: string
+  voidedBy: string
+  items: { itemName: string; qty: number; rate: number; amount: number }[]
+  grandTotal: number
+}
+
+export function generateVoidSlip(data: VoidSlipData): string {
+  const config = getAllReceiptConfig()
+  const lines: string[] = [CMD.INIT, CMD.ALIGN_CENTER]
+
+  if (config.restaurant_name) {
+    lines.push(CMD.BOLD_ON + config.restaurant_name + CMD.BOLD_OFF)
+  }
+  lines.push(getSeparatorLine())
+  lines.push(CMD.BOLD_ON + CMD.DOUBLE_HEIGHT + '*** VOID ***' + CMD.NORMAL + CMD.BOLD_OFF)
+  lines.push(getSeparatorLine())
+
+  lines.push(CMD.ALIGN_LEFT)
+  lines.push(`Order: ${data.orderNumber}`)
+  lines.push(`Type: ${data.orderType}`)
+  if (data.tableName) lines.push(`Table: ${data.tableName}`)
+  lines.push(`Cashier: ${data.cashierName}`)
+  lines.push(`Voided by: ${data.voidedBy}`)
+  lines.push(`Date: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}    ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`)
+
+  lines.push(getDashLine())
+  lines.push(formatLine('Qty  Item', 'Amount'))
+  lines.push(getDashLine())
+
+  for (const item of data.items) {
+    lines.push(formatLine(`${item.qty}x ${item.itemName}`, item.amount.toFixed(2)))
+  }
+
+  lines.push(getDashLine())
+  lines.push(CMD.BOLD_ON + formatLine('TOTAL (VOIDED)', data.grandTotal.toFixed(2)) + CMD.BOLD_OFF)
+  lines.push(getDashLine())
+
+  lines.push('')
+  lines.push(CMD.BOLD_ON + `Reason: ${data.voidReason}` + CMD.BOLD_OFF)
+  lines.push('')
+  lines.push(getSeparatorLine())
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push('This order has been voided')
+  lines.push('No payment collected')
+  lines.push(getSeparatorLine())
+
+  lines.push(CMD.FEED_5)
+  lines.push(CMD.PARTIAL_CUT)
+
+  return lines.join(LF)
+}

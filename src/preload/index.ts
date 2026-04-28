@@ -153,6 +153,7 @@ const api = {
     waiterCopy: (orderId: string) => ipcRenderer.invoke('print:waiterCopy', orderId),
     prepDoc: (orderId: string) => ipcRenderer.invoke('print:prepDoc', orderId),
     invoice: (orderId: string) => ipcRenderer.invoke('print:invoice', orderId),
+    voidSlip: (orderId: string, voidReason: string, voidedBy: string) => ipcRenderer.invoke('print:voidSlip', orderId, voidReason, voidedBy),
     pollReadyOrders: () => ipcRenderer.invoke('print:pollReadyOrders')
   },
 

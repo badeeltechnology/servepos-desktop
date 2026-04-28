@@ -6,7 +6,7 @@ import { writeFileSync, readFileSync } from 'fs'
 import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
 import { ERPNextClient } from '../sync/erpnext-client'
 import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute, discoverUsbPrinters } from '../print/printer'
-import { printReceipt, printKots, printAmendmentKot, printWaiterCopy, printPrepDoc, printInvoice } from '../print/print-engine'
+import { printReceipt, printKots, printAmendmentKot, printWaiterCopy, printPrepDoc, printInvoice, printVoidSlip } from '../print/print-engine'
 
 export function registerIpcHandlers(): void {
   // ==================== App ====================
@@ -526,6 +526,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('print:waiterCopy', (_e, orderId: string) => printWaiterCopy(orderId))
   ipcMain.handle('print:prepDoc', (_e, orderId: string) => printPrepDoc(orderId))
   ipcMain.handle('print:invoice', (_e, orderId: string) => printInvoice(orderId))
+  ipcMain.handle('print:voidSlip', (_e, orderId: string, voidReason: string, voidedBy: string) => printVoidSlip(orderId, voidReason, voidedBy))
 
   // Poll for "Ready to Serve" orders that need invoice printing
   // Concurrency guard to prevent double-printing
