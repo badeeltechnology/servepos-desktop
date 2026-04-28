@@ -27,7 +27,6 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, processing,
   const [error, setError] = useState('')
   const [waitersList, setWaitersList] = useState<{ name: string; waiter_name: string }[]>([])
   const [collectedBy, setCollectedBy] = useState<string>(orderWaiterName || '')
-  const [tipAmount, setTipAmount] = useState(0)
 
   useEffect(() => {
     loadPaymentMethods()
@@ -54,7 +53,10 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, processing,
 
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0)
   const remaining = grandTotal - totalPaid
-  const change = totalPaid > grandTotal ? totalPaid - grandTotal : 0
+  const hasCard = payments.some((p) => p.method === 'Card' && p.amount > 0)
+  const cardOverpay = hasCard ? Math.max(0, totalPaid - grandTotal) : 0
+  const tipAmount = cardOverpay  // For card: overpayment is tip
+  const change = !hasCard && totalPaid > grandTotal ? totalPaid - grandTotal : 0  // For cash: overpayment is change
 
   function addPaymentLine() {
     const unusedMethod = paymentMethods.find(
@@ -97,7 +99,7 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, processing,
       remaining = Math.max(0, remaining - amt)
       return { ...p, amount: Math.round(amt * 100) / 100 }
     }).filter((p) => p.amount > 0)
-    onComplete(capped, collectedBy || null, tipAmount || undefined)
+    onComplete(capped, collectedBy || null, tipAmount > 0 ? tipAmount : undefined)
   }
 
   // Quick cash amounts — exact + QAR note denominations (5, 10, 50, 100, 200, 500)
@@ -145,6 +147,7 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, processing,
                 <div className="relative flex-1">
                   <input
                     type="number"
+                    data-keyboard="numpad"
                     value={payment.amount || ''}
                     onChange={(e) => updatePayment(idx, 'amount', parseFloat(e.target.value) || 0)}
                     className="w-full rounded-lg border border-input px-3 py-2.5 text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary"
@@ -155,6 +158,7 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, processing,
                 {payment.method !== 'Cash' && (
                   <input
                     type="text"
+                    data-keyboard="full"
                     value={payment.reference}
                     onChange={(e) => updatePayment(idx, 'reference', e.target.value)}
                     placeholder="Ref #"
@@ -203,48 +207,6 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, processing,
                   </button>
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* Tip — only for card payments */}
-          {payments.some((p) => p.method === 'Card') && (
-            <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
-              <label className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-blue-700">
-                <CreditCard className="h-3.5 w-3.5" />
-                Tip (Card)
-              </label>
-              <div className="flex gap-2 mb-2">
-                {[5, 10, 15].map((pct) => (
-                  <button
-                    key={pct}
-                    onClick={() => setTipAmount(Math.round(grandTotal * pct) / 100)}
-                    className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
-                      tipAmount === Math.round(grandTotal * pct) / 100
-                        ? 'border-blue-400 bg-blue-100 text-blue-700'
-                        : 'border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    {pct}%
-                  </button>
-                ))}
-                <button
-                  onClick={() => setTipAmount(0)}
-                  className={`rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
-                    tipAmount === 0 ? 'border-blue-400 bg-blue-100 text-blue-700' : 'border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  No Tip
-                </button>
-              </div>
-              <input
-                type="number"
-                value={tipAmount || ''}
-                onChange={(e) => setTipAmount(Math.max(0, parseFloat(e.target.value) || 0))}
-                placeholder="Custom amount"
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                min={0}
-                step={0.01}
-              />
             </div>
           )}
 
