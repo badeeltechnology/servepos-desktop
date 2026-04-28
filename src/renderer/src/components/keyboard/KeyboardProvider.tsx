@@ -51,9 +51,11 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
       }
 
       activeInputRef.current = input
-      // Suppress OS virtual keyboard
-      input.setAttribute('inputMode', 'none')
       setKeyboardType(kbType)
+      // Suppress OS virtual keyboard after showing our keyboard
+      requestAnimationFrame(() => {
+        input.setAttribute('inputMode', 'none')
+      })
 
       if (kbType === 'numpad') {
         // Position floating numpad near the input

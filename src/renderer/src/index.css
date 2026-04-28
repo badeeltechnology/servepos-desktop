@@ -63,12 +63,15 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground select-none;
+    @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
     -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
   }
-  input, textarea {
-    @apply select-text;
+  input, textarea, [contenteditable] {
+    -webkit-user-select: text;
+    user-select: text;
   }
 }
 
