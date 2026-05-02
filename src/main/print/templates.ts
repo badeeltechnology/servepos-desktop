@@ -912,7 +912,7 @@ export function generateVoidSlip(data: VoidSlipData): string {
     lines.push(CMD.BOLD_ON + config.restaurant_name + CMD.BOLD_OFF)
   }
   lines.push(getSeparatorLine())
-  lines.push(CMD.BOLD_ON + CMD.DOUBLE_HEIGHT + '*** VOID ***' + CMD.NORMAL + CMD.BOLD_OFF)
+  lines.push(CMD.BOLD_ON + '*** VOID ***' + CMD.BOLD_OFF)
   lines.push(getSeparatorLine())
 
   lines.push(CMD.ALIGN_LEFT)

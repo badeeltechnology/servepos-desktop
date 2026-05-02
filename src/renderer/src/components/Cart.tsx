@@ -13,10 +13,11 @@ interface CartProps {
   isOrderPlaced?: boolean
   activeOrderId?: string | null
   processing?: boolean
-  onAutoVoid?: () => void
+  onAutoVoid?: (reason: string) => void
+  onItemRemoved?: (orderId: string, itemName: string, reason: string) => void
 }
 
-export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, processing, onAutoVoid }: CartProps) {
+export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, processing, onAutoVoid, onItemRemoved }: CartProps) {
   const [discountEnabled, setDiscountEnabled] = useState(false)
   const [discountPermission, setDiscountPermission] = useState<'supervisor_only' | 'all_users'>('supervisor_only')
 
@@ -484,37 +485,32 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
             {removeRequest.step === 'reason' ? (
               <>
                 <h3 className="mb-1 text-center text-lg font-bold">Remove Item</h3>
-                <p className="mb-4 text-center text-xs text-gray-500">Select reason for removing this item</p>
-                {removeReasons.length > 0 && !removeCustomReason ? (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                <p className="mb-4 text-center text-xs text-gray-500">Select or type a reason (required)</p>
+                {removeReasons.length > 0 && (
+                  <select value={removeRequest.reason}
+                    onChange={(e) => setRemoveRequest({ ...removeRequest, reason: e.target.value })}
+                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none mb-2">
+                    <option value="">-- Select reason --</option>
                     {removeReasons.map((r) => (
-                      <button key={r.name}
-                        onClick={() => setRemoveRequest({ ...removeRequest, step: 'pin', reason: r.reason_name })}
-                        className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-left text-sm font-medium hover:bg-red-50 hover:border-red-200 transition-colors">
-                        {r.reason_name}
-                      </button>
+                      <option key={r.name} value={r.reason_name}>{r.reason_name}</option>
                     ))}
-                    <button onClick={() => setRemoveCustomReason(true)}
-                      className="w-full rounded-xl border-2 border-dashed border-gray-200 px-4 py-3 text-left text-sm text-gray-500 hover:bg-gray-50">
-                      Other (type reason)...
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <input type="text" data-keyboard="full" value={removeRequest.reason} autoFocus
-                      onChange={(e) => setRemoveRequest({ ...removeRequest, reason: e.target.value })}
-                      onKeyDown={(e) => { if (e.key === 'Enter' && removeRequest.reason.trim()) setRemoveRequest({ ...removeRequest, step: 'pin', reason: removeRequest.reason.trim() }) }}
-                      placeholder="Enter reason..."
-                      className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" />
-                    <div className="mt-4 flex gap-3">
-                      {removeReasons.length > 0 && <button onClick={() => setRemoveCustomReason(false)} className="rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm font-semibold hover:bg-gray-50">Back</button>}
-                      <button onClick={() => { if (removeRequest.reason.trim()) setRemoveRequest({ ...removeRequest, step: 'pin', reason: removeRequest.reason.trim() }) }}
-                        disabled={!removeRequest.reason.trim()} className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">Next</button>
-                    </div>
-                  </>
+                    <option value="__custom__">Other (type reason)...</option>
+                  </select>
                 )}
-                <button onClick={() => { setRemoveRequest(null); setRemoveCustomReason(false) }}
-                  className="mt-3 w-full rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50">Cancel</button>
+                {(removeRequest.reason === '__custom__' || removeReasons.length === 0) && (
+                  <input type="text" data-keyboard="full" value={removeRequest.reason === '__custom__' ? '' : removeRequest.reason} autoFocus
+                    onChange={(e) => setRemoveRequest({ ...removeRequest, reason: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && removeRequest.reason.trim() && removeRequest.reason !== '__custom__') setRemoveRequest({ ...removeRequest, step: 'pin', reason: removeRequest.reason.trim() }) }}
+                    placeholder="Enter reason..."
+                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" />
+                )}
+                <div className="mt-4 flex gap-3">
+                  <button onClick={() => { setRemoveRequest(null); setRemoveCustomReason(false) }}
+                    className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
+                  <button onClick={() => { if (removeRequest.reason.trim() && removeRequest.reason !== '__custom__') setRemoveRequest({ ...removeRequest, step: 'pin', reason: removeRequest.reason.trim() }) }}
+                    disabled={!removeRequest.reason.trim() || removeRequest.reason === '__custom__'}
+                    className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">Next</button>
+                </div>
               </>
             ) : (
               <>
@@ -527,8 +523,10 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                     if (e.key === 'Enter' && removePin.length >= 4) {
                       const u = await window.api.users.verifyPin(removePin)
                       if (u && u.role === 'supervisor') {
+                        const removedItem = items.find((i) => i.id === removeRequest.cartId)
                         removeItem(removeRequest.cartId)
-                        if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid()
+                        if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, removedItem.itemName, removeRequest.reason)
+                        if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
                         setRemoveRequest(null); setRemovePin(''); setRemoveCustomReason(false)
                       } else { setRemoveError('Invalid PIN or not a supervisor') }
                     }

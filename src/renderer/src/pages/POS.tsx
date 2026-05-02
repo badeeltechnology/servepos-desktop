@@ -692,9 +692,13 @@ export default function POS() {
         </div>
         <div className="w-[360px] flex-shrink-0 border-l shadow-lg">
           <Cart onPlaceOrder={handlePlaceOrder} onUpdateOnly={activeOrderId ? handleUpdateOnly : undefined} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId} processing={processing}
-            onAutoVoid={activeOrderId ? async () => {
-              await window.api.orders.update(activeOrderId, { status: 'Void', voidReason: 'All items removed' })
-              try { await window.api.print.voidSlip(activeOrderId, 'All items removed', user?.name || '') } catch {}
+            onItemRemoved={activeOrderId ? async (orderId, itemName, reason) => {
+              try { await window.api.print.voidSlip(orderId, `Item removed: ${itemName} — ${reason}`, user?.name || '') } catch {}
+            } : undefined}
+            onAutoVoid={activeOrderId ? async (reason) => {
+              const voidReason = reason || 'All items removed'
+              await window.api.orders.update(activeOrderId, { status: 'Void', voidReason })
+              try { await window.api.print.voidSlip(activeOrderId, voidReason, user?.name || '') } catch {}
               const order = await window.api.orders.get(activeOrderId)
               if (order?.table_name) await window.api.tables.updateStatus(order.table_name, 'Available').catch(() => {})
               cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false)
@@ -1168,6 +1172,15 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                       </button>
                     )}
                   </>
+                )}
+                {selectedOrder.status === 'Void' && (
+                  <button onClick={async () => {
+                    try { await window.api.print.voidSlip(selectedOrder.id, selectedOrder.void_reason || 'Voided', 'Reprint'); setToast({ type: 'success', message: 'Void slip printed' }) } catch { setToast({ type: 'error', message: 'Print failed' }) }
+                  }}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-red-200 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-50 active:scale-95">
+                    <Printer className="h-3.5 w-3.5" />
+                    Print Void Slip
+                  </button>
                 )}
                 {(selectedOrder.status === 'Open' || selectedOrder.status === 'Hold') && (
                   <>
