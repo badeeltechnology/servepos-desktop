@@ -814,6 +814,23 @@ export function getPromos(): any[] {
   return queryAll('SELECT * FROM promos WHERE enabled = 1 ORDER BY promo_name')
 }
 
+// ==================== Removed Items ====================
+
+export function saveRemovedItem(data: { id: string; orderId: string; orderNumber: string; itemName: string; qty: number; rate: number; amount: number; reason: string; removedBy: string }): void {
+  const db = getDb()
+  db.run(
+    `INSERT INTO removed_items (id, order_id, order_number, item_name, qty, rate, amount, reason, removed_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [data.id, data.orderId, data.orderNumber, data.itemName, data.qty, data.rate, data.amount, data.reason, data.removedBy]
+  )
+}
+
+export function getRemovedItems(date: string): any[] {
+  return queryAll(
+    `SELECT ri.*, o.order_type, o.table_name FROM removed_items ri LEFT JOIN orders o ON ri.order_id = o.id WHERE date(ri.removed_at, 'localtime') = ? ORDER BY ri.removed_at DESC`,
+    [date]
+  )
+}
+
 // ==================== Void Reasons ====================
 
 export function getVoidReasons(): any[] {

@@ -153,7 +153,7 @@ const api = {
     waiterCopy: (orderId: string, cartDiscount?: any) => ipcRenderer.invoke('print:waiterCopy', orderId, cartDiscount),
     prepDoc: (orderId: string) => ipcRenderer.invoke('print:prepDoc', orderId),
     invoice: (orderId: string, cartDiscount?: any) => ipcRenderer.invoke('print:invoice', orderId, cartDiscount),
-    voidSlip: (orderId: string, voidReason: string, voidedBy: string) => ipcRenderer.invoke('print:voidSlip', orderId, voidReason, voidedBy),
+    voidSlip: (orderId: string, voidReason: string, voidedBy: string, removedItems?: { itemName: string; qty: number; rate: number; amount: number }[]) => ipcRenderer.invoke('print:voidSlip', orderId, voidReason, voidedBy, removedItems),
     closeShift: (sessionId: string) => ipcRenderer.invoke('print:closeShift', sessionId),
     pollReadyOrders: () => ipcRenderer.invoke('print:pollReadyOrders')
   },
@@ -180,6 +180,12 @@ const api = {
   // Void Reasons
   voidReasons: {
     list: () => ipcRenderer.invoke('voidReasons:list')
+  },
+
+  // Removed Items
+  removedItems: {
+    save: (data: any) => ipcRenderer.invoke('removedItems:save', data),
+    list: (date: string) => ipcRenderer.invoke('removedItems:list', date)
   },
 
   // Vouchers
@@ -220,7 +226,9 @@ const api = {
     paymentBreakdown: (date?: string) => ipcRenderer.invoke('reports:paymentBreakdown', date),
     hourlySales: (date?: string) => ipcRenderer.invoke('reports:hourlySales', date),
     voidReport: (date?: string) => ipcRenderer.invoke('reports:voidReport', date),
-    waiterPerformance: (date?: string) => ipcRenderer.invoke('reports:waiterPerformance', date)
+    waiterPerformance: (date?: string) => ipcRenderer.invoke('reports:waiterPerformance', date),
+    allItemsSales: (date?: string) => ipcRenderer.invoke('reports:allItemsSales', date),
+    removedItems: (date?: string) => ipcRenderer.invoke('reports:removedItems', date)
   },
 
   // Sync

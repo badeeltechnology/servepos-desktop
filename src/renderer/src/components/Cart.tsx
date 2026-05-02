@@ -14,7 +14,7 @@ interface CartProps {
   activeOrderId?: string | null
   processing?: boolean
   onAutoVoid?: (reason: string) => void
-  onItemRemoved?: (orderId: string, itemName: string, reason: string) => void
+  onItemRemoved?: (orderId: string, item: { itemName: string; qty: number; rate: number; amount: number }, reason: string) => void
 }
 
 export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, processing, onAutoVoid, onItemRemoved }: CartProps) {
@@ -242,12 +242,11 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                   </div>
                   <span className="text-[13px] font-bold text-gray-800 whitespace-nowrap">{item.amount.toFixed(2)}</span>
                   <button onClick={() => {
-                    if (isOrderPlaced && user?.role !== 'supervisor') {
+                    if (isOrderPlaced) {
                       setRemoveRequest({ cartId: item.id, dbId: (item as any).dbId, step: 'reason', reason: '' }); setRemoveCustomReason(false)
                       setRemovePin(''); setRemoveError('')
                     } else {
                       removeItem(item.id)
-                      if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid()
                     }
                   }} className="rounded p-1 text-red-300 hover:text-red-500" title="Remove">
                     <Trash2 className="h-3 w-3" />
@@ -500,16 +499,39 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                 {(removeRequest.reason === '__custom__' || removeReasons.length === 0) && (
                   <input type="text" data-keyboard="full" value={removeRequest.reason === '__custom__' ? '' : removeRequest.reason} autoFocus
                     onChange={(e) => setRemoveRequest({ ...removeRequest, reason: e.target.value })}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && removeRequest.reason.trim() && removeRequest.reason !== '__custom__') setRemoveRequest({ ...removeRequest, step: 'pin', reason: removeRequest.reason.trim() }) }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && removeRequest.reason.trim() && removeRequest.reason !== '__custom__') {
+                        if (user?.role === 'supervisor') {
+                          const removedItem = items.find((i) => i.id === removeRequest.cartId)
+                          removeItem(removeRequest.cartId)
+                          if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason.trim())
+                          if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason.trim())
+                          setRemoveRequest(null); setRemoveCustomReason(false)
+                        } else {
+                          setRemoveRequest({ ...removeRequest, step: 'pin', reason: removeRequest.reason.trim() })
+                        }
+                      }
+                    }}
                     placeholder="Enter reason..."
                     className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" />
                 )}
                 <div className="mt-4 flex gap-3">
                   <button onClick={() => { setRemoveRequest(null); setRemoveCustomReason(false) }}
                     className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
-                  <button onClick={() => { if (removeRequest.reason.trim() && removeRequest.reason !== '__custom__') setRemoveRequest({ ...removeRequest, step: 'pin', reason: removeRequest.reason.trim() }) }}
+                  <button onClick={() => {
+                    if (!removeRequest.reason.trim() || removeRequest.reason === '__custom__') return
+                    if (user?.role === 'supervisor') {
+                      const removedItem = items.find((i) => i.id === removeRequest.cartId)
+                      removeItem(removeRequest.cartId)
+                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason.trim())
+                      if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason.trim())
+                      setRemoveRequest(null); setRemoveCustomReason(false)
+                    } else {
+                      setRemoveRequest({ ...removeRequest, step: 'pin', reason: removeRequest.reason.trim() })
+                    }
+                  }}
                     disabled={!removeRequest.reason.trim() || removeRequest.reason === '__custom__'}
-                    className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">Next</button>
+                    className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">{user?.role === 'supervisor' ? 'Remove' : 'Next'}</button>
                 </div>
               </>
             ) : (
@@ -525,7 +547,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                       if (u && u.role === 'supervisor') {
                         const removedItem = items.find((i) => i.id === removeRequest.cartId)
                         removeItem(removeRequest.cartId)
-                        if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, removedItem.itemName, removeRequest.reason)
+                        if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason)
                         if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
                         setRemoveRequest(null); setRemovePin(''); setRemoveCustomReason(false)
                       } else { setRemoveError('Invalid PIN or not a supervisor') }
@@ -540,11 +562,13 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                   <button onClick={async () => {
                     const u = await window.api.users.verifyPin(removePin)
                     if (u && u.role === 'supervisor') {
+                      const removedItem = items.find((i) => i.id === removeRequest.cartId)
                       removeItem(removeRequest.cartId)
-                      if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid()
+                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason)
+                      if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
                       setRemoveRequest(null); setRemovePin(''); setRemoveCustomReason(false)
                     } else { setRemoveError('Invalid PIN or not a supervisor') }
-                  }} className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">Remove</button>
+                  }} className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600" disabled={!removePin}>Remove</button>
                 </div>
               </>
             )}

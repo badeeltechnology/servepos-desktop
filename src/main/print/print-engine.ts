@@ -519,7 +519,7 @@ export async function printWaiterCopy(orderId: string, cartDiscount?: { percent:
   return result
 }
 
-export async function printVoidSlip(orderId: string, voidReason: string, voidedBy: string): Promise<{ success: boolean; error?: string }> {
+export async function printVoidSlip(orderId: string, voidReason: string, voidedBy: string, removedItems?: { itemName: string; qty: number; rate: number; amount: number }[]): Promise<{ success: boolean; error?: string }> {
   const db = getDb()
 
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
@@ -527,8 +527,6 @@ export async function printVoidSlip(orderId: string, voidReason: string, voidedB
   if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
   const order = orderStmt.getAsObject() as any
   orderStmt.free()
-
-  const items = getOrderItems(orderId)
 
   // Use receipt printer
   const routes = getPrintRoutes()
@@ -539,6 +537,14 @@ export async function printVoidSlip(orderId: string, voidReason: string, voidedB
   const printer = printers.find((p) => p.id === receiptRoute.printer_id)
   if (!printer) return { success: false, error: 'Receipt printer not found' }
 
+  // Use provided removedItems (for single item removal) or fetch all from DB (for full void)
+  const slipItems = removedItems || getOrderItems(orderId).map((item: any) => ({
+    itemName: item.item_name,
+    qty: item.qty,
+    rate: item.rate,
+    amount: item.amount
+  }))
+
   const voidData = {
     orderNumber: order.order_number,
     orderType: order.order_type,
@@ -546,13 +552,8 @@ export async function printVoidSlip(orderId: string, voidReason: string, voidedB
     cashierName: order.cashier_name || '',
     voidReason,
     voidedBy,
-    items: items.map((item: any) => ({
-      itemName: item.item_name,
-      qty: item.qty,
-      rate: item.rate,
-      amount: item.amount
-    })),
-    grandTotal: items.reduce((s: number, i: any) => s + i.amount, 0) || order.grand_total || 0
+    items: slipItems,
+    grandTotal: slipItems.reduce((s: number, i: any) => s + i.amount, 0)
   }
 
   const slip = generateVoidSlip(voidData)

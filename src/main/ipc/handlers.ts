@@ -526,7 +526,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('print:waiterCopy', (_e, orderId: string, cartDiscount?: any) => printWaiterCopy(orderId, cartDiscount))
   ipcMain.handle('print:prepDoc', (_e, orderId: string) => printPrepDoc(orderId))
   ipcMain.handle('print:invoice', (_e, orderId: string, cartDiscount?: any) => printInvoice(orderId, cartDiscount))
-  ipcMain.handle('print:voidSlip', (_e, orderId: string, voidReason: string, voidedBy: string) => printVoidSlip(orderId, voidReason, voidedBy))
+  ipcMain.handle('print:voidSlip', (_e, orderId: string, voidReason: string, voidedBy: string, removedItems?: any[]) => printVoidSlip(orderId, voidReason, voidedBy, removedItems))
   ipcMain.handle('print:closeShift', (_e, sessionId: string) => printCloseShift(sessionId))
 
   // Poll for "Ready to Serve" orders that need invoice printing
@@ -727,6 +727,29 @@ export function registerIpcHandlers(): void {
     return rows
   })
 
+  ipcMain.handle('reports:allItemsSales', (_e, date?: string) => {
+    const database = getDb()
+    const filterDate = date || new Date().toLocaleDateString('en-CA')
+    const stmt = database.prepare(
+      `SELECT oi.item_name, SUM(oi.qty) as qty_sold, SUM(oi.amount) as revenue
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       WHERE o.status = 'Completed' AND date(o.created_at, 'localtime') = ?
+       GROUP BY oi.item_code
+       ORDER BY oi.item_name ASC`
+    )
+    stmt.bind([filterDate])
+    const rows: any[] = []
+    while (stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
+
+  ipcMain.handle('reports:removedItems', (_e, date?: string) => {
+    const filterDate = date || new Date().toLocaleDateString('en-CA')
+    return db.getRemovedItems(filterDate)
+  })
+
   ipcMain.handle('reports:categorySales', (_e, date?: string) => {
     const database = getDb()
     const filterDate = date || new Date().toLocaleDateString('en-CA')
@@ -821,6 +844,10 @@ export function registerIpcHandlers(): void {
   // Promos
   ipcMain.handle('promos:list', () => db.getPromos())
   ipcMain.handle('voidReasons:list', () => db.getVoidReasons())
+
+  // Removed items
+  ipcMain.handle('removedItems:save', (_e, data: any) => { db.saveRemovedItem(data) })
+  ipcMain.handle('removedItems:list', (_e, date: string) => db.getRemovedItems(date))
 
   // Vouchers — validated and consumed via ERPNext
   ipcMain.handle('vouchers:validate', async (_e, code: string) => {

@@ -1295,17 +1295,21 @@ function ReportsDashboard() {
   const [hourly, setHourly] = useState<any[]>([])
   const [voids, setVoids] = useState<any[]>([])
   const [waiters, setWaiters] = useState<any[]>([])
+  const [allItems, setAllItems] = useState<any[]>([])
+  const [removedItems, setRemovedItems] = useState<any[]>([])
 
   async function loadAll(d: string) {
     setLoading(true)
-    const [s, bi, cs, pb, hs, vr, wp] = await Promise.all([
+    const [s, bi, cs, pb, hs, vr, wp, ai, ri] = await Promise.all([
       window.api.reports.todaySummary(d),
       window.api.reports.bestSellingItems(d, 10),
       window.api.reports.categorySales(d),
       window.api.reports.paymentBreakdown(d),
       window.api.reports.hourlySales(d),
       window.api.reports.voidReport(d),
-      window.api.reports.waiterPerformance(d)
+      window.api.reports.waiterPerformance(d),
+      window.api.reports.allItemsSales(d),
+      window.api.reports.removedItems(d)
     ])
     setSummary(s)
     setBestItems(bi)
@@ -1314,6 +1318,8 @@ function ReportsDashboard() {
     setHourly(hs)
     setVoids(vr)
     setWaiters(wp)
+    setAllItems(ai)
+    setRemovedItems(ri)
     setLoading(false)
   }
 
@@ -1529,6 +1535,88 @@ function ReportsDashboard() {
           </div>
         </div>
       </div>
+
+      {/* All Items Sales — full width scrollable */}
+      <div className="rounded-2xl border bg-white p-5 shadow-sm mb-5">
+        <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">All Items Sales</h3>
+        {allItems.length === 0 ? (
+          <p className="text-sm text-gray-400">No data</p>
+        ) : (
+          <div className="max-h-[300px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b text-left text-xs text-gray-400">
+                  <th className="pb-2">#</th>
+                  <th className="pb-2">Item</th>
+                  <th className="pb-2 text-right">Qty Sold</th>
+                  <th className="pb-2 text-right">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allItems.map((item, idx) => (
+                  <tr key={item.item_name} className={idx % 2 === 1 ? 'bg-gray-50' : ''}>
+                    <td className="py-1.5 text-gray-400">{idx + 1}</td>
+                    <td className="py-1.5 font-medium">{item.item_name}</td>
+                    <td className="py-1.5 text-right">{item.qty_sold}</td>
+                    <td className="py-1.5 text-right font-semibold">{fmt(item.revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t">
+                <tr className="font-bold">
+                  <td className="py-2" colSpan={2}>Total</td>
+                  <td className="py-2 text-right">{allItems.reduce((s, i) => s + (i.qty_sold || 0), 0)}</td>
+                  <td className="py-2 text-right">{fmt(allItems.reduce((s, i) => s + (i.revenue || 0), 0))}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Removed Items Report — full width */}
+      {removedItems.length > 0 && (
+        <div className="rounded-2xl border bg-white p-5 shadow-sm mb-5">
+          <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Removed Items</h3>
+          <div className="max-h-[250px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b text-left text-xs text-gray-400">
+                  <th className="pb-2">Order #</th>
+                  <th className="pb-2">Item</th>
+                  <th className="pb-2 text-right">Qty</th>
+                  <th className="pb-2 text-right">Amount</th>
+                  <th className="pb-2">Reason</th>
+                  <th className="pb-2">Removed By</th>
+                  <th className="pb-2">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {removedItems.map((ri, idx) => (
+                  <tr key={ri.id} className={idx % 2 === 1 ? 'bg-gray-50' : ''}>
+                    <td className="py-1.5 font-mono text-xs">{ri.order_number || '-'}</td>
+                    <td className="py-1.5 font-medium">{ri.item_name}</td>
+                    <td className="py-1.5 text-right">{ri.qty}</td>
+                    <td className="py-1.5 text-right font-semibold text-red-500">{fmt(ri.amount)}</td>
+                    <td className="py-1.5 text-xs max-w-[120px] truncate">{ri.reason}</td>
+                    <td className="py-1.5 text-xs text-gray-500">{ri.removed_by || '-'}</td>
+                    <td className="py-1.5 text-xs text-gray-400">
+                      {ri.removed_at ? new Date(ri.removed_at + 'Z').toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t">
+                <tr className="font-bold text-red-500">
+                  <td className="py-2" colSpan={3}>Total Removed</td>
+                  <td className="py-2 text-right">{fmt(removedItems.reduce((s, i) => s + (i.amount || 0), 0))}</td>
+                  <td colSpan={3}></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Hourly Sales — full width bar chart */}
       <div className="rounded-2xl border bg-white p-5 shadow-sm">

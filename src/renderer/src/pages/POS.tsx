@@ -692,8 +692,12 @@ export default function POS() {
         </div>
         <div className="w-[360px] flex-shrink-0 border-l shadow-lg">
           <Cart onPlaceOrder={handlePlaceOrder} onUpdateOnly={activeOrderId ? handleUpdateOnly : undefined} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId} processing={processing}
-            onItemRemoved={activeOrderId ? async (orderId, itemName, reason) => {
-              try { await window.api.print.voidSlip(orderId, `Item removed: ${itemName} — ${reason}`, user?.name || '') } catch {}
+            onItemRemoved={activeOrderId ? async (orderId, item, reason) => {
+              const order = await window.api.orders.get(orderId)
+              try {
+                await window.api.removedItems.save({ id: crypto.randomUUID(), orderId, orderNumber: order?.order_number || '', itemName: item.itemName, qty: item.qty, rate: item.rate, amount: item.amount, reason, removedBy: user?.name || '' })
+              } catch {}
+              try { await window.api.print.voidSlip(orderId, reason, user?.name || '', [item]) } catch {}
             } : undefined}
             onAutoVoid={activeOrderId ? async (reason) => {
               const voidReason = reason || 'All items removed'

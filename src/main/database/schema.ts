@@ -458,6 +458,22 @@ function createTables(): void {
   `)
 
   database.run(`
+    CREATE TABLE IF NOT EXISTS removed_items (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL,
+      order_number TEXT,
+      item_name TEXT NOT NULL,
+      qty REAL NOT NULL,
+      rate REAL NOT NULL,
+      amount REAL NOT NULL,
+      reason TEXT NOT NULL,
+      removed_by TEXT,
+      removed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+    )
+  `)
+
+  database.run(`
     CREATE TABLE IF NOT EXISTS void_reasons (
       name TEXT PRIMARY KEY,
       reason_name TEXT NOT NULL,
