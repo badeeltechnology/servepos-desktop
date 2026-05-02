@@ -457,6 +457,13 @@ export default function POS() {
 
   const [showOrderHistory, setShowOrderHistory] = useState(false)
   const [showCoordinator, setShowCoordinator] = useState(false)
+  const [barVoidRequest, setBarVoidRequest] = useState<{ orderId: string; reason: string } | null>(null)
+  const [barVoidReasons, setBarVoidReasons] = useState<{ name: string; reason_name: string }[]>([])
+  const [barVoidCustom, setBarVoidCustom] = useState(false)
+
+  useEffect(() => {
+    window.api.voidReasons.list().then((r: any) => setBarVoidReasons(r || [])).catch(() => {})
+  }, [])
 
   if (showSettings && user?.role === 'supervisor') {
     return <SupervisorSettings onBack={() => { setShowSettings(false); loadTaxConfig() }} />
@@ -597,21 +604,86 @@ export default function POS() {
 
       {/* Orders bar */}
       <OrdersBar activeOrderId={activeOrderId} onSelectOrder={handleResumeOrder} onNewOrder={handleNewOrder}
-        onVoidOrder={user?.role === 'supervisor' ? async (orderId) => {
-          const reason = prompt('Reason for voiding this order:')
-          if (!reason) return
-          await window.api.orders.update(orderId, { status: 'Void', voidReason: reason })
-          // Print void slip
-          try { await window.api.print.voidSlip(orderId, reason, user?.name || 'Supervisor') } catch {}
-          // If the voided order was the active one, clear cart
-          if (activeOrderId === orderId) {
-            cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false)
-          }
-          // Free table if applicable
-          const order = await window.api.orders.get(orderId)
-          if (order?.table_name) await window.api.tables.updateStatus(order.table_name, 'Available')
+        onVoidOrder={user?.role === 'supervisor' ? (orderId) => {
+          setBarVoidRequest({ orderId, reason: '' }); setBarVoidCustom(false)
         } : undefined}
       />
+
+      {/* OrdersBar void reason modal */}
+      {barVoidRequest && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="mb-1 text-center text-lg font-bold">Void Reason</h3>
+            <p className="mb-4 text-center text-xs text-gray-500">Select or enter a reason (required)</p>
+            {barVoidReasons.length > 0 && !barVoidCustom ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {barVoidReasons.map((r) => (
+                  <button key={r.name}
+                    onClick={async () => {
+                      const oid = barVoidRequest.orderId
+                      await window.api.orders.update(oid, { status: 'Void', voidReason: r.reason_name })
+                      try { await window.api.print.voidSlip(oid, r.reason_name, user?.name || 'Supervisor') } catch {}
+                      if (activeOrderId === oid) { cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false) }
+                      const order = await window.api.orders.get(oid)
+                      if (order?.table_name) await window.api.tables.updateStatus(order.table_name, 'Available').catch(() => {})
+                      setBarVoidRequest(null)
+                    }}
+                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-left text-sm font-medium hover:bg-red-50 hover:border-red-200 transition-colors">
+                    {r.reason_name}
+                  </button>
+                ))}
+                <button onClick={() => setBarVoidCustom(true)}
+                  className="w-full rounded-xl border-2 border-dashed border-gray-200 px-4 py-3 text-left text-sm text-gray-500 hover:bg-gray-50">
+                  Other (type reason)...
+                </button>
+              </div>
+            ) : (
+              <>
+                <input type="text" data-keyboard="full" value={barVoidRequest.reason} autoFocus
+                  onChange={(e) => setBarVoidRequest({ ...barVoidRequest, reason: e.target.value })}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter' && barVoidRequest.reason.trim()) {
+                      const oid = barVoidRequest.orderId; const reason = barVoidRequest.reason.trim()
+                      await window.api.orders.update(oid, { status: 'Void', voidReason: reason })
+                      try { await window.api.print.voidSlip(oid, reason, user?.name || 'Supervisor') } catch {}
+                      if (activeOrderId === oid) { cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false) }
+                      const order = await window.api.orders.get(oid)
+                      if (order?.table_name) await window.api.tables.updateStatus(order.table_name, 'Available').catch(() => {})
+                      setBarVoidRequest(null)
+                    }
+                  }}
+                  placeholder="Enter void reason..."
+                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" />
+                <div className="mt-4 flex gap-3">
+                  {barVoidReasons.length > 0 && (
+                    <button onClick={() => setBarVoidCustom(false)}
+                      className="rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm font-semibold hover:bg-gray-50">
+                      Back
+                    </button>
+                  )}
+                  <button onClick={async () => {
+                    if (!barVoidRequest.reason.trim()) return
+                    const oid = barVoidRequest.orderId; const reason = barVoidRequest.reason.trim()
+                    await window.api.orders.update(oid, { status: 'Void', voidReason: reason })
+                    try { await window.api.print.voidSlip(oid, reason, user?.name || 'Supervisor') } catch {}
+                    if (activeOrderId === oid) { cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false) }
+                    const order = await window.api.orders.get(oid)
+                    if (order?.table_name) await window.api.tables.updateStatus(order.table_name, 'Available').catch(() => {})
+                    setBarVoidRequest(null)
+                  }} disabled={!barVoidRequest.reason.trim()}
+                    className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">
+                    Void Order
+                  </button>
+                </div>
+              </>
+            )}
+            <button onClick={() => { setBarVoidRequest(null); setBarVoidCustom(false) }}
+              className="mt-3 w-full rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main: Items + Cart */}
       <div className="flex flex-1 overflow-hidden">
