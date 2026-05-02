@@ -944,14 +944,11 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
   }
 
   function voidOrder(id: string) {
-    if (isSupervisor) {
-      // Supervisor skips PIN, goes straight to reason
-      setVoidRequest({ orderId: id, step: 'reason', reason: '' })
-    } else {
-      setVoidRequest({ orderId: id, step: 'pin', reason: '' })
-      setVoidPin('')
-      setVoidPinError('')
-    }
+    // Always start with reason selection, then PIN if not supervisor
+    setVoidRequest({ orderId: id, step: 'reason', reason: '' })
+    setShowCustomReason(false)
+    setVoidPin('')
+    setVoidPinError('')
   }
 
   async function doVoidOrder(id: string, reason: string) {
@@ -1208,14 +1205,15 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
         <ReceiptPreview orderId={previewOrderId} onClose={() => setPreviewOrderId(null)} />
       )}
 
-      {/* Void order modal — PIN step (cashier) then reason step */}
+      {/* Void order modal — reason step first, then PIN (cashier) */}
       {voidRequest && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
             {voidRequest.step === 'pin' ? (
               <>
                 <h3 className="mb-1 text-center text-lg font-bold">Supervisor PIN</h3>
-                <p className="mb-4 text-center text-xs text-gray-500">Enter supervisor PIN to void this order</p>
+                <p className="mb-2 text-center text-xs text-gray-500">Enter supervisor PIN to void this order</p>
+                <p className="mb-4 text-center text-xs font-medium text-red-500">Reason: {voidRequest.reason}</p>
                 <input
                   type="password"
                   data-keyboard="numpad"
@@ -1226,7 +1224,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                       const u = await window.api.users.verifyPin(voidPin)
                       if (u && u.role === 'supervisor') {
                         setVoidPin('')
-                        setVoidRequest({ ...voidRequest, step: 'reason' })
+                        doVoidOrder(voidRequest.orderId, voidRequest.reason)
                       } else {
                         setVoidPinError('Invalid PIN or not a supervisor')
                       }
@@ -1238,33 +1236,36 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                 />
                 {voidPinError && <p className="mt-2 text-center text-xs text-red-500">{voidPinError}</p>}
                 <div className="mt-4 flex gap-3">
-                  <button onClick={() => setVoidRequest(null)}
+                  <button onClick={() => setVoidRequest({ ...voidRequest, step: 'reason' })}
                     className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
-                    Cancel
+                    Back
                   </button>
                   <button onClick={async () => {
                     const u = await window.api.users.verifyPin(voidPin)
                     if (u && u.role === 'supervisor') {
                       setVoidPin('')
-                      setVoidRequest({ ...voidRequest, step: 'reason' })
+                      doVoidOrder(voidRequest.orderId, voidRequest.reason)
                     } else {
                       setVoidPinError('Invalid PIN or not a supervisor')
                     }
                   }}
                     className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
-                    Next
+                    Void Order
                   </button>
                 </div>
               </>
             ) : (
               <>
                 <h3 className="mb-1 text-center text-lg font-bold">Void Reason</h3>
-                <p className="mb-4 text-center text-xs text-gray-500">Select reason for voiding this order</p>
+                <p className="mb-4 text-center text-xs text-gray-500">Select or enter a reason (required)</p>
                 {voidReasons.length > 0 && !showCustomReason ? (
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {voidReasons.map((r) => (
                       <button key={r.name}
-                        onClick={() => doVoidOrder(voidRequest.orderId, r.reason_name)}
+                        onClick={() => {
+                          if (isSupervisor) { doVoidOrder(voidRequest.orderId, r.reason_name) }
+                          else { setVoidRequest({ ...voidRequest, step: 'pin', reason: r.reason_name }) }
+                        }}
                         className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-left text-sm font-medium hover:bg-red-50 hover:border-red-200 transition-colors">
                         {r.reason_name}
                       </button>
@@ -1272,7 +1273,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                     <button
                       onClick={() => setShowCustomReason(true)}
                       className="w-full rounded-xl border-2 border-dashed border-gray-200 px-4 py-3 text-left text-sm text-gray-500 hover:bg-gray-50">
-                      Other (custom reason)...
+                      Other (type reason)...
                     </button>
                   </div>
                 ) : (
@@ -1283,7 +1284,8 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                     onChange={(e) => setVoidRequest({ ...voidRequest, reason: e.target.value })}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && voidRequest.reason.trim()) {
-                        doVoidOrder(voidRequest.orderId, voidRequest.reason.trim())
+                        if (isSupervisor) { doVoidOrder(voidRequest.orderId, voidRequest.reason.trim()); setShowCustomReason(false) }
+                        else { setVoidRequest({ ...voidRequest, step: 'pin', reason: voidRequest.reason.trim() }) }
                       }
                     }}
                     autoFocus
@@ -1299,8 +1301,8 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                   {(showCustomReason || voidReasons.length === 0) && (
                     <button onClick={() => {
                       if (voidRequest.reason.trim()) {
-                        doVoidOrder(voidRequest.orderId, voidRequest.reason.trim())
-                        setShowCustomReason(false)
+                        if (isSupervisor) { doVoidOrder(voidRequest.orderId, voidRequest.reason.trim()); setShowCustomReason(false) }
+                        else { setVoidRequest({ ...voidRequest, step: 'pin', reason: voidRequest.reason.trim() }) }
                       }
                     }}
                       disabled={!voidRequest.reason.trim()}
