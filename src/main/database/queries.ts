@@ -392,8 +392,11 @@ export function addOrderItem(data: {
   return id
 }
 
-export function getOrderItems(orderId: string): any[] {
-  return queryAll('SELECT * FROM order_items WHERE order_id = ?', [orderId])
+export function getOrderItems(orderId: string, includeVoided = false): any[] {
+  if (includeVoided) {
+    return queryAll('SELECT * FROM order_items WHERE order_id = ?', [orderId])
+  }
+  return queryAll('SELECT * FROM order_items WHERE order_id = ? AND COALESCE(voided, 0) = 0', [orderId])
 }
 
 export function updateOrderItem(id: string, updates: Record<string, any>): boolean {
@@ -415,6 +418,14 @@ export function updateOrderItem(id: string, updates: Record<string, any>): boole
 
 export function removeOrderItem(id: string): boolean {
   execute('DELETE FROM order_items WHERE id = ?', [id])
+  return true
+}
+
+export function voidOrderItem(id: string, reason: string, voidedBy: string): boolean {
+  execute(
+    `UPDATE order_items SET voided = 1, void_reason = ?, voided_by = ?, voided_at = datetime('now') WHERE id = ?`,
+    [reason, voidedBy, id]
+  )
   return true
 }
 
@@ -769,6 +780,24 @@ export function getSessionOrders(sessionId: string): any[] {
   )
 }
 
+export function getSessionVoidedOrders(sessionId: string): any[] {
+  return queryAll(
+    "SELECT order_number, void_reason, cashier_name, grand_total FROM orders WHERE session_id = ? AND status = 'Void' ORDER BY created_at DESC",
+    [sessionId]
+  )
+}
+
+export function getSessionVoidedItems(sessionId: string): any[] {
+  return queryAll(
+    `SELECT oi.item_name, oi.qty, oi.rate, oi.amount, oi.void_reason, oi.voided_by, o.order_number
+     FROM order_items oi
+     JOIN orders o ON o.id = oi.order_id
+     WHERE o.session_id = ? AND oi.voided = 1
+     ORDER BY oi.voided_at DESC`,
+    [sessionId]
+  )
+}
+
 export function getSessions(limit = 10): any[] {
   return queryAll('SELECT * FROM sessions ORDER BY opened_at DESC LIMIT ?', [limit])
 }
@@ -814,19 +843,16 @@ export function getPromos(): any[] {
   return queryAll('SELECT * FROM promos WHERE enabled = 1 ORDER BY promo_name')
 }
 
-// ==================== Removed Items ====================
+// ==================== Removed/Voided Items ====================
 
-export function saveRemovedItem(data: { id: string; orderId: string; orderNumber: string; itemName: string; qty: number; rate: number; amount: number; reason: string; removedBy: string }): void {
-  const db = getDb()
-  db.run(
-    `INSERT INTO removed_items (id, order_id, order_number, item_name, qty, rate, amount, reason, removed_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [data.id, data.orderId, data.orderNumber, data.itemName, data.qty, data.rate, data.amount, data.reason, data.removedBy]
-  )
-}
-
-export function getRemovedItems(date: string): any[] {
+export function getVoidedItems(date: string): any[] {
   return queryAll(
-    `SELECT ri.*, o.order_type, o.table_name FROM removed_items ri LEFT JOIN orders o ON ri.order_id = o.id WHERE date(ri.removed_at, 'localtime') = ? ORDER BY ri.removed_at DESC`,
+    `SELECT oi.item_name, oi.qty, oi.rate, oi.amount, oi.void_reason as reason, oi.voided_by as removed_by, oi.voided_at as removed_at,
+            o.order_number, o.order_type, o.table_name
+     FROM order_items oi
+     JOIN orders o ON o.id = oi.order_id
+     WHERE oi.voided = 1 AND date(oi.voided_at, 'localtime') = ?
+     ORDER BY oi.voided_at DESC`,
     [date]
   )
 }

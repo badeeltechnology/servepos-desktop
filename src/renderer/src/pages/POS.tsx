@@ -693,10 +693,15 @@ export default function POS() {
         <div className="w-[360px] flex-shrink-0 border-l shadow-lg">
           <Cart onPlaceOrder={handlePlaceOrder} onUpdateOnly={activeOrderId ? handleUpdateOnly : undefined} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId} processing={processing}
             onItemRemoved={activeOrderId ? async (orderId, item, reason) => {
-              const order = await window.api.orders.get(orderId)
-              try {
-                await window.api.removedItems.save({ id: crypto.randomUUID(), orderId, orderNumber: order?.order_number || '', itemName: item.itemName, qty: item.qty, rate: item.rate, amount: item.amount, reason, removedBy: user?.name || '' })
-              } catch {}
+              // Flag item as voided in DB (keeps audit trail, excludes from receipt)
+              if (item.dbId) {
+                try { await window.api.orderItems.void(item.dbId, reason, user?.name || '') } catch {}
+              }
+              // Update order totals (getOrderItems already excludes voided)
+              const dbItems = await window.api.orderItems.get(orderId)
+              const newSubtotal = dbItems.reduce((s: number, i: any) => s + i.amount, 0)
+              await window.api.orders.update(orderId, { subtotal: newSubtotal, grandTotal: newSubtotal })
+              // Print void slip
               try { await window.api.print.voidSlip(orderId, reason, user?.name || '', [item]) } catch {}
             } : undefined}
             onAutoVoid={activeOrderId ? async (reason) => {

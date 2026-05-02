@@ -81,7 +81,8 @@ const api = {
     add: (data: any) => ipcRenderer.invoke('orderItems:add', data),
     get: (orderId: string) => ipcRenderer.invoke('orderItems:get', orderId),
     update: (id: string, updates: any) => ipcRenderer.invoke('orderItems:update', id, updates),
-    remove: (id: string) => ipcRenderer.invoke('orderItems:remove', id)
+    remove: (id: string) => ipcRenderer.invoke('orderItems:remove', id),
+    void: (id: string, reason: string, voidedBy: string) => ipcRenderer.invoke('orderItems:void', id, reason, voidedBy)
   },
 
   // Order Payments
@@ -182,10 +183,9 @@ const api = {
     list: () => ipcRenderer.invoke('voidReasons:list')
   },
 
-  // Removed Items
-  removedItems: {
-    save: (data: any) => ipcRenderer.invoke('removedItems:save', data),
-    list: (date: string) => ipcRenderer.invoke('removedItems:list', date)
+  // Voided Items
+  voidedItems: {
+    list: (date: string) => ipcRenderer.invoke('voidedItems:list', date)
   },
 
   // Vouchers

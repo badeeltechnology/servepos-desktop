@@ -14,7 +14,7 @@ interface CartProps {
   activeOrderId?: string | null
   processing?: boolean
   onAutoVoid?: (reason: string) => void
-  onItemRemoved?: (orderId: string, item: { itemName: string; qty: number; rate: number; amount: number }, reason: string) => void
+  onItemRemoved?: (orderId: string, item: { dbId?: string; itemName: string; qty: number; rate: number; amount: number }, reason: string) => void
 }
 
 export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, processing, onAutoVoid, onItemRemoved }: CartProps) {
@@ -504,7 +504,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                         if (user?.role === 'supervisor') {
                           const removedItem = items.find((i) => i.id === removeRequest.cartId)
                           removeItem(removeRequest.cartId)
-                          if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason.trim())
+                          if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason.trim())
                           if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason.trim())
                           setRemoveRequest(null); setRemoveCustomReason(false)
                         } else {
@@ -523,7 +523,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                     if (user?.role === 'supervisor') {
                       const removedItem = items.find((i) => i.id === removeRequest.cartId)
                       removeItem(removeRequest.cartId)
-                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason.trim())
+                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason.trim())
                       if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason.trim())
                       setRemoveRequest(null); setRemoveCustomReason(false)
                     } else {
@@ -547,7 +547,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                       if (u && u.role === 'supervisor') {
                         const removedItem = items.find((i) => i.id === removeRequest.cartId)
                         removeItem(removeRequest.cartId)
-                        if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason)
+                        if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason)
                         if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
                         setRemoveRequest(null); setRemovePin(''); setRemoveCustomReason(false)
                       } else { setRemoveError('Invalid PIN or not a supervisor') }
@@ -564,7 +564,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                     if (u && u.role === 'supervisor') {
                       const removedItem = items.find((i) => i.id === removeRequest.cartId)
                       removeItem(removeRequest.cartId)
-                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason)
+                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason)
                       if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
                       setRemoveRequest(null); setRemovePin(''); setRemoveCustomReason(false)
                     } else { setRemoveError('Invalid PIN or not a supervisor') }

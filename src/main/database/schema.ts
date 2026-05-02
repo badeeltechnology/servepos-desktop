@@ -458,22 +458,6 @@ function createTables(): void {
   `)
 
   database.run(`
-    CREATE TABLE IF NOT EXISTS removed_items (
-      id TEXT PRIMARY KEY,
-      order_id TEXT NOT NULL,
-      order_number TEXT,
-      item_name TEXT NOT NULL,
-      qty REAL NOT NULL,
-      rate REAL NOT NULL,
-      amount REAL NOT NULL,
-      reason TEXT NOT NULL,
-      removed_by TEXT,
-      removed_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
-    )
-  `)
-
-  database.run(`
     CREATE TABLE IF NOT EXISTS void_reasons (
       name TEXT PRIMARY KEY,
       reason_name TEXT NOT NULL,
@@ -779,6 +763,19 @@ function runMigrations(): void {
   for (const [col, type] of ordersCols) {
     if (!hasColumn('orders', col)) {
       try { database.run(`ALTER TABLE orders ADD COLUMN ${col} ${type}`) } catch {}
+    }
+  }
+
+  // Migration: Add void tracking columns to order_items
+  const itemVoidCols: [string, string][] = [
+    ['voided', 'INTEGER DEFAULT 0'],
+    ['void_reason', 'TEXT'],
+    ['voided_by', 'TEXT'],
+    ['voided_at', 'TEXT'],
+  ]
+  for (const [col, type] of itemVoidCols) {
+    if (!hasColumn('order_items', col)) {
+      try { database.run(`ALTER TABLE order_items ADD COLUMN ${col} ${type}`) } catch {}
     }
   }
 }

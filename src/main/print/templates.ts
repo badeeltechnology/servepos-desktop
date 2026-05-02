@@ -964,6 +964,8 @@ interface CloseShiftData {
   expectedBalance: { mode: string; amount: number }[]
   closingBalance: { mode: string; amount: number }[]
   remarks: string
+  voidedOrders?: { order_number: string; void_reason: string; cashier_name: string; grand_total: number }[]
+  voidedItems?: { item_name: string; qty: number; amount: number; void_reason: string; voided_by: string; order_number: string }[]
 }
 
 export function generateCloseShiftSlip(data: CloseShiftData): string {
@@ -1015,6 +1017,28 @@ export function generateCloseShiftSlip(data: CloseShiftData): string {
         lines.push(formatLine('', `Act ${fmtAmt(actual.amount)}${diff !== 0 ? ` (${diff > 0 ? '+' : ''}${diff.toFixed(decimals)})` : ''}`))
       }
     }
+  }
+
+  if (data.voidedOrders && data.voidedOrders.length > 0) {
+    lines.push(getDashLine())
+    lines.push(CMD.BOLD_ON + 'VOIDED ORDERS' + CMD.BOLD_OFF)
+    for (const v of data.voidedOrders) {
+      lines.push(formatLine(`  #${v.order_number}`, fmtAmt(v.grand_total)))
+      lines.push(`    Reason: ${v.void_reason || '-'}`)
+    }
+    const voidTotal = data.voidedOrders.reduce((s, v) => s + (v.grand_total || 0), 0)
+    lines.push(CMD.BOLD_ON + formatLine(`  Total (${data.voidedOrders.length} orders):`, fmtAmt(voidTotal)) + CMD.BOLD_OFF)
+  }
+
+  if (data.voidedItems && data.voidedItems.length > 0) {
+    lines.push(getDashLine())
+    lines.push(CMD.BOLD_ON + 'REMOVED ITEMS' + CMD.BOLD_OFF)
+    for (const vi of data.voidedItems) {
+      lines.push(formatLine(`  ${vi.qty}x ${vi.item_name}`, fmtAmt(vi.amount)))
+      lines.push(`    #${vi.order_number} | ${vi.void_reason || '-'}`)
+    }
+    const removeTotal = data.voidedItems.reduce((s, vi) => s + (vi.amount || 0), 0)
+    lines.push(CMD.BOLD_ON + formatLine(`  Total (${data.voidedItems.length} items):`, fmtAmt(removeTotal)) + CMD.BOLD_OFF)
   }
 
   if (data.remarks) {

@@ -233,6 +233,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('orderItems:get', (_e, orderId: string) => db.getOrderItems(orderId))
   ipcMain.handle('orderItems:update', (_e, id: string, updates: any) => db.updateOrderItem(id, updates))
   ipcMain.handle('orderItems:remove', (_e, id: string) => db.removeOrderItem(id))
+  ipcMain.handle('orderItems:void', (_e, id: string, reason: string, voidedBy: string) => db.voidOrderItem(id, reason, voidedBy))
 
   // ==================== Order Payments ====================
   ipcMain.handle('orderPayments:add', (_e, orderId: string, method: string, amount: number, reference?: string, collectedByWaiter?: string) => db.addOrderPayment(orderId, method, amount, reference, collectedByWaiter))
@@ -747,7 +748,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('reports:removedItems', (_e, date?: string) => {
     const filterDate = date || new Date().toLocaleDateString('en-CA')
-    return db.getRemovedItems(filterDate)
+    return db.getVoidedItems(filterDate)
   })
 
   ipcMain.handle('reports:categorySales', (_e, date?: string) => {
@@ -845,9 +846,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('promos:list', () => db.getPromos())
   ipcMain.handle('voidReasons:list', () => db.getVoidReasons())
 
-  // Removed items
-  ipcMain.handle('removedItems:save', (_e, data: any) => { db.saveRemovedItem(data) })
-  ipcMain.handle('removedItems:list', (_e, date: string) => db.getRemovedItems(date))
+  // Voided items report
+  ipcMain.handle('voidedItems:list', (_e, date: string) => db.getVoidedItems(date))
 
   // Vouchers — validated and consumed via ERPNext
   ipcMain.handle('vouchers:validate', async (_e, code: string) => {
