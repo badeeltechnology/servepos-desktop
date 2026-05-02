@@ -236,13 +236,10 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                       setRemoveRequest({ cartId: item.id, dbId: (item as any).dbId })
                       setRemovePin(''); setRemoveError('')
                     } else {
-                      if (isOrderPlaced && (item as any).dbId) {
-                        window.api.orderItems.remove((item as any).dbId).catch(() => {})
-                      }
                       removeItem(item.id)
                       if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid()
                     }
-                  }} className="rounded p-1 text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500" title="Remove">
+                  }} className="rounded p-1 text-red-300 hover:text-red-500" title="Remove">
                     <Trash2 className="h-3 w-3" />
                   </button>
                 </div>
@@ -486,9 +483,6 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                 if (e.key === 'Enter' && removePin.length >= 4) {
                   const u = await window.api.users.verifyPin(removePin)
                   if (u && u.role === 'supervisor') {
-                    if (removeRequest.dbId) {
-                      await window.api.orderItems.remove(removeRequest.dbId).catch(() => {})
-                    }
                     removeItem(removeRequest.cartId)
                     // Auto-void if last item removed from a placed order
                     if (isOrderPlaced && items.length === 1 && onAutoVoid) {
@@ -513,9 +507,6 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
               <button onClick={async () => {
                 const u = await window.api.users.verifyPin(removePin)
                 if (u && u.role === 'supervisor') {
-                  if (removeRequest.dbId) {
-                    await window.api.orderItems.remove(removeRequest.dbId).catch(() => {})
-                  }
                   removeItem(removeRequest.cartId)
                   // Auto-void if last item removed from a placed order
                   if (isOrderPlaced && items.length === 1 && onAutoVoid) {

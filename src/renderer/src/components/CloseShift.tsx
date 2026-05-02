@@ -71,15 +71,20 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
     setClosingBalances(defaults)
   }
 
+  const [showConfirm, setShowConfirm] = useState(false)
+
   async function handleClose() {
     setError('')
     setLoading(true)
     try {
       const closingBalance = Object.entries(closingBalances).map(([mode, amount]) => ({ mode, amount }))
       await window.api.sessions.close(sessionId, closingBalance, remarks)
+      // Print closing voucher
+      try { await window.api.print.closeShift(sessionId) } catch {}
       onClose()
     } catch (err: any) {
       setError(err.message || 'Failed to close shift')
+      setShowConfirm(false)
     } finally {
       setLoading(false)
     }
@@ -283,11 +288,31 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
               className="flex-1 rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-500 hover:bg-gray-50">
               Cancel
             </button>
-            <button onClick={handleClose} disabled={loading || openOrderCount > 0 || pendingSyncCount > 0}
+            <button onClick={() => setShowConfirm(true)} disabled={loading || openOrderCount > 0 || pendingSyncCount > 0}
               className="flex-1 rounded-xl bg-red-600 py-3 text-sm font-bold text-white shadow-lg shadow-red-600/25 hover:bg-red-700 active:scale-[0.98] disabled:opacity-50">
               {loading ? 'Closing...' : 'Close Shift'}
             </button>
           </div>
+
+          {/* Confirmation dialog */}
+          {showConfirm && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+              <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
+                <h3 className="mb-2 text-center text-lg font-bold">Confirm Close Shift</h3>
+                <p className="mb-5 text-center text-sm text-gray-500">Are you sure you want to close this shift? This action cannot be undone.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setShowConfirm(false)}
+                    className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button onClick={handleClose} disabled={loading}
+                    className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
+                    {loading ? 'Closing...' : 'Yes, Close Shift'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

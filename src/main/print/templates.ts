@@ -522,7 +522,15 @@ export function generateKot(data: KotData): string {
     lines.push(CMD.DOUBLE_BOTH + '** AMENDMENT **' + CMD.NORMAL_SIZE)
   }
 
-  lines.push(CMD.BOLD_ON + `*** KOT #${String(data.kotNumber).padStart(4, '0')} ***` + CMD.BOLD_OFF)
+  // Order number on top — last 4 digits in large font for quick identification
+  if (showOrderNum) {
+    const orderNum = data.orderNumber || ''
+    const last4 = orderNum.split('-').pop() || orderNum.slice(-4)
+    lines.push(CMD.BOLD_ON + CMD.DOUBLE_BOTH + `#${last4}` + CMD.NORMAL_SIZE + CMD.BOLD_OFF)
+    lines.push(`${orderNum}`)
+  }
+
+  lines.push(CMD.BOLD_ON + `KOT #${String(data.kotNumber).padStart(4, '0')}` + CMD.BOLD_OFF)
   if (showRestName && config.restaurant_name) {
     lines.push(config.restaurant_name)
   }
@@ -566,7 +574,6 @@ export function generateKot(data: KotData): string {
 
   lines.push(getSeparatorLine())
   lines.push(CMD.ALIGN_LEFT)
-  if (showOrderNum) lines.push(` Order: ${data.orderNumber}`)
   lines.push(` Cashier: ${data.cashierName}`)
   if (data.waiterName) lines.push(` Waiter: ${data.waiterName}`)
   if (data.orderNotes) {
@@ -935,6 +942,89 @@ export function generateVoidSlip(data: VoidSlipData): string {
   lines.push(CMD.ALIGN_CENTER)
   lines.push('This order has been voided')
   lines.push('No payment collected')
+  lines.push(getSeparatorLine())
+
+  lines.push(CMD.FEED_5)
+  lines.push(CMD.PARTIAL_CUT)
+
+  return lines.join(LF)
+}
+
+// ==================== Close Shift Slip ====================
+
+interface CloseShiftData {
+  userName: string
+  openedAt: string
+  closedAt: string
+  totalSales: number
+  totalOrders: number
+  openingCash: number
+  closingCash: number
+  paymentBreakdown: Record<string, number>
+  expectedBalance: { mode: string; amount: number }[]
+  closingBalance: { mode: string; amount: number }[]
+  remarks: string
+}
+
+export function generateCloseShiftSlip(data: CloseShiftData): string {
+  const config = getAllReceiptConfig()
+  const currSym = config.currency_symbol || 'QAR'
+  const decimals = parseInt(config.currency_decimals || '2')
+  const fmtAmt = (n: number) => `${(n || 0).toFixed(decimals)} ${currSym}`
+
+  const lines: string[] = [CMD.INIT, CMD.ALIGN_CENTER]
+
+  if (config.restaurant_name) {
+    lines.push(CMD.BOLD_ON + config.restaurant_name + CMD.BOLD_OFF)
+  }
+  lines.push(getSeparatorLine())
+  lines.push(CMD.BOLD_ON + 'SHIFT CLOSING REPORT' + CMD.BOLD_OFF)
+  lines.push(getSeparatorLine())
+
+  lines.push(CMD.ALIGN_LEFT)
+  lines.push(`Cashier: ${data.userName}`)
+  const fmtTime = (s: string) => {
+    try { const d = new Date(s.includes('Z') ? s : s.replace(' ', 'T') + 'Z'); return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) } catch { return s }
+  }
+  lines.push(`Opened: ${fmtTime(data.openedAt)}`)
+  lines.push(`Closed: ${fmtTime(data.closedAt)}`)
+
+  lines.push(getDashLine())
+  lines.push(CMD.BOLD_ON + formatLine('SUMMARY', '') + CMD.BOLD_OFF)
+  lines.push(formatLine('Total Orders:', String(data.totalOrders)))
+  lines.push(formatLine('Total Sales:', fmtAmt(data.totalSales)))
+  lines.push(formatLine('Opening Cash:', fmtAmt(data.openingCash)))
+  lines.push(formatLine('Closing Cash:', fmtAmt(data.closingCash)))
+
+  if (Object.keys(data.paymentBreakdown).length > 0) {
+    lines.push(getDashLine())
+    lines.push(CMD.BOLD_ON + 'PAYMENT BREAKDOWN' + CMD.BOLD_OFF)
+    for (const [method, amount] of Object.entries(data.paymentBreakdown)) {
+      lines.push(formatLine(`  ${method}:`, fmtAmt(amount as number)))
+    }
+  }
+
+  if (data.expectedBalance.length > 0) {
+    lines.push(getDashLine())
+    lines.push(CMD.BOLD_ON + 'EXPECTED vs ACTUAL' + CMD.BOLD_OFF)
+    for (const exp of data.expectedBalance) {
+      const actual = data.closingBalance.find((c) => c.mode === exp.mode)
+      const diff = (actual?.amount || 0) - exp.amount
+      lines.push(formatLine(`  ${exp.mode}:`, `Exp ${fmtAmt(exp.amount)}`))
+      if (actual) {
+        lines.push(formatLine('', `Act ${fmtAmt(actual.amount)}${diff !== 0 ? ` (${diff > 0 ? '+' : ''}${diff.toFixed(decimals)})` : ''}`))
+      }
+    }
+  }
+
+  if (data.remarks) {
+    lines.push(getDashLine())
+    lines.push(`Remarks: ${data.remarks}`)
+  }
+
+  lines.push(getSeparatorLine())
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push(`Printed: ${new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`)
   lines.push(getSeparatorLine())
 
   lines.push(CMD.FEED_5)

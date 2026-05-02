@@ -1,7 +1,7 @@
 import { getDb, saveDatabase } from '../database/schema'
 import { getConfig, getAllReceiptConfig, getOrderItems, getOrderPayments } from '../database/queries'
 import { sendToPrinter, getPrinters, getPrintRoutes, PrinterConfig } from './printer'
-import { generateReceipt, generateKot, generateWaiterCopy, generatePrepDoc, generateInvoice, generateVoidSlip } from './templates'
+import { generateReceipt, generateKot, generateWaiterCopy, generatePrepDoc, generateInvoice, generateVoidSlip, generateCloseShiftSlip } from './templates'
 import { processForPrinter } from './arabic-bitmap'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -559,5 +559,40 @@ export async function printVoidSlip(orderId: string, voidReason: string, voidedB
   const printBuffer = await processForPrinter(slip, printer.paper_width || 80)
   const result = await sendToPrinter(printer, printBuffer)
   logPrint(orderId, 'void_slip', printer.id, result.success, result.error)
+  return result
+}
+
+export async function printCloseShift(sessionId: string): Promise<{ success: boolean; error?: string }> {
+  const db = getDb()
+
+  const sessStmt = db.prepare('SELECT * FROM sessions WHERE id = ?')
+  sessStmt.bind([sessionId])
+  if (!sessStmt.step()) { sessStmt.free(); return { success: false, error: 'Session not found' } }
+  const session = sessStmt.getAsObject() as any
+  sessStmt.free()
+
+  const routes = getPrintRoutes()
+  const receiptRoute = routes.find((r) => r.print_type === 'receipt')
+  if (!receiptRoute) return { success: false, error: 'No receipt printer' }
+  const printers = getPrinters()
+  const printer = printers.find((p) => p.id === receiptRoute.printer_id)
+  if (!printer) return { success: false, error: 'Printer not found' }
+
+  const slip = generateCloseShiftSlip({
+    userName: session.user_name || '',
+    openedAt: session.opened_at || '',
+    closedAt: session.closed_at || '',
+    totalSales: session.total_sales || 0,
+    totalOrders: session.total_orders || 0,
+    openingCash: session.opening_cash || 0,
+    closingCash: session.closing_cash || 0,
+    paymentBreakdown: session.payment_breakdown ? JSON.parse(session.payment_breakdown) : {},
+    expectedBalance: session.expected_balance ? JSON.parse(session.expected_balance) : [],
+    closingBalance: session.closing_balance ? JSON.parse(session.closing_balance) : [],
+    remarks: session.remarks || ''
+  })
+
+  const printBuffer = await processForPrinter(slip, printer.paper_width || 80)
+  const result = await sendToPrinter(printer, printBuffer)
   return result
 }

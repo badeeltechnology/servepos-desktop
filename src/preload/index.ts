@@ -154,6 +154,7 @@ const api = {
     prepDoc: (orderId: string) => ipcRenderer.invoke('print:prepDoc', orderId),
     invoice: (orderId: string, cartDiscount?: any) => ipcRenderer.invoke('print:invoice', orderId, cartDiscount),
     voidSlip: (orderId: string, voidReason: string, voidedBy: string) => ipcRenderer.invoke('print:voidSlip', orderId, voidReason, voidedBy),
+    closeShift: (sessionId: string) => ipcRenderer.invoke('print:closeShift', sessionId),
     pollReadyOrders: () => ipcRenderer.invoke('print:pollReadyOrders')
   },
 
