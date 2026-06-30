@@ -519,7 +519,7 @@ export async function printWaiterCopy(orderId: string, cartDiscount?: { percent:
   return result
 }
 
-export async function printVoidSlip(orderId: string, voidReason: string, voidedBy: string, removedItems?: { itemName: string; qty: number; rate: number; amount: number }[]): Promise<{ success: boolean; error?: string }> {
+export async function printVoidSlip(orderId: string, voidReason: string, voidedBy: string, removedItems?: { itemName: string; qty: number; rate: number; amount: number }[], voidRemarks?: string): Promise<{ success: boolean; error?: string }> {
   const db = getDb()
 
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
@@ -552,6 +552,7 @@ export async function printVoidSlip(orderId: string, voidReason: string, voidedB
     cashierName: order.cashier_name || '',
     voidReason,
     voidedBy,
+    voidRemarks: voidRemarks || '',
     items: slipItems,
     grandTotal: slipItems.reduce((s: number, i: any) => s + i.amount, 0)
   }

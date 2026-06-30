@@ -82,7 +82,7 @@ const api = {
     get: (orderId: string) => ipcRenderer.invoke('orderItems:get', orderId),
     update: (id: string, updates: any) => ipcRenderer.invoke('orderItems:update', id, updates),
     remove: (id: string) => ipcRenderer.invoke('orderItems:remove', id),
-    void: (id: string, reason: string, voidedBy: string) => ipcRenderer.invoke('orderItems:void', id, reason, voidedBy)
+    void: (id: string, reason: string, voidedBy: string, remarks?: string) => ipcRenderer.invoke('orderItems:void', id, reason, voidedBy, remarks)
   },
 
   // Order Payments
@@ -155,7 +155,7 @@ const api = {
     waiterCopy: (orderId: string, cartDiscount?: any) => ipcRenderer.invoke('print:waiterCopy', orderId, cartDiscount),
     prepDoc: (orderId: string) => ipcRenderer.invoke('print:prepDoc', orderId),
     invoice: (orderId: string, cartDiscount?: any) => ipcRenderer.invoke('print:invoice', orderId, cartDiscount),
-    voidSlip: (orderId: string, voidReason: string, voidedBy: string, removedItems?: { itemName: string; qty: number; rate: number; amount: number }[]) => ipcRenderer.invoke('print:voidSlip', orderId, voidReason, voidedBy, removedItems),
+    voidSlip: (orderId: string, voidReason: string, voidedBy: string, removedItems?: { itemName: string; qty: number; rate: number; amount: number }[], voidRemarks?: string) => ipcRenderer.invoke('print:voidSlip', orderId, voidReason, voidedBy, removedItems, voidRemarks),
     closeShift: (sessionId: string) => ipcRenderer.invoke('print:closeShift', sessionId),
     pollReadyOrders: () => ipcRenderer.invoke('print:pollReadyOrders')
   },

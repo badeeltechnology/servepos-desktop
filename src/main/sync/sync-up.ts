@@ -243,6 +243,98 @@ export async function syncUp(): Promise<SyncResult> {
     }
     voidStmt.free()
 
+    // Sync void logs to ERPNext (all voided orders not yet synced as void logs)
+    const unsyncedVoids = db.prepare(
+      "SELECT * FROM orders WHERE status = 'Void' AND COALESCE(void_synced, 0) = 0"
+    )
+    while (unsyncedVoids.step()) {
+      const order = unsyncedVoids.getAsObject() as any
+      try {
+        // Get all items (including voided) for this order
+        const itemsStmt = db.prepare('SELECT * FROM order_items WHERE order_id = ?')
+        itemsStmt.bind([order.id])
+        const orderItems: any[] = []
+        while (itemsStmt.step()) { orderItems.push(itemsStmt.getAsObject()) }
+        itemsStmt.free()
+
+        const voidType = order.void_reason === 'Voided at shift close' ? 'Shift Close Void'
+          : order.void_reason === 'Auto-closed at end of day' ? 'Auto Close Void'
+          : 'Order Void'
+
+        await client.callMethod('servepos.api.pos_session.record_void', {
+          pos_order_id: order.id,
+          order_number: order.order_number || '',
+          void_type: voidType,
+          void_reason: order.void_reason || 'No reason',
+          void_remarks: order.void_remarks || '',
+          voided_by: order.voided_by || order.cashier_name || '',
+          cashier_name: order.cashier_name || '',
+          void_date: order.created_at || new Date().toISOString(),
+          pos_profile: posProfile || '',
+          branch: company || '',
+          table_name: order.table_name || '',
+          order_type: order.order_type || '',
+          grand_total: order.grand_total || 0,
+          invoice_name: order.erpnext_docname || '',
+          items: JSON.stringify(orderItems.map((i: any) => ({
+            item_code: i.item_code,
+            item_name: i.item_name,
+            qty: i.qty,
+            rate: i.rate,
+            amount: i.amount,
+            void_reason: i.void_reason || '',
+            void_remarks: i.void_remarks || ''
+          })))
+        })
+        db.run("UPDATE orders SET void_synced = 1 WHERE id = ?", [order.id])
+      } catch (err: any) {
+        console.error(`[Sync] Failed to sync void log for ${order.order_number}:`, err.message)
+      }
+    }
+    unsyncedVoids.free()
+
+    // Sync individual item voids (items voided from active orders, not full order voids)
+    const unsyncedItemVoids = db.prepare(
+      `SELECT oi.*, o.id as order_id, o.order_number, o.order_type, o.table_name,
+              o.cashier_name, o.grand_total, o.created_at as order_date
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       WHERE oi.voided = 1 AND COALESCE(oi.void_synced, 0) = 0 AND o.status != 'Void'`
+    )
+    while (unsyncedItemVoids.step()) {
+      const item = unsyncedItemVoids.getAsObject() as any
+      try {
+        await client.callMethod('servepos.api.pos_session.record_void', {
+          pos_order_id: item.order_id + '_item_' + item.id,
+          order_number: item.order_number || '',
+          void_type: 'Item Void',
+          void_reason: item.void_reason || 'No reason',
+          void_remarks: item.void_remarks || '',
+          voided_by: item.voided_by || '',
+          cashier_name: item.cashier_name || '',
+          void_date: item.voided_at || new Date().toISOString(),
+          pos_profile: posProfile || '',
+          branch: company || '',
+          table_name: item.table_name || '',
+          order_type: item.order_type || '',
+          grand_total: item.amount || 0,
+          items: JSON.stringify([{
+            item_code: item.item_code,
+            item_name: item.item_name,
+            qty: item.qty,
+            rate: item.rate,
+            amount: item.amount,
+            void_reason: item.void_reason || '',
+            void_remarks: item.void_remarks || ''
+          }])
+        })
+        db.run("UPDATE order_items SET void_synced = 1 WHERE id = ?", [item.id])
+      } catch (err: any) {
+        console.error(`[Sync] Failed to sync item void for ${item.item_name}:`, err.message)
+      }
+    }
+    unsyncedItemVoids.free()
+
     saveDatabase()
 
     if (result.failed > 0) result.success = false

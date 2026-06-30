@@ -1034,7 +1034,8 @@ function OrderHistory() {
   async function voidOrder(id: string) {
     const reason = prompt('Void reason:')
     if (!reason) return
-    await window.api.orders.update(id, { status: 'Void', voidReason: reason })
+    const remarks = prompt('Remarks (optional):') || ''
+    await window.api.orders.update(id, { status: 'Void', voidReason: reason, voidRemarks: remarks || undefined, voidedBy: 'Supervisor' })
     loadOrders()
   }
 

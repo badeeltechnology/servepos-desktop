@@ -900,6 +900,7 @@ interface VoidSlipData {
   cashierName: string
   voidReason: string
   voidedBy: string
+  voidRemarks?: string
   items: { itemName: string; qty: number; rate: number; amount: number }[]
   grandTotal: number
 }
@@ -937,6 +938,9 @@ export function generateVoidSlip(data: VoidSlipData): string {
 
   lines.push('')
   lines.push(CMD.BOLD_ON + `Reason: ${data.voidReason}` + CMD.BOLD_OFF)
+  if (data.voidRemarks) {
+    lines.push(`Remarks: ${data.voidRemarks}`)
+  }
   lines.push('')
   lines.push(getSeparatorLine())
   lines.push(CMD.ALIGN_CENTER)

@@ -772,10 +772,24 @@ function runMigrations(): void {
     ['void_reason', 'TEXT'],
     ['voided_by', 'TEXT'],
     ['voided_at', 'TEXT'],
+    ['void_remarks', 'TEXT'],
+    ['void_synced', 'INTEGER DEFAULT 0'],
   ]
   for (const [col, type] of itemVoidCols) {
     if (!hasColumn('order_items', col)) {
       try { database.run(`ALTER TABLE order_items ADD COLUMN ${col} ${type}`) } catch {}
+    }
+  }
+
+  // Migration: Add void_remarks and void_synced to orders
+  const orderVoidCols: [string, string][] = [
+    ['void_remarks', 'TEXT'],
+    ['void_synced', 'INTEGER DEFAULT 0'],
+    ['voided_by', 'TEXT'],
+  ]
+  for (const [col, type] of orderVoidCols) {
+    if (!hasColumn('orders', col)) {
+      try { database.run(`ALTER TABLE orders ADD COLUMN ${col} ${type}`) } catch {}
     }
   }
 }

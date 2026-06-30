@@ -14,7 +14,7 @@ interface CartProps {
   activeOrderId?: string | null
   processing?: boolean
   onAutoVoid?: (reason: string) => void
-  onItemRemoved?: (orderId: string, item: { dbId?: string; itemName: string; qty: number; rate: number; amount: number }, reason: string) => void
+  onItemRemoved?: (orderId: string, item: { dbId?: string; itemName: string; qty: number; rate: number; amount: number }, reason: string, remarks?: string) => void
 }
 
 export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, processing, onAutoVoid, onItemRemoved }: CartProps) {
@@ -54,7 +54,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
   const [discountError, setDiscountError] = useState('')
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [showPrintMenu, setShowPrintMenu] = useState(false)
-  const [removeRequest, setRemoveRequest] = useState<{ cartId: string; dbId?: string; step: 'reason' | 'pin'; reason: string } | null>(null)
+  const [removeRequest, setRemoveRequest] = useState<{ cartId: string; dbId?: string; step: 'reason' | 'remarks' | 'pin'; reason: string; remarks: string } | null>(null)
   const [removePin, setRemovePin] = useState('')
   const [removeError, setRemoveError] = useState('')
   const [removeReasons, setRemoveReasons] = useState<{ name: string; reason_name: string }[]>([])
@@ -243,7 +243,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                   <span className="text-[13px] font-bold text-gray-800 whitespace-nowrap">{item.amount.toFixed(2)}</span>
                   <button onClick={() => {
                     if (isOrderPlaced) {
-                      setRemoveRequest({ cartId: item.id, dbId: (item as any).dbId, step: 'reason', reason: '' }); setRemoveCustomReason(false)
+                      setRemoveRequest({ cartId: item.id, dbId: (item as any).dbId, step: 'reason', reason: '', remarks: '' }); setRemoveCustomReason(false)
                       setRemovePin(''); setRemoveError('')
                     } else {
                       removeItem(item.id)
@@ -487,7 +487,11 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                 <p className="mb-4 text-center text-xs text-gray-500">Select or type a reason (required)</p>
                 {removeReasons.length > 0 && (
                   <select value={removeRequest.reason}
-                    onChange={(e) => setRemoveRequest({ ...removeRequest, reason: e.target.value })}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      if (v && v !== '__custom__') { setRemoveRequest({ ...removeRequest, reason: v, step: 'remarks' }) }
+                      else { setRemoveRequest({ ...removeRequest, reason: v }) }
+                    }}
                     className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none mb-2">
                     <option value="">-- Select reason --</option>
                     {removeReasons.map((r) => (
@@ -501,15 +505,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                     onChange={(e) => setRemoveRequest({ ...removeRequest, reason: e.target.value })}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && removeRequest.reason.trim() && removeRequest.reason !== '__custom__') {
-                        if (user?.role === 'supervisor') {
-                          const removedItem = items.find((i) => i.id === removeRequest.cartId)
-                          removeItem(removeRequest.cartId)
-                          if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason.trim())
-                          if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason.trim())
-                          setRemoveRequest(null); setRemoveCustomReason(false)
-                        } else {
-                          setRemoveRequest({ ...removeRequest, step: 'pin', reason: removeRequest.reason.trim() })
-                        }
+                        setRemoveRequest({ ...removeRequest, step: 'remarks', reason: removeRequest.reason.trim() })
                       }
                     }}
                     placeholder="Enter reason..."
@@ -518,20 +514,40 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                 <div className="mt-4 flex gap-3">
                   <button onClick={() => { setRemoveRequest(null); setRemoveCustomReason(false) }}
                     className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
+                  {(removeRequest.reason === '__custom__' || removeReasons.length === 0) && (
+                    <button onClick={() => {
+                      if (removeRequest.reason.trim() && removeRequest.reason !== '__custom__') {
+                        setRemoveRequest({ ...removeRequest, step: 'remarks', reason: removeRequest.reason.trim() })
+                      }
+                    }} disabled={!removeRequest.reason.trim() || removeRequest.reason === '__custom__'}
+                      className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">Next</button>
+                  )}
+                </div>
+              </>
+            ) : removeRequest.step === 'remarks' ? (
+              <>
+                <h3 className="mb-1 text-center text-lg font-bold">Remarks</h3>
+                <p className="mb-2 text-center text-xs text-gray-500">Reason: <strong>{removeRequest.reason}</strong></p>
+                <textarea data-keyboard="full" value={removeRequest.remarks}
+                  onChange={(e) => setRemoveRequest({ ...removeRequest, remarks: e.target.value })}
+                  placeholder="Add remarks (optional)..."
+                  className="w-full resize-none rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" rows={3} autoFocus />
+                <div className="mt-4 flex gap-3">
+                  <button onClick={() => setRemoveRequest({ ...removeRequest, step: 'reason' })}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm font-semibold hover:bg-gray-50">Back</button>
                   <button onClick={() => {
-                    if (!removeRequest.reason.trim() || removeRequest.reason === '__custom__') return
                     if (user?.role === 'supervisor') {
                       const removedItem = items.find((i) => i.id === removeRequest.cartId)
                       removeItem(removeRequest.cartId)
-                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason.trim())
-                      if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason.trim())
+                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason, removeRequest.remarks.trim())
+                      if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
                       setRemoveRequest(null); setRemoveCustomReason(false)
                     } else {
-                      setRemoveRequest({ ...removeRequest, step: 'pin', reason: removeRequest.reason.trim() })
+                      setRemoveRequest({ ...removeRequest, step: 'pin' })
                     }
-                  }}
-                    disabled={!removeRequest.reason.trim() || removeRequest.reason === '__custom__'}
-                    className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">{user?.role === 'supervisor' ? 'Remove' : 'Next'}</button>
+                  }} className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
+                    {user?.role === 'supervisor' ? 'Remove' : 'Next'}
+                  </button>
                 </div>
               </>
             ) : (
@@ -547,7 +563,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                       if (u && u.role === 'supervisor') {
                         const removedItem = items.find((i) => i.id === removeRequest.cartId)
                         removeItem(removeRequest.cartId)
-                        if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason)
+                        if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason, removeRequest.remarks.trim())
                         if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
                         setRemoveRequest(null); setRemovePin(''); setRemoveCustomReason(false)
                       } else { setRemoveError('Invalid PIN or not a supervisor') }
@@ -557,14 +573,14 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-center text-lg tracking-widest focus:border-primary focus:outline-none" />
                 {removeError && <p className="mt-2 text-xs text-red-500">{removeError}</p>}
                 <div className="mt-4 flex gap-3">
-                  <button onClick={() => setRemoveRequest({ ...removeRequest, step: 'reason' })}
+                  <button onClick={() => setRemoveRequest({ ...removeRequest, step: 'remarks' })}
                     className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Back</button>
                   <button onClick={async () => {
                     const u = await window.api.users.verifyPin(removePin)
                     if (u && u.role === 'supervisor') {
                       const removedItem = items.find((i) => i.id === removeRequest.cartId)
                       removeItem(removeRequest.cartId)
-                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason)
+                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason, removeRequest.remarks.trim())
                       if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
                       setRemoveRequest(null); setRemovePin(''); setRemoveCustomReason(false)
                     } else { setRemoveError('Invalid PIN or not a supervisor') }
