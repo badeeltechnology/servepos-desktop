@@ -831,6 +831,9 @@ function saveDatabaseSafe(): void {
     }
     // Step 3: Rename temp to main (atomic on NTFS/APFS/ext4)
     renameSync(dbTmpPath, dbPath)
+    // Step 4: Also write backup with current data so both files are in sync
+    // This ensures recovery always has the latest state even after power loss
+    try { writeAndFlush(dbBackupPath, buffer) } catch {}
   } catch (err) {
     console.error('Failed to save database:', err)
   }

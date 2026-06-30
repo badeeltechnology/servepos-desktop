@@ -247,8 +247,16 @@ export function registerIpcHandlers(): void {
 
   // ==================== Sessions / Shifts ====================
   ipcMain.handle('sessions:getActive', () => db.getActiveSession())
-  ipcMain.handle('sessions:open', (_e, data: any) => db.openSession(data))
-  ipcMain.handle('sessions:close', (_e, sessionId: string, closingBalance: any[], remarks?: string) => db.closeSession(sessionId, closingBalance, remarks))
+  ipcMain.handle('sessions:open', (_e, data: any) => {
+    const result = db.openSession(data)
+    saveDatabaseSync() // Critical — must persist shift open
+    return result
+  })
+  ipcMain.handle('sessions:close', (_e, sessionId: string, closingBalance: any[], remarks?: string) => {
+    const result = db.closeSession(sessionId, closingBalance, remarks)
+    saveDatabaseSync() // Extra explicit save — critical operation must persist
+    return result
+  })
   ipcMain.handle('sessions:getOrders', (_e, sessionId: string) => db.getSessionOrders(sessionId))
   ipcMain.handle('sessions:getOpenOrders', (_e, sessionId: string) => db.getSessionOpenOrders(sessionId))
   ipcMain.handle('sessions:getAllOpenOrders', () => db.getAllOpenOrders())
