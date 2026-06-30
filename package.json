@@ -1,6 +1,6 @@
 {
   "name": "servepos-desktop",
-  "version": "2.12.9",
+  "version": "2.13.0",
   "description": "ServePOS Desktop — Offline POS System",
   "author": "Badeel Technology",
   "main": "./out/main/index.js",
