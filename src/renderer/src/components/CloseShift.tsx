@@ -356,45 +356,34 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
               <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
                 <h3 className="mb-1 text-center text-lg font-bold">Void Order #{singleVoid.orderNumber}</h3>
-                <p className="mb-3 text-center text-xs text-gray-500">Select or enter a reason</p>
+                <p className="mb-4 text-center text-xs text-gray-500">Select a reason and add remarks</p>
 
-                {voidReasons.length > 0 && !singleVoid.reason && (
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto mb-3">
+                {voidReasons.length > 0 && (
+                  <select
+                    value={singleVoid.reason}
+                    onChange={(e) => setSingleVoid({ ...singleVoid, reason: e.target.value })}
+                    className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-3"
+                  >
+                    <option value="">-- Select reason --</option>
                     {voidReasons.map((r) => (
-                      <button key={r.name}
-                        onClick={() => setSingleVoid({ ...singleVoid, reason: r.reason_name })}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm font-medium hover:bg-red-50 hover:border-red-200 transition-colors">
-                        {r.reason_name}
-                      </button>
+                      <option key={r.name} value={r.reason_name}>{r.reason_name}</option>
                     ))}
-                    <button onClick={() => setSingleVoid({ ...singleVoid, reason: ' ' })}
-                      className="w-full rounded-lg border border-dashed border-gray-200 px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50">
-                      Other (type reason)...
-                    </button>
-                  </div>
+                    <option value="__custom__">Other (type reason)...</option>
+                  </select>
                 )}
 
-                {(singleVoid.reason || voidReasons.length === 0) && (
-                  <>
-                    {(singleVoid.reason === ' ' || voidReasons.length === 0) && (
-                      <input type="text" data-keyboard="full" value={singleVoid.reason.trim()}
-                        onChange={(e) => setSingleVoid({ ...singleVoid, reason: e.target.value })}
-                        placeholder="Enter void reason..."
-                        className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-2" autoFocus />
-                    )}
-                    {singleVoid.reason.trim() && (
-                      <>
-                        {voidReasons.length > 0 && singleVoid.reason !== ' ' && (
-                          <p className="mb-2 text-xs text-gray-500">Reason: <strong>{singleVoid.reason}</strong></p>
-                        )}
-                        <textarea data-keyboard="full" value={singleVoid.remarks}
-                          onChange={(e) => setSingleVoid({ ...singleVoid, remarks: e.target.value })}
-                          placeholder="Add remarks (optional)..."
-                          className="w-full resize-none rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-3" rows={2} />
-                      </>
-                    )}
-                  </>
+                {(singleVoid.reason === '__custom__' || voidReasons.length === 0) && (
+                  <input type="text" data-keyboard="full"
+                    value={singleVoid.reason === '__custom__' ? '' : singleVoid.reason}
+                    onChange={(e) => setSingleVoid({ ...singleVoid, reason: e.target.value })}
+                    placeholder="Enter void reason..."
+                    className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-3" autoFocus />
                 )}
+
+                <textarea data-keyboard="full" value={singleVoid.remarks}
+                  onChange={(e) => setSingleVoid({ ...singleVoid, remarks: e.target.value })}
+                  placeholder="Add remarks (optional)..."
+                  className="w-full resize-none rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-4" rows={2} />
 
                 <div className="flex gap-3">
                   <button onClick={() => setSingleVoid(null)}
@@ -402,7 +391,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
                   <button
                     onClick={async () => {
                       const reason = singleVoid.reason.trim()
-                      if (!reason) return
+                      if (!reason || reason === '__custom__') return
                       try {
                         await window.api.orders.update(singleVoid.orderId, {
                           status: 'Void', voidReason: reason,
@@ -420,7 +409,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
                         setError(err.message || 'Failed to void order')
                       }
                     }}
-                    disabled={!singleVoid.reason.trim()}
+                    disabled={!singleVoid.reason.trim() || singleVoid.reason === '__custom__'}
                     className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
                     Void
                   </button>
