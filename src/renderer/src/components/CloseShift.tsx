@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Clock, CheckCircle, AlertTriangle, Banknote, UserCheck, Trash2 } from 'lucide-react'
+import { X, Clock, CheckCircle, AlertTriangle, Banknote, UserCheck } from 'lucide-react'
 
 interface Props {
   sessionId: string
@@ -22,9 +22,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
   const [allOpenOrders, setAllOpenOrders] = useState<any[]>([])
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [waiterSummary, setWaiterSummary] = useState<any[]>([])
-  const [voidingAll, setVoidingAll] = useState(false)
-  const [showVoidAllConfirm, setShowVoidAllConfirm] = useState(false)
-  const [voidAllRemarks, setVoidAllRemarks] = useState('')
+
   const [singleVoid, setSingleVoid] = useState<{ orderId: string; orderNumber: string; reason: string; remarks: string } | null>(null)
   const [voidReasons, setVoidReasons] = useState<{ name: string; reason_name: string }[]>([])
 
@@ -278,19 +276,9 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
           {/* Blockers */}
           {openOrderCount > 0 && (
             <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200 p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2 text-sm text-amber-700">
-                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                  <span><strong>{openOrderCount} order(s)</strong> still open. Void them to close shift.</span>
-                </div>
-                <button
-                  onClick={() => { setShowVoidAllConfirm(true); setVoidAllRemarks('') }}
-                  disabled={voidingAll}
-                  className="flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  {voidingAll ? 'Voiding...' : 'Void All'}
-                </button>
+              <div className="flex items-center gap-2 text-sm text-amber-700 mb-2">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                <span><strong>{openOrderCount} order(s)</strong> still open. Void them to close shift.</span>
               </div>
               <div className="max-h-32 overflow-y-auto space-y-1">
                 {allOpenOrders.map((order: any) => {
@@ -412,58 +400,6 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
                     disabled={!singleVoid.reason.trim() || singleVoid.reason === '__custom__'}
                     className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
                     Void
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Void All confirmation with remarks */}
-          {showVoidAllConfirm && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-              <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
-                <h3 className="mb-2 text-center text-lg font-bold">Void All Orders</h3>
-                <p className="mb-3 text-center text-sm text-gray-500">
-                  This will void <strong>{openOrderCount}</strong> open order(s) with reason &quot;Voided at shift close&quot;.
-                </p>
-                <textarea
-                  value={voidAllRemarks}
-                  onChange={(e) => setVoidAllRemarks(e.target.value)}
-                  data-keyboard="full"
-                  placeholder="Add remarks (optional)..."
-                  className="w-full resize-none rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none mb-4"
-                  rows={3} autoFocus
-                />
-                <div className="flex gap-3">
-                  <button onClick={() => setShowVoidAllConfirm(false)}
-                    className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
-                    Cancel
-                  </button>
-                  <button onClick={async () => {
-                    setShowVoidAllConfirm(false)
-                    setVoidingAll(true)
-                    try {
-                      const rmk = voidAllRemarks.trim()
-                      for (const order of allOpenOrders) {
-                        await window.api.orders.update(order.id, {
-                          status: 'Void',
-                          voidReason: 'Voided at shift close',
-                          voidRemarks: rmk || undefined,
-                          voidedBy: 'Supervisor'
-                        })
-                        if (order.table_name) {
-                          try { await window.api.tables.updateStatus(order.table_name, 'Available') } catch {}
-                        }
-                      }
-                      await loadData()
-                    } catch (err: any) {
-                      setError(err.message || 'Failed to void orders')
-                    } finally {
-                      setVoidingAll(false)
-                    }
-                  }} disabled={voidingAll}
-                    className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
-                    {voidingAll ? 'Voiding...' : 'Void All'}
                   </button>
                 </div>
               </div>
