@@ -30,8 +30,8 @@ export async function syncUp(): Promise<SyncResult> {
 
     for (const order of pendingOrders) {
       try {
-        // Get order items
-        const itemsStmt = db.prepare('SELECT * FROM order_items WHERE order_id = ?')
+        // Get order items (exclude voided items — they are tracked separately in void logs)
+        const itemsStmt = db.prepare('SELECT * FROM order_items WHERE order_id = ? AND COALESCE(voided, 0) = 0')
         itemsStmt.bind([order.id])
         const orderItems: any[] = []
         while (itemsStmt.step()) {
