@@ -251,6 +251,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sessions:close', (_e, sessionId: string, closingBalance: any[], remarks?: string) => db.closeSession(sessionId, closingBalance, remarks))
   ipcMain.handle('sessions:getOrders', (_e, sessionId: string) => db.getSessionOrders(sessionId))
   ipcMain.handle('sessions:getOpenOrders', (_e, sessionId: string) => db.getSessionOpenOrders(sessionId))
+  ipcMain.handle('sessions:getAllOpenOrders', () => db.getAllOpenOrders())
   ipcMain.handle('sessions:getPendingSync', (_e, sessionId: string) => db.getSessionPendingSyncOrders(sessionId))
   ipcMain.handle('sessions:getAll', (_e, limit?: number) => db.getSessions(limit))
 
@@ -262,8 +263,8 @@ export function registerIpcHandlers(): void {
 
       const database = getDb()
 
-      // Void all Open/Hold orders in this session
-      const openOrders = db.getSessionOpenOrders(session.id)
+      // Void all Open/Hold orders (including previous sessions)
+      const openOrders = db.getAllOpenOrders()
       for (const order of openOrders) {
         database.run(
           "UPDATE orders SET status = 'Void', void_reason = 'Auto-closed at end of day' WHERE id = ?",

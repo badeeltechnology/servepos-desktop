@@ -323,7 +323,7 @@ export function getOrder(id: string): any | null {
 
 export function getActiveOrders(): any[] {
   return queryAll(
-    "SELECT * FROM orders WHERE status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced') AND date(created_at, 'localtime') = date('now', 'localtime') ORDER BY created_at DESC"
+    "SELECT * FROM orders WHERE status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced') ORDER BY created_at DESC"
   )
 }
 
@@ -683,6 +683,12 @@ export function getSessionOpenOrders(sessionId: string): any[] {
   )
 }
 
+export function getAllOpenOrders(): any[] {
+  return queryAll(
+    "SELECT * FROM orders WHERE status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced') ORDER BY created_at DESC"
+  )
+}
+
 export function getSessionPendingSyncOrders(sessionId: string): any[] {
   return queryAll(
     "SELECT * FROM orders WHERE session_id = ? AND status = 'Completed' AND sync_status IN ('pending', 'failed') ORDER BY created_at DESC",
@@ -695,8 +701,8 @@ export function closeSession(sessionId: string, closingBalance: { mode: string; 
   if (!session) throw new Error('Session not found')
   if (session.status !== 'Open') throw new Error('Session is not open')
 
-  // Check for open/hold orders
-  const openOrders = getSessionOpenOrders(sessionId)
+  // Check for open/hold orders (all orders, not just current session)
+  const openOrders = getAllOpenOrders()
   if (openOrders.length > 0) {
     throw new Error(`Cannot close shift: ${openOrders.length} order(s) still open or on hold. Supervisor must complete or void them first.`)
   }

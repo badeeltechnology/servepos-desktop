@@ -124,6 +124,7 @@ const api = {
     autoClose: () => ipcRenderer.invoke('sessions:autoClose'),
     getOrders: (sessionId: string) => ipcRenderer.invoke('sessions:getOrders', sessionId),
     getOpenOrders: (sessionId: string) => ipcRenderer.invoke('sessions:getOpenOrders', sessionId),
+    getAllOpenOrders: () => ipcRenderer.invoke('sessions:getAllOpenOrders'),
     getPendingSync: (sessionId: string) => ipcRenderer.invoke('sessions:getPendingSync', sessionId),
     getWaiterSummary: (sessionId: string) => ipcRenderer.invoke('sessions:getWaiterSummary', sessionId),
     getAll: (limit?: number) => ipcRenderer.invoke('sessions:getAll', limit)

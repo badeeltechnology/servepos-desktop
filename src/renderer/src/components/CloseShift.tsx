@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Clock, CheckCircle, AlertTriangle, Banknote, UserCheck } from 'lucide-react'
+import { X, Clock, CheckCircle, AlertTriangle, Banknote, UserCheck, Trash2 } from 'lucide-react'
 
 interface Props {
   sessionId: string
@@ -19,22 +19,26 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
   const [orderCount, setOrderCount] = useState(0)
   const [totalSales, setTotalSales] = useState(0)
   const [openOrderCount, setOpenOrderCount] = useState(0)
+  const [allOpenOrders, setAllOpenOrders] = useState<any[]>([])
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [waiterSummary, setWaiterSummary] = useState<any[]>([])
+  const [voidingAll, setVoidingAll] = useState(false)
 
   useEffect(() => { loadData() }, [sessionId])
 
   async function loadData() {
-    const [s, methods, orders, openOrders, pendingSync] = await Promise.all([
+    const [s, methods, orders, openOrders, pendingSync, allOpen] = await Promise.all([
       window.api.sessions.getActive(),
       window.api.paymentMethods.get(),
       window.api.sessions.getOrders(sessionId),
       window.api.sessions.getOpenOrders(sessionId),
-      window.api.sessions.getPendingSync(sessionId)
+      window.api.sessions.getPendingSync(sessionId),
+      window.api.sessions.getAllOpenOrders()
     ])
     setSession(s)
     setPaymentMethods(methods)
-    setOpenOrderCount(openOrders.length)
+    setAllOpenOrders(allOpen || [])
+    setOpenOrderCount(allOpen.length)
     setPendingSyncCount(pendingSync.length)
 
     // Calculate expected amounts
@@ -263,9 +267,61 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
         <div className="border-t px-6 py-4">
           {/* Blockers */}
           {openOrderCount > 0 && (
-            <div className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700">
-              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-              <span><strong>{openOrderCount} order(s)</strong> still open or on hold. Supervisor must complete or void them before closing.</span>
+            <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 text-sm text-amber-700">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  <span><strong>{openOrderCount} order(s)</strong> still open. Void them to close shift.</span>
+                </div>
+                <button
+                  onClick={async () => {
+                    setVoidingAll(true)
+                    try {
+                      const database = window.api
+                      for (const order of allOpenOrders) {
+                        await database.orders.update(order.id, { status: 'Void', voidReason: 'Voided at shift close' })
+                        if (order.table_name) {
+                          try { await database.tables.updateStatus(order.table_name, 'Available') } catch {}
+                        }
+                      }
+                      await loadData()
+                    } catch (err: any) {
+                      setError(err.message || 'Failed to void orders')
+                    } finally {
+                      setVoidingAll(false)
+                    }
+                  }}
+                  disabled={voidingAll}
+                  className="flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  {voidingAll ? 'Voiding...' : 'Void All'}
+                </button>
+              </div>
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {allOpenOrders.map((order: any) => {
+                  const isOldSession = order.session_id !== sessionId
+                  const createdDate = new Date(order.created_at + 'Z')
+                  return (
+                    <div key={order.id} className="flex items-center justify-between rounded-lg bg-white/70 px-3 py-1.5 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">#{order.order_number?.split('-').pop()}</span>
+                        <span className="text-gray-500">{order.table_name || order.order_type}</span>
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                          order.status === 'Hold' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'
+                        }`}>{order.status}</span>
+                        {isOldSession && (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">Previous shift</span>
+                        )}
+                      </div>
+                      <span className="text-gray-400">
+                        {createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}{' '}
+                        {createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
           {pendingSyncCount > 0 && (
