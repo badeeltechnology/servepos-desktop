@@ -25,6 +25,8 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
   const [voidingAll, setVoidingAll] = useState(false)
   const [showVoidAllConfirm, setShowVoidAllConfirm] = useState(false)
   const [voidAllRemarks, setVoidAllRemarks] = useState('')
+  const [singleVoid, setSingleVoid] = useState<{ orderId: string; orderNumber: string; reason: string; remarks: string } | null>(null)
+  const [voidReasons, setVoidReasons] = useState<{ name: string; reason_name: string }[]>([])
 
   useEffect(() => { loadData() }, [sessionId])
 
@@ -62,6 +64,12 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
     }
 
     setExpected(expectedAmounts)
+
+    // Load void reasons
+    try {
+      const reasons = await window.api.voidReasons.list()
+      setVoidReasons(reasons || [])
+    } catch { /* ignore */ }
 
     // Load waiter summary
     try {
@@ -300,10 +308,16 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
                           <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">Previous shift</span>
                         )}
                       </div>
-                      <span className="text-gray-400">
-                        {createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}{' '}
-                        {createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400 text-[10px]">
+                          {createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}{' '}
+                          {createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <button
+                          onClick={() => setSingleVoid({ orderId: order.id, orderNumber: order.order_number?.split('-').pop() || '', reason: '', remarks: '' })}
+                          className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600 hover:bg-red-200"
+                        >Void</button>
+                      </div>
                     </div>
                   )
                 })}
@@ -337,6 +351,84 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
           </div>
 
           {/* Confirmation dialog */}
+          {/* Single order void modal */}
+          {singleVoid && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+              <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
+                <h3 className="mb-1 text-center text-lg font-bold">Void Order #{singleVoid.orderNumber}</h3>
+                <p className="mb-3 text-center text-xs text-gray-500">Select or enter a reason</p>
+
+                {voidReasons.length > 0 && !singleVoid.reason && (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto mb-3">
+                    {voidReasons.map((r) => (
+                      <button key={r.name}
+                        onClick={() => setSingleVoid({ ...singleVoid, reason: r.reason_name })}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm font-medium hover:bg-red-50 hover:border-red-200 transition-colors">
+                        {r.reason_name}
+                      </button>
+                    ))}
+                    <button onClick={() => setSingleVoid({ ...singleVoid, reason: ' ' })}
+                      className="w-full rounded-lg border border-dashed border-gray-200 px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50">
+                      Other (type reason)...
+                    </button>
+                  </div>
+                )}
+
+                {(singleVoid.reason || voidReasons.length === 0) && (
+                  <>
+                    {(singleVoid.reason === ' ' || voidReasons.length === 0) && (
+                      <input type="text" data-keyboard="full" value={singleVoid.reason.trim()}
+                        onChange={(e) => setSingleVoid({ ...singleVoid, reason: e.target.value })}
+                        placeholder="Enter void reason..."
+                        className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-2" autoFocus />
+                    )}
+                    {singleVoid.reason.trim() && (
+                      <>
+                        {voidReasons.length > 0 && singleVoid.reason !== ' ' && (
+                          <p className="mb-2 text-xs text-gray-500">Reason: <strong>{singleVoid.reason}</strong></p>
+                        )}
+                        <textarea data-keyboard="full" value={singleVoid.remarks}
+                          onChange={(e) => setSingleVoid({ ...singleVoid, remarks: e.target.value })}
+                          placeholder="Add remarks (optional)..."
+                          className="w-full resize-none rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-3" rows={2} />
+                      </>
+                    )}
+                  </>
+                )}
+
+                <div className="flex gap-3">
+                  <button onClick={() => setSingleVoid(null)}
+                    className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
+                  <button
+                    onClick={async () => {
+                      const reason = singleVoid.reason.trim()
+                      if (!reason) return
+                      try {
+                        await window.api.orders.update(singleVoid.orderId, {
+                          status: 'Void', voidReason: reason,
+                          voidRemarks: singleVoid.remarks.trim() || undefined,
+                          voidedBy: 'Supervisor'
+                        })
+                        const order = allOpenOrders.find(o => o.id === singleVoid.orderId)
+                        if (order?.table_name) {
+                          try { await window.api.tables.updateStatus(order.table_name, 'Available') } catch {}
+                        }
+                        try { await window.api.print.voidSlip(singleVoid.orderId, reason, 'Supervisor', undefined, singleVoid.remarks.trim()) } catch {}
+                        setSingleVoid(null)
+                        await loadData()
+                      } catch (err: any) {
+                        setError(err.message || 'Failed to void order')
+                      }
+                    }}
+                    disabled={!singleVoid.reason.trim()}
+                    className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
+                    Void
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Void All confirmation with remarks */}
           {showVoidAllConfirm && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
