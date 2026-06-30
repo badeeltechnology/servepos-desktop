@@ -4,7 +4,7 @@ import * as db from '../database/queries'
 import { getDb, saveDatabase, saveDatabaseSync, deleteDatabase, initDatabase } from '../database/schema'
 import { writeFileSync, readFileSync } from 'fs'
 import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
-import { ERPNextClient } from '../sync/erpnext-client'
+import { ERPNextClient, getActiveUrl } from '../sync/erpnext-client'
 import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute, discoverUsbPrinters } from '../print/printer'
 import { printReceipt, printKots, printAmendmentKot, printWaiterCopy, printPrepDoc, printInvoice, printVoidSlip, printCloseShift } from '../print/print-engine'
 
@@ -654,7 +654,7 @@ export function registerIpcHandlers(): void {
     try {
       const client = new ERPNextClient()
       // Use Frappe's standard REST API to update the pin field
-      const res = await fetch(`${db.getConfig('erpnext_url')}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
+      const res = await fetch(`${getActiveUrl()}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
         method: 'PUT',
         headers: {
           'Authorization': `token ${db.getConfig('api_key')}:${db.getConfig('api_secret')}`,
@@ -671,7 +671,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('waiters:toggleActive', async (_e, waiterName: string, isActive: boolean) => {
     try {
-      const res = await fetch(`${db.getConfig('erpnext_url')}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
+      const res = await fetch(`${getActiveUrl()}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
         method: 'PUT',
         headers: {
           'Authorization': `token ${db.getConfig('api_key')}:${db.getConfig('api_secret')}`,

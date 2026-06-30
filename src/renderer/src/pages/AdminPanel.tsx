@@ -1096,6 +1096,7 @@ function SystemSettings() {
 function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, string>; onSave: () => void }) {
   const [editing, setEditing] = useState(false)
   const [url, setUrl] = useState('')
+  const [fallbackUrl, setFallbackUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [apiSecret, setApiSecret] = useState('')
   const [selectedCompany, setSelectedCompany] = useState('')
@@ -1109,6 +1110,7 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
 
   function startEditing() {
     setUrl(config.erpnext_url || '')
+    setFallbackUrl(config.erpnext_url_fallback || '')
     setApiKey(config.api_key || '')
     setApiSecret(config.api_secret || '')
     setSelectedCompany(config.company || '')
@@ -1131,6 +1133,7 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
 
     // Temporarily save to test
     await window.api.config.set('erpnext_url', url.trim().replace(/\/+$/, ''))
+    await window.api.config.set('erpnext_url_fallback', fallbackUrl.trim().replace(/\/+$/, ''))
     await window.api.config.set('api_key', apiKey.trim())
     await window.api.config.set('api_secret', apiSecret.trim())
 
@@ -1159,6 +1162,7 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
     } else {
       // Revert to old values
       await window.api.config.set('erpnext_url', config.erpnext_url || '')
+      await window.api.config.set('erpnext_url_fallback', config.erpnext_url_fallback || '')
       await window.api.config.set('api_key', config.api_key || '')
       await window.api.config.set('api_secret', config.api_secret || '')
       setStatus({ ok: false, message: `Failed: ${result.error}` })
@@ -1174,6 +1178,7 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
     setSaving(true)
     setStatus({ ok: true, message: 'Saving and syncing data from ERPNext...' })
     await window.api.config.set('erpnext_url', url.trim().replace(/\/+$/, ''))
+    await window.api.config.set('erpnext_url_fallback', fallbackUrl.trim().replace(/\/+$/, ''))
     await window.api.config.set('api_key', apiKey.trim())
     await window.api.config.set('api_secret', apiSecret.trim())
     await window.api.config.set('company', selectedCompany)
@@ -1195,6 +1200,7 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
   function handleCancel() {
     // Revert if we changed during test
     window.api.config.set('erpnext_url', config.erpnext_url || '')
+    window.api.config.set('erpnext_url_fallback', config.erpnext_url_fallback || '')
     window.api.config.set('api_key', config.api_key || '')
     window.api.config.set('api_secret', config.api_secret || '')
     setEditing(false)
@@ -1222,6 +1228,12 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
             <label className="mb-1 block text-sm font-medium">Site URL</label>
             <input type="text" value={config.erpnext_url || ''} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
           </div>
+          {config.erpnext_url_fallback && (
+            <div>
+              <label className="mb-1 block text-sm font-medium">Fallback URL</label>
+              <input type="text" value={config.erpnext_url_fallback} readOnly className="w-full rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm" />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-sm font-medium">Company</label>
@@ -1240,10 +1252,17 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
       ) : (
         <div className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium">Site URL</label>
+            <label className="mb-1 block text-sm font-medium">Site URL (Primary)</label>
             <input type="url" value={url} onChange={(e) => { setUrl(e.target.value); setConnected(false) }}
               className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              placeholder="https://erp.example.com" />
+              placeholder="https://domain.com" />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Fallback URL <span className="text-xs font-normal text-gray-400">(optional)</span></label>
+            <input type="url" value={fallbackUrl} onChange={(e) => setFallbackUrl(e.target.value)}
+              className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="https://domain.com" />
+            <p className="mt-1 text-xs text-gray-400">Used automatically when the primary URL is unreachable.</p>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium">API Key</label>

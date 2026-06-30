@@ -19,6 +19,7 @@ export default function Setup({ onComplete }: SetupProps) {
 
   // ERPNext connection
   const [erpnextUrl, setErpnextUrl] = useState('')
+  const [erpnextUrlFallback, setErpnextUrlFallback] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [apiSecret, setApiSecret] = useState('')
   const [connectionVerified, setConnectionVerified] = useState(false)
@@ -82,12 +83,14 @@ export default function Setup({ onComplete }: SetupProps) {
     try {
       setLoading(true)
       await window.api.config.set('erpnext_url', erpnextUrl.trim().replace(/\/+$/, ''))
+      await window.api.config.set('erpnext_url_fallback', erpnextUrlFallback.trim().replace(/\/+$/, ''))
       await window.api.config.set('api_key', apiKey.trim())
       await window.api.config.set('api_secret', apiSecret.trim())
 
       const testResult = await window.api.sync.testConnection()
       if (!testResult.success) {
         await window.api.config.set('erpnext_url', '')
+        await window.api.config.set('erpnext_url_fallback', '')
         await window.api.config.set('api_key', '')
         await window.api.config.set('api_secret', '')
         setError(`Connection failed: ${testResult.error || 'Invalid credentials'}. Please check URL and API Key/Secret.`)
@@ -273,11 +276,19 @@ export default function Setup({ onComplete }: SetupProps) {
 
               <div className="space-y-4">
                 <div>
-                  <label className="mb-1 block text-sm font-medium">ERPNext URL</label>
+                  <label className="mb-1 block text-sm font-medium">ERPNext URL (Primary)</label>
                   <input type="url" value={erpnextUrl}
                     onChange={(e) => { setErpnextUrl(e.target.value); setConnectionVerified(false) }}
                     className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="https://erp.example.com" autoFocus disabled={connectionVerified} />
+                    placeholder="https://domain.com" autoFocus disabled={connectionVerified} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Fallback URL <span className="text-xs font-normal text-gray-400">(optional)</span></label>
+                  <input type="url" value={erpnextUrlFallback}
+                    onChange={(e) => setErpnextUrlFallback(e.target.value)}
+                    className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="https://domain.com" disabled={connectionVerified} />
+                  <p className="mt-1 text-xs text-gray-400">Auto-used when primary URL is unreachable.</p>
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium">API Key</label>

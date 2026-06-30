@@ -7,15 +7,46 @@ interface FrappeResponse<T = any> {
   _server_messages?: string
 }
 
+// Track which URL is currently working so we try it first
+let activeUrlIndex = 0
+
+function getUrls(): string[] {
+  const primary = getConfig('erpnext_url') || ''
+  const fallback = getConfig('erpnext_url_fallback') || ''
+  const urls = [primary]
+  if (fallback && fallback !== primary) urls.push(fallback)
+  return urls
+}
+
+function isNetworkError(err: any): boolean {
+  const msg = (err?.message || '').toLowerCase()
+  return err?.name === 'TypeError' ||
+    msg.includes('fetch failed') ||
+    msg.includes('network') ||
+    msg.includes('econnrefused') ||
+    msg.includes('enotfound') ||
+    msg.includes('etimedout') ||
+    msg.includes('dns') ||
+    msg.includes('socket')
+}
+
+// Exported for direct fetch calls outside ERPNextClient
+export function getActiveUrl(): string {
+  const urls = getUrls()
+  return urls[activeUrlIndex] || urls[0] || ''
+}
+
 export class ERPNextClient {
-  private baseUrl: string
   private apiKey: string
   private apiSecret: string
 
   constructor() {
-    this.baseUrl = getConfig('erpnext_url') || ''
     this.apiKey = getConfig('api_key') || ''
     this.apiSecret = getConfig('api_secret') || ''
+  }
+
+  private get baseUrl(): string {
+    return getActiveUrl()
   }
 
   private get headers(): Record<string, string> {
@@ -26,11 +57,37 @@ export class ERPNextClient {
     }
   }
 
+  private async fetchWithFallback(path: string, init?: RequestInit): Promise<Response> {
+    const urls = getUrls()
+    // Try the active URL first, then fallback
+    const order = urls.length > 1
+      ? [urls[activeUrlIndex], urls[1 - activeUrlIndex]]
+      : urls
+
+    for (let i = 0; i < order.length; i++) {
+      const url = order[i]
+      try {
+        const res = await fetch(`${url}${path}`, { ...init, headers: this.headers })
+        // If this wasn't the active URL, switch to it
+        if (i > 0) {
+          activeUrlIndex = urls.indexOf(url)
+          console.log(`[ERPNext] Switched to fallback URL: ${url}`)
+        }
+        return res
+      } catch (err: any) {
+        if (isNetworkError(err) && i < order.length - 1) {
+          console.warn(`[ERPNext] ${url} unreachable, trying fallback...`)
+          continue
+        }
+        throw err
+      }
+    }
+    throw new Error('No ERPNext URL configured')
+  }
+
   async testConnection(): Promise<{ success: boolean; user?: string; error?: string }> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/method/frappe.auth.get_logged_user`, {
-        headers: this.headers
-      })
+      const res = await this.fetchWithFallback('/api/method/frappe.auth.get_logged_user')
       if (!res.ok) return { success: false, error: `HTTP ${res.status}` }
       const data: FrappeResponse<string> = await res.json()
       return { success: true, user: data.message }
@@ -51,27 +108,22 @@ export class ERPNextClient {
     if (options?.limit !== undefined) params.set('limit_page_length', options.limit === 0 ? '0' : String(options.limit))
     if (options?.orderBy) params.set('order_by', options.orderBy)
 
-    const res = await fetch(`${this.baseUrl}/api/resource/${doctype}?${params}`, {
-      headers: this.headers
-    })
+    const res = await this.fetchWithFallback(`/api/resource/${doctype}?${params}`)
     if (!res.ok) throw new Error(`Failed to fetch ${doctype}: ${res.status}`)
     const data: FrappeResponse = await res.json()
     return data.data || []
   }
 
   async getDoc(doctype: string, name: string): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/resource/${doctype}/${encodeURIComponent(name)}`, {
-      headers: this.headers
-    })
+    const res = await this.fetchWithFallback(`/api/resource/${doctype}/${encodeURIComponent(name)}`)
     if (!res.ok) throw new Error(`Failed to fetch ${doctype}/${name}: ${res.status}`)
     const data: FrappeResponse = await res.json()
     return data.data
   }
 
   async callMethod(method: string, args?: Record<string, any>): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/method/${method}`, {
+    const res = await this.fetchWithFallback(`/api/method/${method}`, {
       method: 'POST',
-      headers: this.headers,
       body: args ? JSON.stringify(args) : undefined
     })
     if (!res.ok) {
@@ -83,9 +135,8 @@ export class ERPNextClient {
   }
 
   async createDoc(doctype: string, doc: Record<string, any>): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/resource/${doctype}`, {
+    const res = await this.fetchWithFallback(`/api/resource/${doctype}`, {
       method: 'POST',
-      headers: this.headers,
       body: JSON.stringify(doc)
     })
     if (!res.ok) {
@@ -97,9 +148,8 @@ export class ERPNextClient {
   }
 
   async submitDoc(doctype: string, name: string): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/resource/${doctype}/${encodeURIComponent(name)}`, {
+    const res = await this.fetchWithFallback(`/api/resource/${doctype}/${encodeURIComponent(name)}`, {
       method: 'PUT',
-      headers: this.headers,
       body: JSON.stringify({ docstatus: 1 })
     })
     if (!res.ok) throw new Error(`Submit ${doctype}/${name} failed: ${res.status}`)
