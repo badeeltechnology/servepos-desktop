@@ -244,6 +244,7 @@ export async function syncUp(): Promise<SyncResult> {
     voidStmt.free()
 
     // Sync void logs to ERPNext (all voided orders not yet synced as void logs)
+    const branch = getConfig('branch') || ''
     const unsyncedVoids = db.prepare(
       "SELECT * FROM orders WHERE status = 'Void' AND COALESCE(void_synced, 0) = 0"
     )
@@ -272,7 +273,7 @@ export async function syncUp(): Promise<SyncResult> {
           cashier_name: order.cashier_name || '',
           void_date: order.created_at || new Date().toISOString(),
           pos_profile: posProfile || '',
-          branch: company || '',
+          branch: branch || null,
           table_name: order.table_name || '',
           order_type: order.order_type || '',
           grand_total: order.grand_total || 0,
@@ -318,7 +319,7 @@ export async function syncUp(): Promise<SyncResult> {
           cashier_name: item.cashier_name || '',
           void_date: item.voided_at || new Date().toISOString(),
           pos_profile: posProfile || '',
-          branch: company || '',
+          branch: branch || null,
           table_name: item.table_name || '',
           order_type: item.order_type || '',
           grand_total: item.amount || 0,
