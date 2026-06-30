@@ -1017,7 +1017,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[10000] flex bg-black/60 backdrop-blur-sm">
       <div className="flex flex-1 flex-col bg-white shadow-2xl mx-4 my-4 rounded-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b px-6 py-4">
