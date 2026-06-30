@@ -786,11 +786,17 @@ function runMigrations(): void {
     ['void_remarks', 'TEXT'],
     ['void_synced', 'INTEGER DEFAULT 0'],
     ['voided_by', 'TEXT'],
+    ['void_disposition', 'TEXT'],
   ]
   for (const [col, type] of orderVoidCols) {
     if (!hasColumn('orders', col)) {
       try { database.run(`ALTER TABLE orders ADD COLUMN ${col} ${type}`) } catch {}
     }
+  }
+
+  // Migration: Add void_disposition to order_items
+  if (!hasColumn('order_items', 'void_disposition')) {
+    try { database.run('ALTER TABLE order_items ADD COLUMN void_disposition TEXT') } catch {}
   }
 }
 

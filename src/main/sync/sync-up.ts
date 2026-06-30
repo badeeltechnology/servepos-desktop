@@ -267,6 +267,7 @@ export async function syncUp(): Promise<SyncResult> {
           void_type: voidType,
           void_reason: order.void_reason || 'No reason',
           void_remarks: order.void_remarks || '',
+          void_disposition: order.void_disposition || '',
           voided_by: order.voided_by || order.cashier_name || '',
           cashier_name: order.cashier_name || '',
           void_date: order.created_at || new Date().toISOString(),

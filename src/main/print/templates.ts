@@ -901,6 +901,7 @@ interface VoidSlipData {
   voidReason: string
   voidedBy: string
   voidRemarks?: string
+  voidDisposition?: string
   items: { itemName: string; qty: number; rate: number; amount: number }[]
   grandTotal: number
 }
@@ -938,6 +939,9 @@ export function generateVoidSlip(data: VoidSlipData): string {
 
   lines.push('')
   lines.push(CMD.BOLD_ON + `Reason: ${data.voidReason}` + CMD.BOLD_OFF)
+  if (data.voidDisposition) {
+    lines.push(CMD.BOLD_ON + `Action: ${data.voidDisposition}` + CMD.BOLD_OFF)
+  }
   if (data.voidRemarks) {
     lines.push(`Remarks: ${data.voidRemarks}`)
   }

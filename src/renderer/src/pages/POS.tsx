@@ -457,7 +457,7 @@ export default function POS() {
 
   const [showOrderHistory, setShowOrderHistory] = useState(false)
   const [showCoordinator, setShowCoordinator] = useState(false)
-  const [barVoidRequest, setBarVoidRequest] = useState<{ orderId: string; reason: string; step: 'reason' | 'remarks'; remarks: string } | null>(null)
+  const [barVoidRequest, setBarVoidRequest] = useState<{ orderId: string; reason: string; step: 'reason' | 'disposition' | 'remarks'; remarks: string; disposition: string } | null>(null)
   const [barVoidReasons, setBarVoidReasons] = useState<{ name: string; reason_name: string }[]>([])
   const [barVoidCustom, setBarVoidCustom] = useState(false)
 
@@ -605,7 +605,7 @@ export default function POS() {
       {/* Orders bar */}
       <OrdersBar activeOrderId={activeOrderId} onSelectOrder={handleResumeOrder} onNewOrder={handleNewOrder}
         onVoidOrder={user?.role === 'supervisor' ? (orderId) => {
-          setBarVoidRequest({ orderId, reason: '', step: 'reason', remarks: '' }); setBarVoidCustom(false)
+          setBarVoidRequest({ orderId, reason: '', step: 'reason', remarks: '', disposition: '' }); setBarVoidCustom(false)
         } : undefined}
       />
 
@@ -621,7 +621,7 @@ export default function POS() {
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {barVoidReasons.map((r) => (
                       <button key={r.name}
-                        onClick={() => setBarVoidRequest({ ...barVoidRequest, reason: r.reason_name, step: 'remarks' })}
+                        onClick={() => setBarVoidRequest({ ...barVoidRequest, reason: r.reason_name, step: 'disposition' })}
                         className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-left text-sm font-medium hover:bg-red-50 hover:border-red-200 transition-colors">
                         {r.reason_name}
                       </button>
@@ -637,7 +637,7 @@ export default function POS() {
                       onChange={(e) => setBarVoidRequest({ ...barVoidRequest, reason: e.target.value })}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && barVoidRequest.reason.trim()) {
-                          setBarVoidRequest({ ...barVoidRequest, reason: barVoidRequest.reason.trim(), step: 'remarks' })
+                          setBarVoidRequest({ ...barVoidRequest, reason: barVoidRequest.reason.trim(), step: 'disposition' })
                         }
                       }}
                       placeholder="Enter void reason..."
@@ -645,53 +645,60 @@ export default function POS() {
                     <div className="mt-4 flex gap-3">
                       {barVoidReasons.length > 0 && (
                         <button onClick={() => setBarVoidCustom(false)}
-                          className="rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm font-semibold hover:bg-gray-50">
-                          Back
-                        </button>
+                          className="rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm font-semibold hover:bg-gray-50">Back</button>
                       )}
                       <button onClick={() => {
-                        if (!barVoidRequest.reason.trim()) return
-                        setBarVoidRequest({ ...barVoidRequest, reason: barVoidRequest.reason.trim(), step: 'remarks' })
+                        if (barVoidRequest.reason.trim()) setBarVoidRequest({ ...barVoidRequest, reason: barVoidRequest.reason.trim(), step: 'disposition' })
                       }} disabled={!barVoidRequest.reason.trim()}
-                        className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">
-                        Next
-                      </button>
+                        className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">Next</button>
                     </div>
                   </>
                 )}
               </>
+            ) : barVoidRequest.step === 'disposition' ? (
+              <>
+                <h3 className="mb-1 text-center text-lg font-bold">What happens to the items?</h3>
+                <p className="mb-4 text-center text-xs text-gray-500">Reason: <strong>{barVoidRequest.reason}</strong></p>
+                <div className="flex gap-3">
+                  <button onClick={() => setBarVoidRequest({ ...barVoidRequest, disposition: 'Return to Inventory', step: 'remarks' })}
+                    className={`flex-1 rounded-xl border-2 py-4 text-center text-sm font-bold transition-colors ${barVoidRequest.disposition === 'Return to Inventory' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:bg-blue-50 hover:border-blue-200'}`}>
+                    Return to Inventory
+                  </button>
+                  <button onClick={() => setBarVoidRequest({ ...barVoidRequest, disposition: 'Waste', step: 'remarks' })}
+                    className={`flex-1 rounded-xl border-2 py-4 text-center text-sm font-bold transition-colors ${barVoidRequest.disposition === 'Waste' ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-red-50 hover:border-red-200'}`}>
+                    Waste
+                  </button>
+                </div>
+                <button onClick={() => setBarVoidRequest({ ...barVoidRequest, step: 'reason' })}
+                  className="mt-3 w-full rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50">Back</button>
+              </>
             ) : (
               <>
                 <h3 className="mb-1 text-center text-lg font-bold">Remarks</h3>
-                <p className="mb-2 text-center text-xs text-gray-500">Reason: <strong>{barVoidRequest.reason}</strong></p>
+                <p className="mb-1 text-center text-xs text-gray-500">Reason: <strong>{barVoidRequest.reason}</strong></p>
+                <p className="mb-3 text-center text-xs text-gray-500">Action: <strong>{barVoidRequest.disposition}</strong></p>
                 <textarea data-keyboard="full" value={barVoidRequest.remarks}
                   onChange={(e) => setBarVoidRequest({ ...barVoidRequest, remarks: e.target.value })}
                   placeholder="Add remarks (optional)..."
                   className="w-full resize-none rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" rows={3} autoFocus />
                 <div className="mt-4 flex gap-3">
-                  <button onClick={() => setBarVoidRequest({ ...barVoidRequest, step: 'reason' })}
-                    className="rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm font-semibold hover:bg-gray-50">
-                    Back
-                  </button>
+                  <button onClick={() => setBarVoidRequest({ ...barVoidRequest, step: 'disposition' })}
+                    className="rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm font-semibold hover:bg-gray-50">Back</button>
                   <button onClick={async () => {
-                    const oid = barVoidRequest.orderId; const reason = barVoidRequest.reason; const remarks = barVoidRequest.remarks.trim()
-                    await window.api.orders.update(oid, { status: 'Void', voidReason: reason, voidRemarks: remarks || undefined, voidedBy: user?.name || 'Supervisor' })
-                    try { await window.api.print.voidSlip(oid, reason, user?.name || 'Supervisor', undefined, remarks) } catch {}
-                    if (activeOrderId === oid) { cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false) }
-                    const order = await window.api.orders.get(oid)
+                    const { orderId, reason, remarks, disposition } = barVoidRequest
+                    await window.api.orders.update(orderId, { status: 'Void', voidReason: reason, voidRemarks: remarks.trim() || undefined, voidedBy: user?.name || 'Supervisor', voidDisposition: disposition })
+                    try { await window.api.print.voidSlip(orderId, reason, user?.name || 'Supervisor', undefined, remarks.trim(), disposition) } catch {}
+                    if (activeOrderId === orderId) { cart.clearCart(); setActiveOrderId(null); setIsOrderPlaced(false) }
+                    const order = await window.api.orders.get(orderId)
                     if (order?.table_name) await window.api.tables.updateStatus(order.table_name, 'Available').catch(() => {})
                     setBarVoidRequest(null); setBarVoidCustom(false)
                   }}
-                    className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
-                    Void Order
-                  </button>
+                    className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">Void Order</button>
                 </div>
               </>
             )}
             <button onClick={() => { setBarVoidRequest(null); setBarVoidCustom(false) }}
-              className="mt-3 w-full rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50">
-              Cancel
-            </button>
+              className="mt-3 w-full rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50">Cancel</button>
           </div>
         </div>
       )}
@@ -703,17 +710,17 @@ export default function POS() {
         </div>
         <div className="w-[360px] flex-shrink-0 border-l shadow-lg">
           <Cart onPlaceOrder={handlePlaceOrder} onUpdateOnly={activeOrderId ? handleUpdateOnly : undefined} onPay={handlePay} taxRate={taxRate} taxLabel={taxLabel} isOrderPlaced={isOrderPlaced} activeOrderId={activeOrderId} processing={processing}
-            onItemRemoved={activeOrderId ? async (orderId, item, reason, remarks) => {
+            onItemRemoved={activeOrderId ? async (orderId, item, reason, remarks, disposition) => {
               // Flag item as voided in DB (keeps audit trail, excludes from receipt)
               if (item.dbId) {
-                try { await window.api.orderItems.void(item.dbId, reason, user?.name || '', remarks) } catch {}
+                try { await window.api.orderItems.void(item.dbId, reason, user?.name || '', remarks, disposition) } catch {}
               }
               // Update order totals (getOrderItems already excludes voided)
               const dbItems = await window.api.orderItems.get(orderId)
               const newSubtotal = dbItems.reduce((s: number, i: any) => s + i.amount, 0)
               await window.api.orders.update(orderId, { subtotal: newSubtotal, grandTotal: newSubtotal })
               // Print void slip
-              try { await window.api.print.voidSlip(orderId, reason, user?.name || '', [item], remarks) } catch {}
+              try { await window.api.print.voidSlip(orderId, reason, user?.name || '', [item], remarks, disposition) } catch {}
             } : undefined}
             onAutoVoid={activeOrderId ? async (reason) => {
               const voidReason = reason || 'All items removed'
@@ -931,7 +938,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [orderItems, setOrderItems] = useState<any[]>([])
   const [orderPayments, setOrderPayments] = useState<any[]>([])
-  const [voidRequest, setVoidRequest] = useState<{ orderId: string; step: 'pin' | 'reason' | 'remarks'; reason: string; remarks: string } | null>(null)
+  const [voidRequest, setVoidRequest] = useState<{ orderId: string; step: 'pin' | 'reason' | 'disposition' | 'remarks'; reason: string; remarks: string; disposition: string } | null>(null)
   const [voidPin, setVoidPin] = useState('')
   const [voidPinError, setVoidPinError] = useState('')
   const [voidReasons, setVoidReasons] = useState<{ name: string; reason_name: string }[]>([])
@@ -969,17 +976,17 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
 
   function voidOrder(id: string) {
     // Always start with reason selection, then PIN if not supervisor
-    setVoidRequest({ orderId: id, step: 'reason', reason: '', remarks: '' })
+    setVoidRequest({ orderId: id, step: 'reason', reason: '', remarks: '', disposition: '' })
     setShowCustomReason(false)
     setVoidPin('')
     setVoidPinError('')
   }
 
-  async function doVoidOrder(id: string, reason: string, remarks?: string) {
+  async function doVoidOrder(id: string, reason: string, remarks?: string, disposition?: string) {
     const voidedByName = cashierId ? 'Cashier' : (user?.name || 'Supervisor')
-    await window.api.orders.update(id, { status: 'Void', voidReason: reason, voidRemarks: remarks || undefined, voidedBy: voidedByName })
+    await window.api.orders.update(id, { status: 'Void', voidReason: reason, voidRemarks: remarks || undefined, voidedBy: voidedByName, voidDisposition: disposition || undefined })
     // Print void slip
-    try { await window.api.print.voidSlip(id, reason, voidedByName, undefined, remarks) } catch {}
+    try { await window.api.print.voidSlip(id, reason, voidedByName, undefined, remarks, disposition) } catch {}
     // Free table if applicable
     const order = orders.find((o) => o.id === id)
     if (order?.table_name) {
@@ -1247,13 +1254,13 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
               <>
                 <h3 className="mb-1 text-center text-lg font-bold">Supervisor PIN</h3>
                 <p className="mb-2 text-center text-xs text-gray-500">Enter supervisor PIN to void this order</p>
-                <p className="mb-4 text-center text-xs font-medium text-red-500">Reason: {voidRequest.reason}</p>
+                <p className="mb-4 text-center text-xs font-medium text-red-500">Reason: {voidRequest.reason} | {voidRequest.disposition}</p>
                 <input type="password" data-keyboard="numpad" value={voidPin}
                   onChange={(e) => { setVoidPin(e.target.value); setVoidPinError('') }}
                   onKeyDown={async (e) => {
                     if (e.key === 'Enter' && voidPin.length >= 4) {
                       const u = await window.api.users.verifyPin(voidPin)
-                      if (u && u.role === 'supervisor') { setVoidPin(''); doVoidOrder(voidRequest.orderId, voidRequest.reason, voidRequest.remarks) }
+                      if (u && u.role === 'supervisor') { setVoidPin(''); doVoidOrder(voidRequest.orderId, voidRequest.reason, voidRequest.remarks, voidRequest.disposition) }
                       else { setVoidPinError('Invalid PIN or not a supervisor') }
                     }
                   }}
@@ -1265,7 +1272,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                     className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Back</button>
                   <button onClick={async () => {
                     const u = await window.api.users.verifyPin(voidPin)
-                    if (u && u.role === 'supervisor') { setVoidPin(''); doVoidOrder(voidRequest.orderId, voidRequest.reason, voidRequest.remarks) }
+                    if (u && u.role === 'supervisor') { setVoidPin(''); doVoidOrder(voidRequest.orderId, voidRequest.reason, voidRequest.remarks, voidRequest.disposition) }
                     else { setVoidPinError('Invalid PIN or not a supervisor') }
                   }} className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">Void Order</button>
                 </div>
@@ -1273,21 +1280,39 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
             ) : voidRequest.step === 'remarks' ? (
               <>
                 <h3 className="mb-1 text-center text-lg font-bold">Remarks</h3>
-                <p className="mb-2 text-center text-xs text-gray-500">Reason: <strong>{voidRequest.reason}</strong></p>
+                <p className="mb-1 text-center text-xs text-gray-500">Reason: <strong>{voidRequest.reason}</strong></p>
+                <p className="mb-3 text-center text-xs text-gray-500">Action: <strong>{voidRequest.disposition}</strong></p>
                 <textarea data-keyboard="full" value={voidRequest.remarks}
                   onChange={(e) => setVoidRequest({ ...voidRequest, remarks: e.target.value })}
                   placeholder="Add remarks (optional)..."
                   className="w-full resize-none rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" rows={3} autoFocus />
                 <div className="mt-4 flex gap-3">
-                  <button onClick={() => setVoidRequest({ ...voidRequest, step: 'reason' })}
+                  <button onClick={() => setVoidRequest({ ...voidRequest, step: 'disposition' })}
                     className="rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm font-semibold hover:bg-gray-50">Back</button>
                   <button onClick={() => {
-                    if (isSupervisor) { doVoidOrder(voidRequest.orderId, voidRequest.reason, voidRequest.remarks.trim()); setShowCustomReason(false) }
+                    if (isSupervisor) { doVoidOrder(voidRequest.orderId, voidRequest.reason, voidRequest.remarks.trim(), voidRequest.disposition); setShowCustomReason(false) }
                     else { setVoidRequest({ ...voidRequest, step: 'pin' }) }
                   }} className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
                     {isSupervisor ? 'Void Order' : 'Next'}
                   </button>
                 </div>
+              </>
+            ) : voidRequest.step === 'disposition' ? (
+              <>
+                <h3 className="mb-1 text-center text-lg font-bold">What happens to the items?</h3>
+                <p className="mb-4 text-center text-xs text-gray-500">Reason: <strong>{voidRequest.reason}</strong></p>
+                <div className="flex gap-3">
+                  <button onClick={() => setVoidRequest({ ...voidRequest, disposition: 'Return to Inventory', step: 'remarks' })}
+                    className="flex-1 rounded-xl border-2 border-gray-200 py-4 text-center text-sm font-bold hover:bg-blue-50 hover:border-blue-200 transition-colors">
+                    Return to Inventory
+                  </button>
+                  <button onClick={() => setVoidRequest({ ...voidRequest, disposition: 'Waste', step: 'remarks' })}
+                    className="flex-1 rounded-xl border-2 border-gray-200 py-4 text-center text-sm font-bold hover:bg-red-50 hover:border-red-200 transition-colors">
+                    Waste
+                  </button>
+                </div>
+                <button onClick={() => setVoidRequest({ ...voidRequest, step: 'reason' })}
+                  className="mt-3 w-full rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50">Back</button>
               </>
             ) : (
               <>
@@ -1297,7 +1322,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {voidReasons.map((r) => (
                       <button key={r.name}
-                        onClick={() => setVoidRequest({ ...voidRequest, step: 'remarks', reason: r.reason_name })}
+                        onClick={() => setVoidRequest({ ...voidRequest, step: 'disposition', reason: r.reason_name })}
                         className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-left text-sm font-medium hover:bg-red-50 hover:border-red-200 transition-colors">
                         {r.reason_name}
                       </button>
@@ -1312,7 +1337,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                     onChange={(e) => setVoidRequest({ ...voidRequest, reason: e.target.value })}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && voidRequest.reason.trim()) {
-                        setVoidRequest({ ...voidRequest, step: 'remarks', reason: voidRequest.reason.trim() })
+                        setVoidRequest({ ...voidRequest, step: 'disposition', reason: voidRequest.reason.trim() })
                       }
                     }}
                     autoFocus placeholder="Enter void reason..."
@@ -1323,7 +1348,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
                     className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
                   {(showCustomReason || voidReasons.length === 0) && (
                     <button onClick={() => {
-                      if (voidRequest.reason.trim()) { setVoidRequest({ ...voidRequest, step: 'remarks', reason: voidRequest.reason.trim() }) }
+                      if (voidRequest.reason.trim()) { setVoidRequest({ ...voidRequest, step: 'disposition', reason: voidRequest.reason.trim() }) }
                     }} disabled={!voidRequest.reason.trim()}
                       className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">Next</button>
                   )}

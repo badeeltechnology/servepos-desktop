@@ -233,7 +233,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('orderItems:get', (_e, orderId: string) => db.getOrderItems(orderId))
   ipcMain.handle('orderItems:update', (_e, id: string, updates: any) => db.updateOrderItem(id, updates))
   ipcMain.handle('orderItems:remove', (_e, id: string) => db.removeOrderItem(id))
-  ipcMain.handle('orderItems:void', (_e, id: string, reason: string, voidedBy: string, remarks?: string) => db.voidOrderItem(id, reason, voidedBy, remarks))
+  ipcMain.handle('orderItems:void', (_e, id: string, reason: string, voidedBy: string, remarks?: string, disposition?: string) => db.voidOrderItem(id, reason, voidedBy, remarks, disposition))
 
   // ==================== Order Payments ====================
   ipcMain.handle('orderPayments:add', (_e, orderId: string, method: string, amount: number, reference?: string, collectedByWaiter?: string) => db.addOrderPayment(orderId, method, amount, reference, collectedByWaiter))
@@ -528,7 +528,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('print:waiterCopy', (_e, orderId: string, cartDiscount?: any) => printWaiterCopy(orderId, cartDiscount))
   ipcMain.handle('print:prepDoc', (_e, orderId: string) => printPrepDoc(orderId))
   ipcMain.handle('print:invoice', (_e, orderId: string, cartDiscount?: any) => printInvoice(orderId, cartDiscount))
-  ipcMain.handle('print:voidSlip', (_e, orderId: string, voidReason: string, voidedBy: string, removedItems?: any[], voidRemarks?: string) => printVoidSlip(orderId, voidReason, voidedBy, removedItems, voidRemarks))
+  ipcMain.handle('print:voidSlip', (_e, orderId: string, voidReason: string, voidedBy: string, removedItems?: any[], voidRemarks?: string, voidDisposition?: string) => printVoidSlip(orderId, voidReason, voidedBy, removedItems, voidRemarks, voidDisposition))
   ipcMain.handle('print:closeShift', (_e, sessionId: string) => printCloseShift(sessionId))
 
   // Poll for "Ready to Serve" orders that need invoice printing

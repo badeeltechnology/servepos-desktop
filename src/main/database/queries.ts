@@ -345,7 +345,7 @@ export function updateOrder(id: string, updates: Record<string, any>): boolean {
     subtotal: 'subtotal', taxTotal: 'tax_total', discountAmount: 'discount_amount',
     discountPercent: 'discount_percent', discountReason: 'discount_reason',
     grandTotal: 'grand_total', voidReason: 'void_reason', voidRemarks: 'void_remarks',
-    voidedBy: 'voided_by', voidSynced: 'void_synced', kotPrinted: 'kot_printed',
+    voidedBy: 'voided_by', voidSynced: 'void_synced', voidDisposition: 'void_disposition', kotPrinted: 'kot_printed',
     completedAt: 'completed_at', syncStatus: 'sync_status', syncError: 'sync_error',
     erpnextDocname: 'erpnext_docname', waiterId: 'waiter_id', waiterName: 'waiter_name',
     promoName: 'promo_name', voucherCode: 'voucher_code', tipAmount: 'tip_amount',
@@ -422,10 +422,10 @@ export function removeOrderItem(id: string): boolean {
   return true
 }
 
-export function voidOrderItem(id: string, reason: string, voidedBy: string, remarks?: string): boolean {
+export function voidOrderItem(id: string, reason: string, voidedBy: string, remarks?: string, disposition?: string): boolean {
   execute(
-    `UPDATE order_items SET voided = 1, void_reason = ?, voided_by = ?, voided_at = datetime('now'), void_remarks = ? WHERE id = ?`,
-    [reason, voidedBy, remarks || null, id]
+    `UPDATE order_items SET voided = 1, void_reason = ?, voided_by = ?, voided_at = datetime('now'), void_remarks = ?, void_disposition = ? WHERE id = ?`,
+    [reason, voidedBy, remarks || null, disposition || null, id]
   )
   return true
 }

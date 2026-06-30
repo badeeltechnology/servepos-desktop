@@ -23,7 +23,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [waiterSummary, setWaiterSummary] = useState<any[]>([])
 
-  const [singleVoid, setSingleVoid] = useState<{ orderId: string; orderNumber: string; reason: string; remarks: string } | null>(null)
+  const [singleVoid, setSingleVoid] = useState<{ orderId: string; orderNumber: string; reason: string; remarks: string; disposition: string } | null>(null)
   const [voidReasons, setVoidReasons] = useState<{ name: string; reason_name: string }[]>([])
 
   useEffect(() => { loadData() }, [sessionId])
@@ -302,7 +302,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
                           {createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         <button
-                          onClick={() => setSingleVoid({ orderId: order.id, orderNumber: order.order_number?.split('-').pop() || '', reason: '', remarks: '' })}
+                          onClick={() => setSingleVoid({ orderId: order.id, orderNumber: order.order_number?.split('-').pop() || '', reason: '', remarks: '', disposition: '' })}
                           className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600 hover:bg-red-200"
                         >Void</button>
                       </div>
@@ -344,7 +344,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
               <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
                 <h3 className="mb-1 text-center text-lg font-bold">Void Order #{singleVoid.orderNumber}</h3>
-                <p className="mb-4 text-center text-xs text-gray-500">Select a reason and add remarks</p>
+                <p className="mb-4 text-center text-xs text-gray-500">Select reason, disposition, and add remarks</p>
 
                 {voidReasons.length > 0 && (
                   <select
@@ -368,6 +368,17 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
                     className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-3" autoFocus />
                 )}
 
+                <div className="flex gap-2 mb-3">
+                  <button onClick={() => setSingleVoid({ ...singleVoid, disposition: 'Return to Inventory' })}
+                    className={`flex-1 rounded-xl border-2 py-3 text-center text-xs font-bold transition-colors ${singleVoid.disposition === 'Return to Inventory' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:bg-blue-50 hover:border-blue-200'}`}>
+                    Return to Inventory
+                  </button>
+                  <button onClick={() => setSingleVoid({ ...singleVoid, disposition: 'Waste' })}
+                    className={`flex-1 rounded-xl border-2 py-3 text-center text-xs font-bold transition-colors ${singleVoid.disposition === 'Waste' ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-red-50 hover:border-red-200'}`}>
+                    Waste
+                  </button>
+                </div>
+
                 <textarea data-keyboard="full" value={singleVoid.remarks}
                   onChange={(e) => setSingleVoid({ ...singleVoid, remarks: e.target.value })}
                   placeholder="Add remarks (optional)..."
@@ -379,25 +390,26 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
                   <button
                     onClick={async () => {
                       const reason = singleVoid.reason.trim()
-                      if (!reason || reason === '__custom__') return
+                      if (!reason || reason === '__custom__' || !singleVoid.disposition) return
                       try {
                         await window.api.orders.update(singleVoid.orderId, {
                           status: 'Void', voidReason: reason,
                           voidRemarks: singleVoid.remarks.trim() || undefined,
-                          voidedBy: 'Supervisor'
+                          voidedBy: 'Supervisor',
+                          voidDisposition: singleVoid.disposition
                         })
                         const order = allOpenOrders.find(o => o.id === singleVoid.orderId)
                         if (order?.table_name) {
                           try { await window.api.tables.updateStatus(order.table_name, 'Available') } catch {}
                         }
-                        try { await window.api.print.voidSlip(singleVoid.orderId, reason, 'Supervisor', undefined, singleVoid.remarks.trim()) } catch {}
+                        try { await window.api.print.voidSlip(singleVoid.orderId, reason, 'Supervisor', undefined, singleVoid.remarks.trim(), singleVoid.disposition) } catch {}
                         setSingleVoid(null)
                         await loadData()
                       } catch (err: any) {
                         setError(err.message || 'Failed to void order')
                       }
                     }}
-                    disabled={!singleVoid.reason.trim() || singleVoid.reason === '__custom__'}
+                    disabled={!singleVoid.reason.trim() || singleVoid.reason === '__custom__' || !singleVoid.disposition}
                     className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
                     Void
                   </button>
