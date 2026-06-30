@@ -823,17 +823,16 @@ function saveDatabaseSafe(): void {
   try {
     const data = db.export()
     const buffer = Buffer.from(data)
-    // Step 1: Write to temp file and flush to disk
+    // Step 1: Write new data to backup first (so backup always has latest)
+    writeAndFlush(dbBackupPath, buffer)
+    // Step 2: Write new data to temp file
     writeAndFlush(dbTmpPath, buffer)
-    // Step 2: Backup current main file (if it exists)
+    // Step 3: Replace main file (atomic rename on NTFS/APFS/ext4)
+    // If main exists, remove it first (rename over existing may fail on Windows)
     if (existsSync(dbPath)) {
-      try { renameSync(dbPath, dbBackupPath) } catch {}
+      try { unlinkSync(dbPath) } catch {}
     }
-    // Step 3: Rename temp to main (atomic on NTFS/APFS/ext4)
     renameSync(dbTmpPath, dbPath)
-    // Step 4: Also write backup with current data so both files are in sync
-    // This ensures recovery always has the latest state even after power loss
-    try { writeAndFlush(dbBackupPath, buffer) } catch {}
   } catch (err) {
     console.error('Failed to save database:', err)
   }
