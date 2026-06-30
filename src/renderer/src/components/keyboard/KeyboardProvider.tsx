@@ -76,7 +76,7 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
         // Scroll input into view above the docked keyboard
         requestAnimationFrame(() => {
           const rect = input.getBoundingClientRect()
-          if (rect.bottom > window.innerHeight - 340) {
+          if (rect.bottom > window.innerHeight - 220) {
             input.scrollIntoView({ behavior: 'smooth', block: 'center' })
           }
         })
@@ -232,7 +232,7 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
         className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-gray-200 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.1)]"
         onMouseDown={(e) => e.preventDefault()}
       >
-        <div className="px-4 py-3">
+        <div className="px-3 py-2">
           <FullKeyboard onKey={handleKey} onDone={() => { handleKey('done') }} />
         </div>
       </div>

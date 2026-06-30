@@ -72,7 +72,7 @@ export default function FullKeyboard({ onKey, onDone, className = '' }: FullKeyb
   }
 
   function getKeyClass(key: string): string {
-    const base = 'flex h-14 items-center justify-center rounded-xl text-base font-semibold transition-colors select-none'
+    const base = 'flex h-9 items-center justify-center rounded-lg text-sm font-medium transition-colors select-none'
     if (key === ' ') return `${base} flex-1 bg-gray-100 text-gray-600 hover:bg-gray-200 active:bg-gray-300`
     if (key === 'done') return `${base} min-w-[80px] bg-primary text-white hover:bg-primary/90 active:bg-primary/80`
     if (key === 'shift') return `${base} min-w-[60px] ${shifted ? 'bg-gray-300 text-gray-800' : 'bg-gray-100 text-gray-600'} hover:bg-gray-200 active:bg-gray-300`
@@ -82,9 +82,9 @@ export default function FullKeyboard({ onKey, onDone, className = '' }: FullKeyb
   }
 
   return (
-    <div className={`space-y-2 ${className}`}>
+    <div className={`space-y-1 ${className}`}>
       {rows.map((row, ri) => (
-        <div key={ri} className="flex justify-center gap-2">
+        <div key={ri} className="flex justify-center gap-1">
           {row.map((key, ki) => (
             <button
               key={ki}
