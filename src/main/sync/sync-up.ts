@@ -296,8 +296,10 @@ export async function syncUp(): Promise<SyncResult> {
 
     // Sync individual item voids (items voided from active orders, not full order voids)
     const unsyncedItemVoids = db.prepare(
-      `SELECT oi.*, o.id as order_id, o.order_number, o.order_type, o.table_name,
-              o.cashier_name, o.grand_total, o.created_at as order_date
+      `SELECT oi.id as item_id, oi.item_code, oi.item_name, oi.qty, oi.rate, oi.amount,
+              oi.void_reason, oi.void_remarks, oi.void_disposition, oi.voided_by, oi.voided_at,
+              o.id as order_id, o.order_number, o.order_type, o.table_name,
+              o.cashier_name, o.grand_total
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
        WHERE oi.voided = 1 AND COALESCE(oi.void_synced, 0) = 0 AND o.status != 'Void'`
@@ -306,11 +308,12 @@ export async function syncUp(): Promise<SyncResult> {
       const item = unsyncedItemVoids.getAsObject() as any
       try {
         await client.callMethod('servepos.api.pos_session.record_void', {
-          pos_order_id: item.order_id + '_item_' + item.id,
+          pos_order_id: item.order_id + '_item_' + item.item_id,
           order_number: item.order_number || '',
           void_type: 'Item Void',
           void_reason: item.void_reason || 'No reason',
           void_remarks: item.void_remarks || '',
+          void_disposition: item.void_disposition || '',
           voided_by: item.voided_by || '',
           cashier_name: item.cashier_name || '',
           void_date: item.voided_at || new Date().toISOString(),
@@ -329,7 +332,7 @@ export async function syncUp(): Promise<SyncResult> {
             void_remarks: item.void_remarks || ''
           }])
         })
-        db.run("UPDATE order_items SET void_synced = 1 WHERE id = ?", [item.id])
+        db.run("UPDATE order_items SET void_synced = 1 WHERE id = ?", [item.item_id])
       } catch (err: any) {
         console.error(`[Sync] Failed to sync item void for ${item.item_name}:`, err.message)
       }
