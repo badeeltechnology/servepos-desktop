@@ -611,7 +611,7 @@ export default function POS() {
 
       {/* OrdersBar void reason modal */}
       {barVoidRequest && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
           <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
             {barVoidRequest.step === 'reason' ? (
               <>
@@ -1248,7 +1248,7 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
 
       {/* Void order modal — reason → remarks → PIN (cashier) */}
       {voidRequest && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40">
           <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
             {voidRequest.step === 'pin' ? (
               <>

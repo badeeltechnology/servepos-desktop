@@ -479,7 +479,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
 
       {/* Supervisor PIN modal for removing items from placed orders */}
       {removeRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
             {removeRequest.step === 'reason' ? (
               <>

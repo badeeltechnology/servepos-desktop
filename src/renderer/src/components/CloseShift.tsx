@@ -341,7 +341,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
           {/* Confirmation dialog */}
           {/* Single order void modal */}
           {singleVoid && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
               <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
                 <h3 className="mb-1 text-center text-lg font-bold">Void Order #{singleVoid.orderNumber}</h3>
                 <p className="mb-4 text-center text-xs text-gray-500">Select reason, disposition, and add remarks</p>
@@ -419,7 +419,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
           )}
 
           {showConfirm && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
               <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
                 <h3 className="mb-2 text-center text-lg font-bold">Confirm Close Shift</h3>
                 <p className="mb-5 text-center text-sm text-gray-500">Are you sure you want to close this shift? This action cannot be undone.</p>
