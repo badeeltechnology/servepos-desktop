@@ -48,14 +48,20 @@ export async function syncUp(): Promise<SyncResult> {
         }
         payStmt.free()
 
-        // Build invoice items
-        const invoiceItems = orderItems.map((item) => ({
-          item_code: item.item_code,
-          item_name: item.item_name,
-          qty: item.qty,
-          rate: item.rate,
-          amount: item.amount
-        }))
+        // Build invoice items — rate must include modifiers for correct ERPNext totals
+        const invoiceItems = orderItems.map((item) => {
+          const modifierTotal = item.modifier_total || 0
+          const effectiveRate = item.rate + modifierTotal
+          return {
+            item_code: item.item_code,
+            item_name: item.item_name,
+            qty: item.qty,
+            rate: effectiveRate,
+            amount: item.amount,
+            servepos_modifiers: item.modifiers || null,
+            servepos_comment: item.special_instructions || null
+          }
+        })
 
         // Cap payment amounts to grand_total — when customer overpays with
         // cash (e.g. pays 50 on a 45 invoice), the change is a UI concept;
