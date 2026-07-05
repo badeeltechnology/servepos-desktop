@@ -290,8 +290,9 @@ export async function syncUp(): Promise<SyncResult> {
             qty: i.qty,
             rate: i.rate,
             amount: i.amount,
-            void_reason: i.void_reason || '',
-            void_remarks: i.void_remarks || ''
+            void_reason: i.void_reason || order.void_reason || '',
+            void_remarks: i.void_remarks || order.void_remarks || '',
+            void_disposition: i.void_disposition || order.void_disposition || ''
           })))
         })
         db.run("UPDATE orders SET void_synced = 1 WHERE id = ?", [order.id])
@@ -336,7 +337,8 @@ export async function syncUp(): Promise<SyncResult> {
             rate: item.rate,
             amount: item.amount,
             void_reason: item.void_reason || '',
-            void_remarks: item.void_remarks || ''
+            void_remarks: item.void_remarks || '',
+            void_disposition: item.void_disposition || ''
           }])
         })
         db.run("UPDATE order_items SET void_synced = 1 WHERE id = ?", [item.item_id])
