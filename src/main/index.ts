@@ -1,7 +1,8 @@
-import { app, shell, BrowserWindow, nativeImage, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { exec } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import { initDatabase, closeDatabase } from './database/schema'
 import { registerIpcHandlers } from './ipc/handlers'
 import { startAutoSync, stopAutoSync } from './sync/sync-engine'
@@ -74,6 +75,38 @@ app.whenReady().then(async () => {
   startAutoSync()
 
   createWindow()
+
+  // Auto-update (production only)
+  if (!is.dev) {
+    autoUpdater.autoDownload = false
+    autoUpdater.autoInstallOnAppQuit = true
+
+    autoUpdater.on('update-available', (info) => {
+      dialog.showMessageBox(mainWindow!, {
+        type: 'info',
+        title: 'Update Available',
+        message: `ServePOS v${info.version} is available. Download now?`,
+        buttons: ['Download', 'Later'],
+        defaultId: 0
+      }).then(({ response }) => {
+        if (response === 0) autoUpdater.downloadUpdate()
+      })
+    })
+
+    autoUpdater.on('update-downloaded', () => {
+      dialog.showMessageBox(mainWindow!, {
+        type: 'info',
+        title: 'Update Ready',
+        message: 'Update has been downloaded. Restart now to install?',
+        buttons: ['Restart', 'Later'],
+        defaultId: 0
+      }).then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall()
+      })
+    })
+
+    autoUpdater.checkForUpdates().catch(() => {})
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

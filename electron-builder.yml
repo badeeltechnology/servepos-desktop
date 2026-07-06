@@ -1,5 +1,9 @@
 appId: com.servepos.desktop
 productName: ServePOS
+publish:
+  provider: github
+  owner: badeeltechnology
+  repo: servepos-releases
 directories:
   buildResources: resources
   output: dist
