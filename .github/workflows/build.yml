@@ -29,9 +29,7 @@ jobs:
         run: npm run build
 
       - name: Package for macOS
-        run: npx electron-builder --mac zip --config electron-builder.yml
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --mac zip --config electron-builder.yml --publish never
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -40,6 +38,8 @@ jobs:
           path: |
             dist/*.zip
             dist/*.dmg
+            dist/*.blockmap
+            dist/latest-mac.yml
 
   build-windows:
     runs-on: windows-latest
@@ -60,9 +60,7 @@ jobs:
         run: npm run build
 
       - name: Package for Windows
-        run: npx electron-builder --win --config electron-builder.yml
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --config electron-builder.yml --publish never
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -70,14 +68,13 @@ jobs:
           name: ServePOS-Windows
           path: |
             dist/*.exe
-            dist/*.msi
+            dist/*.blockmap
+            dist/latest.yml
 
   release:
     needs: [build-mac, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
     steps:
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
@@ -91,12 +88,15 @@ jobs:
           name: ServePOS-Windows
           path: dist
 
-      - name: Create Release
+      - name: Create Release on servepos-releases
         uses: softprops/action-gh-release@v2
         with:
+          repository: badeeltechnology/servepos-releases
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           files: dist/*
           draft: false
           prerelease: false
-          generate_release_notes: true
+          body: "ServePOS Desktop ${{ github.ref_name }}"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
