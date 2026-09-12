@@ -831,6 +831,11 @@ function runMigrations(): void {
   if (!hasColumn('order_items', 'void_disposition')) {
     try { database.run('ALTER TABLE order_items ADD COLUMN void_disposition TEXT') } catch {}
   }
+
+  // Migration: Add shift_log_synced to sessions for tracking ERPNext shift log sync
+  if (!hasColumn('sessions', 'shift_log_synced')) {
+    try { database.run('ALTER TABLE sessions ADD COLUMN shift_log_synced INTEGER DEFAULT 0') } catch {}
+  }
 }
 
 /**

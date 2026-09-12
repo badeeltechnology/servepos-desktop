@@ -348,6 +348,86 @@ export async function syncUp(): Promise<SyncResult> {
     }
     unsyncedItemVoids.free()
 
+    // Sync closed shift logs to ERPNext (additive — fails silently if API not deployed yet)
+    try {
+      const unsyncedShifts = db.prepare(
+        "SELECT * FROM sessions WHERE status = 'Closed' AND COALESCE(shift_log_synced, 0) = 0"
+      )
+      while (unsyncedShifts.step()) {
+        const session = unsyncedShifts.getAsObject() as any
+        try {
+          // Gather all completed orders for this session
+          const ordersStmt = db.prepare(
+            "SELECT * FROM orders WHERE session_id = ? AND status = 'Completed' ORDER BY created_at",
+          )
+          ordersStmt.bind([session.id])
+          const sessionOrders: any[] = []
+          while (ordersStmt.step()) sessionOrders.push(ordersStmt.getAsObject())
+          ordersStmt.free()
+
+          // Gather voided orders for this session
+          const voidStmt = db.prepare(
+            "SELECT order_number, void_reason, voided_by, cashier_name, grand_total FROM orders WHERE session_id = ? AND status = 'Void' ORDER BY created_at"
+          )
+          voidStmt.bind([session.id])
+          const voidedOrders: any[] = []
+          while (voidStmt.step()) voidedOrders.push(voidStmt.getAsObject())
+          voidStmt.free()
+
+          // Gather removed/voided items for this session
+          const removedStmt = db.prepare(
+            `SELECT oi.item_name, oi.qty, oi.rate, oi.amount, oi.void_reason, oi.voided_by, oi.void_disposition, o.order_number
+             FROM order_items oi JOIN orders o ON o.id = oi.order_id
+             WHERE o.session_id = ? AND oi.voided = 1 ORDER BY oi.voided_at`
+          )
+          removedStmt.bind([session.id])
+          const removedItems: any[] = []
+          while (removedStmt.step()) removedItems.push(removedStmt.getAsObject())
+          removedStmt.free()
+
+          // Build order list summary
+          const orderList = sessionOrders.map((o: any) => ({
+            order_number: o.order_number,
+            order_type: o.order_type,
+            table_name: o.table_name || '',
+            waiter_name: o.waiter_name || '',
+            grand_total: o.grand_total || 0,
+            created_at: o.created_at
+          }))
+
+          await client.callMethod('servepos.api.pos_session.record_shift_log', {
+            pos_session_id: session.id,
+            pos_profile: posProfile || '',
+            branch: branch || '',
+            cashier_name: session.user_name || '',
+            opened_at: session.opened_at || '',
+            closed_at: session.closed_at || '',
+            total_orders: session.total_orders || 0,
+            total_sales: session.total_sales || 0,
+            total_void_orders: voidedOrders.length,
+            total_void_amount: voidedOrders.reduce((s: number, v: any) => s + (v.grand_total || 0), 0),
+            total_removed_items: removedItems.length,
+            total_removed_amount: removedItems.reduce((s: number, i: any) => s + (i.amount || 0), 0),
+            opening_balance: session.opening_balance || '[]',
+            closing_balance: session.closing_balance || '[]',
+            expected_balance: session.expected_balance || '[]',
+            payment_breakdown: session.payment_breakdown || '{}',
+            remarks: session.remarks || '',
+            voided_orders_detail: JSON.stringify(voidedOrders),
+            removed_items_detail: JSON.stringify(removedItems),
+            order_list: JSON.stringify(orderList)
+          })
+          db.run("UPDATE sessions SET shift_log_synced = 1 WHERE id = ?", [session.id])
+        } catch (shiftErr: any) {
+          // Non-critical: API may not exist on ERPNext yet. Will retry on next sync.
+          console.log(`[Sync] Shift log sync skipped for ${session.id}: ${shiftErr.message}`)
+        }
+      }
+      unsyncedShifts.free()
+    } catch {
+      // Shift log feature not available — silently skip
+    }
+
     saveDatabase()
 
     if (result.failed > 0) result.success = false

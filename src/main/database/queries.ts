@@ -103,10 +103,10 @@ export function createAdmin(username: string, password: string): void {
   execute('INSERT INTO admin (id, username, password_hash) VALUES (?, ?, ?)', [id, username, passwordHash])
 }
 
-export function verifyAdmin(username: string, password: string): boolean {
+export async function verifyAdmin(username: string, password: string): Promise<boolean> {
   const row = queryOne('SELECT password_hash FROM admin WHERE username = ?', [username])
   if (!row) return false
-  return bcrypt.compareSync(password, row.password_hash)
+  return bcrypt.compare(password, row.password_hash)
 }
 
 export function adminExists(): boolean {
@@ -158,10 +158,10 @@ export function createUser(
   return id
 }
 
-export function verifyPin(pin: string): User | null {
+export async function verifyPin(pin: string): Promise<User | null> {
   const rows = queryAll('SELECT * FROM users WHERE is_active = 1')
   for (const row of rows) {
-    if (bcrypt.compareSync(pin, row.pin_hash)) {
+    if (await bcrypt.compare(pin, row.pin_hash)) {
       return {
         id: row.id,
         name: row.name,
