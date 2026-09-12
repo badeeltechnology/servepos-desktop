@@ -327,12 +327,13 @@ export function getActiveOrders(): any[] {
   )
 }
 
-export function getOrders(filters?: { status?: string; cashierId?: string; date?: string }): any[] {
+export function getOrders(filters?: { status?: string; cashierId?: string; date?: string; sessionId?: string }): any[] {
   const conditions: string[] = []
   const values: any[] = []
 
   if (filters?.status) { conditions.push('status = ?'); values.push(filters.status) }
   if (filters?.cashierId) { conditions.push('cashier_id = ?'); values.push(filters.cashierId) }
+  if (filters?.sessionId) { conditions.push('session_id = ?'); values.push(filters.sessionId) }
   if (filters?.date) { conditions.push("date(created_at, 'localtime') = ?"); values.push(filters.date) }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''

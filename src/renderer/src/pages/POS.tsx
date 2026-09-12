@@ -893,6 +893,7 @@ export default function POS() {
           onClose={() => setShowOrderHistory(false)}
           isSupervisor={user?.role === 'supervisor'}
           cashierId={user?.role === 'cashier' ? user.id : null}
+          sessionId={activeSession?.id || null}
         />
       )}
 
@@ -928,10 +929,11 @@ export default function POS() {
 }
 
 // ==================== Order History Panel ====================
-function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
+function OrderHistoryPanel({ onClose, isSupervisor, cashierId, sessionId }: {
   onClose: () => void
   isSupervisor: boolean
   cashierId: string | null
+  sessionId: string | null
 }) {
   const [orders, setOrders] = useState<any[]>([])
   const [filter, setFilter] = useState('all')
@@ -943,8 +945,14 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
   const [voidPinError, setVoidPinError] = useState('')
   const [voidReasons, setVoidReasons] = useState<{ name: string; reason_name: string }[]>([])
   const [showCustomReason, setShowCustomReason] = useState(false)
+  // View mode: 'shift' shows current session orders (across dates), 'date' shows a specific date
+  const [viewMode, setViewMode] = useState<'shift' | 'date'>(sessionId ? 'shift' : 'date')
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })
 
-  useEffect(() => { loadOrders(); loadVoidReasons() }, [filter])
+  useEffect(() => { loadOrders(); loadVoidReasons() }, [filter, viewMode, selectedDate])
 
   async function loadVoidReasons() {
     try {
@@ -954,9 +962,14 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
   }
 
   async function loadOrders() {
-    const now = new Date()
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    const filters: any = { date: today }
+    const filters: any = {}
+    if (viewMode === 'shift' && sessionId) {
+      // Shift-based: show all orders from this session regardless of date
+      filters.sessionId = sessionId
+    } else {
+      // Date-based fallback
+      filters.date = selectedDate
+    }
     if (filter !== 'all') filters.status = filter
     // Cashier only sees own orders
     if (cashierId) filters.cashierId = cashierId
@@ -1022,7 +1035,9 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
         {/* Header */}
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div>
-            <h2 className="text-xl font-bold">Today's Orders</h2>
+            <h2 className="text-xl font-bold">
+              {viewMode === 'shift' ? 'Current Shift Orders' : `Orders — ${selectedDate}`}
+            </h2>
             <div className="mt-1 flex items-center gap-4 text-xs text-gray-500">
               <span className="font-medium text-emerald-600">{completedCount} completed</span>
               <span className="font-medium text-blue-600">{openCount} open</span>
@@ -1040,8 +1055,32 @@ function OrderHistoryPanel({ onClose, isSupervisor, cashierId }: {
           </button>
         </div>
 
-        {/* Filter tabs */}
-        <div className="flex gap-2 border-b px-6 py-3">
+        {/* View mode toggle + Filter tabs */}
+        <div className="flex items-center gap-3 border-b px-6 py-3">
+          {/* Shift / Date toggle */}
+          <div className="flex rounded-xl border-2 border-gray-200 overflow-hidden mr-2">
+            {sessionId && (
+              <button onClick={() => setViewMode('shift')}
+                className={`px-3 py-1.5 text-xs font-bold transition-colors ${viewMode === 'shift' ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                Current Shift
+              </button>
+            )}
+            <button onClick={() => setViewMode('date')}
+              className={`px-3 py-1.5 text-xs font-bold transition-colors ${viewMode === 'date' ? 'bg-primary text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+              By Date
+            </button>
+          </div>
+
+          {/* Date picker (only in date mode) */}
+          {viewMode === 'date' && (
+            <input type="date" value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="rounded-xl border-2 border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 focus:border-primary focus:outline-none" />
+          )}
+
+          <div className="mx-1 h-6 w-px bg-gray-200" />
+
+          {/* Status filters */}
           {['all', 'Completed', 'Open', 'Hold', 'Void'].map((f) => (
             <button key={f} onClick={() => setFilter(f)}
               className={`rounded-xl px-4 py-2 text-xs font-bold transition-all active:scale-95 ${
