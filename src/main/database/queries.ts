@@ -262,7 +262,7 @@ export function getTables(room?: string): any[] {
 }
 
 export function updateTableStatus(name: string, status: string, orderId?: string | null): void {
-  execute('UPDATE tables_list SET status = ?, current_order_id = ? WHERE name = ?', [status, orderId ?? null, name])
+  executeSync('UPDATE tables_list SET status = ?, current_order_id = ? WHERE name = ?', [status, orderId ?? null, name])
 }
 
 export function getRooms(): any[] {
@@ -423,7 +423,7 @@ export function removeOrderItem(id: string): boolean {
 }
 
 export function voidOrderItem(id: string, reason: string, voidedBy: string, remarks?: string, disposition?: string): boolean {
-  execute(
+  executeSync(
     `UPDATE order_items SET voided = 1, void_reason = ?, voided_by = ?, voided_at = datetime('now'), void_remarks = ?, void_disposition = ? WHERE id = ?`,
     [reason, voidedBy, remarks || null, disposition || null, id]
   )

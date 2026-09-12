@@ -1,7 +1,7 @@
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js'
 import { app, dialog } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, mkdirSync, unlinkSync, renameSync, openSync, writeSync, closeSync, fsyncSync } from 'fs'
+import { existsSync, readFileSync, mkdirSync, unlinkSync, renameSync, openSync, writeSync, closeSync, fsyncSync, statSync, copyFileSync } from 'fs'
 
 let db: SqlJsDatabase | null = null
 let dbPath: string = ''
@@ -9,6 +9,8 @@ let dbBackupPath: string = ''
 let dbTmpPath: string = ''
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let periodicSaveInterval: ReturnType<typeof setInterval> | null = null
+let consecutiveSaveFailures = 0
+const MAX_SAVE_FAILURES_BEFORE_ALERT = 3
 
 export function getDb(): SqlJsDatabase {
   if (!db) {
@@ -60,17 +62,48 @@ export async function initDatabase(): Promise<void> {
     }
   }
 
-  // Recovery chain: main → backup → tmp (leftover from crashed rename) → fresh
+  // Recovery chain: load ALL candidates, pick the newest valid one.
+  // Old approach loaded main first and ignored backup even if backup was newer.
+  // This caused data regression when saves failed silently on Windows (file locking).
   console.log('[DB Recovery] Starting recovery chain...')
-  db = tryLoadDb(dbPath, 'main')
-  if (!db) {
-    db = tryLoadDb(dbBackupPath, 'backup')
-    if (db) {
+
+  interface DbCandidate {
+    label: string
+    path: string
+    db: SqlJsDatabase
+    mtime: number
+  }
+  const candidates: DbCandidate[] = []
+
+  for (const { path: filePath, label } of [
+    { path: dbPath, label: 'main' },
+    { path: dbBackupPath, label: 'backup' },
+    { path: dbTmpPath, label: 'tmp' }
+  ]) {
+    const loaded = tryLoadDb(filePath, label)
+    if (loaded) {
+      let mtime = 0
+      try { mtime = statSync(filePath).mtimeMs } catch {}
+      candidates.push({ label, path: filePath, db: loaded, mtime })
+    }
+  }
+
+  if (candidates.length > 0) {
+    // Pick the candidate with the newest modification time
+    candidates.sort((a, b) => b.mtime - a.mtime)
+    const winner = candidates[0]
+    db = winner.db
+    console.log(`[DB Recovery] Using ${winner.label} (mtime: ${new Date(winner.mtime).toISOString()})`)
+
+    if (winner.label !== 'main') {
       recoveredFromBackup = true
-    } else {
-      db = tryLoadDb(dbTmpPath, 'tmp')
-      if (db) {
-        recoveredFromBackup = true
+      console.warn(`[DB Recovery] Main was stale/corrupt — recovered from ${winner.label}`)
+    }
+
+    // Close the losers
+    for (const c of candidates) {
+      if (c !== winner) {
+        try { c.db.close() } catch {}
       }
     }
   }
@@ -814,28 +847,111 @@ function writeAndFlush(filePath: string, buffer: Buffer): void {
 }
 
 /**
- * Atomic save: write to tmp file (+ fsync), backup old file, rename tmp to main.
- * If power cuts during write, the original file is still intact.
- * If power cuts during rename, we recover from backup/tmp on next startup.
+ * Atomic save with retry and correct backup ordering.
+ *
+ * Strategy:
+ *   1. Write new data to tmp file (+ fsync)
+ *   2. Back up current main → backup (so backup = last known good main)
+ *   3. Rename tmp → main (atomic on most filesystems)
+ *
+ * Key fixes over previous version:
+ *   - Backup is a COPY of old main, not overwritten with new data before main is updated.
+ *     This prevents the "backup has new data, main has old data" desync.
+ *   - Rename failure on Windows (file locking) is retried with short delays.
+ *   - If rename keeps failing, we write directly to main as a fallback.
+ *   - Consecutive failures trigger a user-visible alert.
  */
 function saveDatabaseSafe(): void {
   if (!db || !dbPath) return
   try {
     const data = db.export()
     const buffer = Buffer.from(data)
-    // Step 1: Write new data to backup first (so backup always has latest)
-    writeAndFlush(dbBackupPath, buffer)
-    // Step 2: Write new data to temp file
+
+    // Step 1: Write new data to tmp file
     writeAndFlush(dbTmpPath, buffer)
-    // Step 3: Replace main file (atomic rename on NTFS/APFS/ext4)
-    // If main exists, remove it first (rename over existing may fail on Windows)
+
+    // Step 2: Back up current main (if it exists) so backup = last known good state.
+    // We do this AFTER writing tmp, so if this step fails, tmp still has the latest.
     if (existsSync(dbPath)) {
-      try { unlinkSync(dbPath) } catch {}
+      try { copyFileSync(dbPath, dbBackupPath) } catch {}
     }
-    renameSync(dbTmpPath, dbPath)
+
+    // Step 3: Replace main with tmp (atomic rename).
+    // On Windows, rename over existing file can fail if the file is locked.
+    // Retry a few times with short delays before falling back to direct write.
+    let renamed = false
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        // On Windows we must delete first; on Unix rename overwrites atomically
+        if (process.platform === 'win32' && existsSync(dbPath)) {
+          unlinkSync(dbPath)
+        }
+        renameSync(dbTmpPath, dbPath)
+        renamed = true
+        break
+      } catch (err) {
+        if (attempt < 2) {
+          // Brief synchronous delay before retry (5ms, 20ms)
+          const wait = attempt === 0 ? 5 : 20
+          const start = Date.now()
+          while (Date.now() - start < wait) { /* spin */ }
+        }
+      }
+    }
+
+    // Fallback: if rename failed (file locked), write directly to main.
+    // This is not atomic but prevents silent data loss.
+    if (!renamed) {
+      try {
+        writeAndFlush(dbPath, buffer)
+        // Also keep backup current since main was directly overwritten
+        try { writeAndFlush(dbBackupPath, buffer) } catch {}
+        console.warn('[DB Save] Rename failed — used direct write fallback')
+      } catch (directErr) {
+        // Last resort: at least backup has old main, and tmp has latest.
+        // Recovery chain will find the newest valid file on next startup.
+        console.error('[DB Save] CRITICAL: All save methods failed:', directErr)
+        consecutiveSaveFailures++
+        if (consecutiveSaveFailures >= MAX_SAVE_FAILURES_BEFORE_ALERT) {
+          showSaveFailureAlert()
+        }
+        return
+      }
+    }
+
+    // Success — reset failure counter
+    consecutiveSaveFailures = 0
+
+    // Clean up tmp if it still exists (rename succeeded so it shouldn't)
+    if (existsSync(dbTmpPath)) {
+      try { unlinkSync(dbTmpPath) } catch {}
+    }
   } catch (err) {
-    console.error('Failed to save database:', err)
+    console.error('[DB Save] Failed to save database:', err)
+    consecutiveSaveFailures++
+    if (consecutiveSaveFailures >= MAX_SAVE_FAILURES_BEFORE_ALERT) {
+      showSaveFailureAlert()
+    }
   }
+}
+
+let saveAlertShown = false
+function showSaveFailureAlert(): void {
+  if (saveAlertShown) return
+  saveAlertShown = true
+  // Reset after 60 seconds so it can fire again if the problem persists
+  setTimeout(() => { saveAlertShown = false }, 60_000)
+  try {
+    dialog.showMessageBox({
+      type: 'error',
+      title: 'Database Save Error',
+      message: 'ServePOS is unable to save data to disk',
+      detail: 'This may be caused by antivirus software or another program locking the database file. '
+        + 'Please check that no other program is scanning the ServePOS data folder, then restart the app.\n\n'
+        + 'Until this is resolved, recent changes may be lost if the app closes unexpectedly.',
+      buttons: ['OK']
+    })
+  } catch {}
 }
 
 export function saveDatabase(): void {
@@ -857,7 +973,20 @@ export function closeDatabase(): void {
     clearInterval(periodicSaveInterval)
     periodicSaveInterval = null
   }
-  saveDatabaseSync()
+  // Retry save up to 3 times on close — this is our last chance to persist data.
+  // On Windows, file locks from antivirus may release between attempts.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      saveDatabaseSync()
+      break
+    } catch (err) {
+      console.error(`[DB Close] Save attempt ${attempt + 1} failed:`, err)
+      if (attempt < 2) {
+        const start = Date.now()
+        while (Date.now() - start < 50) { /* spin wait */ }
+      }
+    }
+  }
   if (db) {
     db.close()
     db = null
