@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, nativeImage, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, ipcMain, dialog, protocol, net } from 'electron'
 import { join } from 'path'
 import { exec } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -6,6 +6,12 @@ import { autoUpdater } from 'electron-updater'
 import { initDatabase, closeDatabase } from './database/schema'
 import { registerIpcHandlers } from './ipc/handlers'
 import { startAutoSync, stopAutoSync } from './sync/sync-engine'
+import { getImageDir } from './sync/image-cache'
+
+// Register scheme as privileged before app ready
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'cached-image', privileges: { bypassCSP: true, supportFetchAPI: true } }
+])
 
 let mainWindow: BrowserWindow | null = null
 
@@ -50,6 +56,14 @@ app.whenReady().then(async () => {
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+  })
+
+  // Register custom protocol for cached images
+  protocol.handle('cached-image', (request) => {
+    // URL format: cached-image://file/FILENAME.png
+    const filename = decodeURIComponent(request.url.replace('cached-image://file/', ''))
+    const filePath = join(getImageDir(), filename)
+    return net.fetch(`file://${filePath}`)
   })
 
   // Initialize database (async for sql.js WASM loading)

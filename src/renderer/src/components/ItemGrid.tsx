@@ -1,7 +1,23 @@
-import { useState, useEffect, useMemo, memo } from 'react'
+import { useState, useEffect, useMemo, memo, useCallback } from 'react'
 import { Search, X, Info, LayoutGrid, List, ArrowLeft, FolderOpen, Globe } from 'lucide-react'
 import { useCartStore, CartModifier } from '../stores/cart'
 import ModifierModal from './ModifierModal'
+
+function cachedImageUrl(itemCode: string): string {
+  const sanitized = itemCode.replace(/[^a-zA-Z0-9_-]/g, '_')
+  return `cached-image://file/${sanitized}.png`
+}
+
+function ItemImage({ item, className }: { item: { item_code: string; item_name: string; image: string | null }; className?: string }) {
+  const [src, setSrc] = useState(() => cachedImageUrl(item.item_code))
+  const onError = useCallback(() => {
+    if (item.image && src !== item.image) {
+      setSrc(item.image)
+    }
+  }, [item.image, src])
+
+  return <img src={src} alt={item.item_name} className={className} onError={onError} />
+}
 
 interface Item {
   item_code: string
@@ -358,7 +374,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
                   >
                     {item.image ? (
                       <div className="aspect-square w-full overflow-hidden bg-gray-100">
-                        <img src={item.image} alt={item.item_name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                        <ItemImage item={item} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
                       </div>
                     ) : (
                       <div className="flex h-16 w-full items-center justify-center bg-gradient-to-br from-primary/5 to-primary/10">
@@ -398,7 +414,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
                     {/* Thumbnail — larger for touch */}
                     {item.image ? (
                       <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                        <img src={item.image} alt={item.item_name} className="h-full w-full object-cover" />
+                        <ItemImage item={item} className="h-full w-full object-cover" />
                       </div>
                     ) : (
                       <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/5 to-primary/15">
@@ -452,7 +468,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
           <div className="w-[420px] rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
             {detailItem.image ? (
               <div className="h-48 w-full overflow-hidden rounded-t-2xl bg-gray-100">
-                <img src={detailItem.image} alt={detailItem.item_name} className="h-full w-full object-cover" />
+                <ItemImage item={detailItem} className="h-full w-full object-cover" />
               </div>
             ) : (
               <div className="flex h-32 w-full items-center justify-center rounded-t-2xl bg-gradient-to-br from-primary/10 to-primary/20">

@@ -2,6 +2,7 @@ import { getDb, saveDatabase } from '../database/schema'
 import { getConfig, setConfig } from '../database/queries'
 import { ERPNextClient } from './erpnext-client'
 import { v4 as uuidv4 } from 'uuid'
+import { cacheAllImages } from './image-cache'
 
 export async function syncDown(): Promise<{ success: boolean; error?: string; counts?: Record<string, number> }> {
   try {
@@ -328,6 +329,25 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
 
     saveDatabase()
     setConfig('last_sync_at', new Date().toISOString())
+
+    // Cache item images locally (runs after sync completes, non-blocking for sync result)
+    try {
+      const allItemsForCache = db.prepare('SELECT item_code, image FROM items')
+      const itemsToCache: Array<{ item_code: string; image: string | null }> = []
+      while (allItemsForCache.step()) {
+        const row = allItemsForCache.getAsObject() as any
+        itemsToCache.push({ item_code: row.item_code, image: row.image || null })
+      }
+      allItemsForCache.free()
+
+      if (itemsToCache.length > 0) {
+        const cachedCount = await cacheAllImages(itemsToCache)
+        counts.cached_images = cachedCount
+        console.log(`[Sync] Cached ${cachedCount}/${itemsToCache.length} item images`)
+      }
+    } catch (err: any) {
+      console.warn(`[Sync] Image caching failed: ${err.message}`)
+    }
 
     return { success: true, counts }
   } catch (err: any) {
