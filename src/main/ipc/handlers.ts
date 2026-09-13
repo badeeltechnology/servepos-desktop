@@ -3,15 +3,46 @@ import QRCode from 'qrcode'
 import * as db from '../database/queries'
 import { getDb, saveDatabase, saveDatabaseSync, deleteDatabase, initDatabase } from '../database/schema'
 import { writeFileSync, readFileSync } from 'fs'
-import { runSync, getSyncStatus, startAutoSync } from '../sync/sync-engine'
+import { runSync, getSyncStatus, startAutoSync, stopAndDrainSync } from '../sync/sync-engine'
 import { ERPNextClient, getActiveUrl } from '../sync/erpnext-client'
 import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute, discoverUsbPrinters } from '../print/printer'
 import { printReceipt, printKots, printAmendmentKot, printWaiterCopy, printPrepDoc, printInvoice, printVoidSlip, printCloseShift } from '../print/print-engine'
 
+let acceptingRequests = true
+let shutdownRequested = false
+const inFlight = new Set<Promise<unknown>>()
+function handle(channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => any): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!acceptingRequests) throw new Error('Application is closing. Please wait.')
+    const maintenance = ['app:deleteDatabase', 'app:clearTransactions', 'backup:import'].includes(channel)
+    const priorRequests = [...inFlight]
+    if (maintenance) acceptingRequests = false
+    const task = Promise.resolve().then(async () => {
+      if (maintenance) await Promise.all([Promise.allSettled(priorRequests), stopAndDrainSync()])
+      try { return await listener(event, ...args) }
+      finally {
+        if (maintenance && !shutdownRequested) {
+          acceptingRequests = true
+          startAutoSync()
+        }
+      }
+    })
+    inFlight.add(task)
+    task.then(() => inFlight.delete(task), () => inFlight.delete(task))
+    return task
+  })
+}
+export async function drainIpcHandlers(): Promise<void> {
+  shutdownRequested = true
+  acceptingRequests = false
+  await Promise.allSettled([...inFlight])
+}
+export function resumeIpcHandlers(): void { shutdownRequested = false; acceptingRequests = true }
+
 export function registerIpcHandlers(): void {
   // ==================== App ====================
-  ipcMain.handle('app:getVersion', () => app.getVersion())
-  ipcMain.handle('app:checkForUpdate', async () => {
+  handle('app:getVersion', () => app.getVersion())
+  handle('app:checkForUpdate', async () => {
     try {
       const res = await fetch('https://api.github.com/repos/badeeltechnology/servepos-desktop/releases/latest')
       if (!res.ok) return { hasUpdate: false }
@@ -32,9 +63,9 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('app:clearTransactions', () => db.clearTransactions())
+  handle('app:clearTransactions', async () => await db.clearTransactions())
 
-  ipcMain.handle('app:generateWaiterQR', async () => {
+  handle('app:generateWaiterQR', async () => {
     const url = db.getConfig('erpnext_url') || ''
     const apiKey = db.getConfig('api_key') || ''
     const apiSecret = db.getConfig('api_secret') || ''
@@ -48,8 +79,8 @@ export function registerIpcHandlers(): void {
     return { dataUrl }
   })
 
-  ipcMain.handle('app:deleteDatabase', async () => {
-    deleteDatabase()
+  handle('app:deleteDatabase', async () => {
+    await deleteDatabase()
     // Reinitialize a fresh empty database
     await initDatabase()
     // Delay reload so IPC response reaches renderer first
@@ -61,7 +92,20 @@ export function registerIpcHandlers(): void {
   })
 
   // ==================== Backup ====================
-  ipcMain.handle('backup:export', async () => {
+  handle('backup:exportFull', async () => {
+    const result = await dialog.showSaveDialog({
+      title: 'Export Full Database Backup',
+      defaultPath: `servepos-full-${new Date().toISOString().slice(0, 10)}.sqlite`,
+      filters: [{name: 'Full database backup', extensions: ['sqlite']}]
+    })
+    if (result.canceled || !result.filePath) return {success: false, canceled: true}
+    try {
+      await getDb().request('backup', result.filePath)
+      return {success: true}
+    } catch (error: any) { return {success: false, error: error.message} }
+  })
+
+  handle('backup:export', async () => {
     const win = BrowserWindow.getAllWindows()[0]
     const result = await dialog.showSaveDialog(win, {
       title: 'Export Settings Backup',
@@ -72,7 +116,7 @@ export function registerIpcHandlers(): void {
 
     try {
       // Ensure latest data is flushed to DB
-      saveDatabaseSync()
+      await saveDatabaseSync()
       const database = getDb()
 
       // Export settings tables (not transaction data like orders/sessions)
@@ -87,7 +131,7 @@ export function registerIpcHandlers(): void {
         try {
           const stmt = database.prepare(`SELECT * FROM ${table}`)
           const rows: any[] = []
-          while (stmt.step()) {
+          while (await stmt.step()) {
             rows.push(stmt.getAsObject())
           }
           stmt.free()
@@ -105,7 +149,7 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('backup:import', async () => {
+  handle('backup:import', async () => {
     const win = BrowserWindow.getAllWindows()[0]
     const result = await dialog.showOpenDialog(win, {
       title: 'Import Settings Backup',
@@ -122,35 +166,7 @@ export function registerIpcHandlers(): void {
         return { success: false, error: 'Invalid backup file' }
       }
 
-      const database = getDb()
-
-      // Restore each settings table
-      const settingsTables = [
-        'config', 'receipt_config', 'admin', 'users',
-        'printers', 'print_routes', 'payment_methods',
-        'waiters', 'modifier_groups', 'modifiers', 'item_modifier_groups'
-      ]
-
-      database.run('PRAGMA foreign_keys = OFF')
-      for (const table of settingsTables) {
-        if (!backup[table] || backup[table].length === 0) continue
-        try {
-          // Clear existing data
-          database.run(`DELETE FROM ${table}`)
-          // Insert backup rows
-          const columns = Object.keys(backup[table][0])
-          const placeholders = columns.map(() => '?').join(', ')
-          const insertSql = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`
-          for (const row of backup[table]) {
-            database.run(insertSql, columns.map((c) => row[c] ?? null))
-          }
-        } catch (err) {
-          console.error(`Failed to restore table ${table}:`, err)
-        }
-      }
-      database.run('PRAGMA foreign_keys = ON')
-
-      saveDatabaseSync()
+      await getDb().request('restoreSettings', backup)
 
       // Reload app to apply restored settings
       setTimeout(() => {
@@ -164,141 +180,141 @@ export function registerIpcHandlers(): void {
   })
 
   // ==================== Sync ====================
-  ipcMain.handle('sync:run', () => runSync())
-  ipcMain.handle('sync:status', () => getSyncStatus())
-  ipcMain.handle('sync:startAuto', () => startAutoSync())
-  ipcMain.handle('sync:testConnection', async () => {
+  handle('sync:run', () => runSync())
+  handle('sync:status', () => getSyncStatus())
+  handle('sync:startAuto', () => startAutoSync())
+  handle('sync:testConnection', async () => {
     const client = new ERPNextClient()
     return client.testConnection()
   })
-  ipcMain.handle('sync:getCompanies', async () => {
+  handle('sync:getCompanies', async () => {
     const client = new ERPNextClient()
     return client.getCompanies()
   })
-  ipcMain.handle('sync:getPosProfiles', async (_e, company?: string) => {
+  handle('sync:getPosProfiles', async (_e, company?: string) => {
     const client = new ERPNextClient()
     return client.getPosProfiles(company)
   })
 
   // ==================== Config ====================
-  ipcMain.handle('config:get', (_e, key: string) => db.getConfig(key))
-  ipcMain.handle('config:set', (_e, key: string, value: string) => db.setConfig(key, value))
-  ipcMain.handle('config:getAll', () => db.getAllConfig())
-  ipcMain.handle('config:isSetupComplete', () => db.isSetupComplete())
+  handle('config:get', (_e, key: string) => db.getConfig(key))
+  handle('config:set', async (_e, key: string, value: string) => await db.setConfig(key, value))
+  handle('config:getAll', () => db.getAllConfig())
+  handle('config:isSetupComplete', async () => await db.isSetupComplete())
 
   // ==================== Receipt Config ====================
-  ipcMain.handle('receiptConfig:get', (_e, key: string) => db.getReceiptConfig(key))
-  ipcMain.handle('receiptConfig:set', (_e, key: string, value: string) => db.setReceiptConfig(key, value))
-  ipcMain.handle('receiptConfig:getAll', () => db.getAllReceiptConfig())
-  ipcMain.handle('receiptConfig:setBulk', (_e, configs: Record<string, string>) => db.setReceiptConfigBulk(configs))
+  handle('receiptConfig:get', (_e, key: string) => db.getReceiptConfig(key))
+  handle('receiptConfig:set', async (_e, key: string, value: string) => await db.setReceiptConfig(key, value))
+  handle('receiptConfig:getAll', () => db.getAllReceiptConfig())
+  handle('receiptConfig:setBulk', async (_e, configs: Record<string, string>) => await db.setReceiptConfigBulk(configs))
 
   // ==================== Admin ====================
-  ipcMain.handle('admin:create', (_e, username: string, password: string) => db.createAdmin(username, password))
-  ipcMain.handle('admin:verify', (_e, username: string, password: string) => db.verifyAdmin(username, password))
-  ipcMain.handle('admin:exists', () => db.adminExists())
-  ipcMain.handle('admin:updatePassword', (_e, username: string, newPassword: string) => db.updateAdminPassword(username, newPassword))
+  handle('admin:create', async (_e, username: string, password: string) => await db.createAdmin(username, password))
+  handle('admin:verify', async (_e, username: string, password: string) => await db.verifyAdmin(username, password))
+  handle('admin:exists', async () => await db.adminExists())
+  handle('admin:updatePassword', async (_e, username: string, newPassword: string) => await db.updateAdminPassword(username, newPassword))
 
   // ==================== Users ====================
-  ipcMain.handle('users:create', (_e, name: string, pin: string, role: string, options?: any) => db.createUser(name, pin, role as 'supervisor' | 'cashier' | 'coordinator', options))
-  ipcMain.handle('users:verifyPin', (_e, pin: string) => db.verifyPin(pin))
-  ipcMain.handle('users:getAll', (_e, role?: string) => db.getUsers(role))
-  ipcMain.handle('users:update', (_e, id: string, updates: any) => db.updateUser(id, updates))
-  ipcMain.handle('users:delete', (_e, id: string) => db.deleteUser(id))
+  handle('users:create', async (_e, name: string, pin: string, role: string, options?: any) => await db.createUser(name, pin, role as 'supervisor' | 'cashier' | 'coordinator', options))
+  handle('users:verifyPin', async (_e, pin: string) => await db.verifyPin(pin))
+  handle('users:getAll', async (_e, role?: string) => await db.getUsers(role))
+  handle('users:update', async (_e, id: string, updates: any) => await db.updateUser(id, updates))
+  handle('users:delete', async (_e, id: string) => await db.deleteUser(id))
 
   // ==================== Items ====================
-  ipcMain.handle('items:get', (_e, group?: string) => db.getItems(group))
-  ipcMain.handle('items:getAll', () => db.getAllItems())
-  ipcMain.handle('items:getVariants', (_e, templateCode: string) => db.getItemVariants(templateCode))
-  ipcMain.handle('items:setVisibility', (_e, itemCode: string, visible: boolean) => db.setItemVisibility(itemCode, visible))
-  ipcMain.handle('items:setGroupVisibility', (_e, groupName: string, visible: boolean) => db.setItemGroupVisibility(groupName, visible))
+  handle('items:get', async (_e, group?: string) => await db.getItems(group))
+  handle('items:getAll', async () => await db.getAllItems())
+  handle('items:getVariants', async (_e, templateCode: string) => await db.getItemVariants(templateCode))
+  handle('items:setVisibility', async (_e, itemCode: string, visible: boolean) => await db.setItemVisibility(itemCode, visible))
+  handle('items:setGroupVisibility', async (_e, groupName: string, visible: boolean) => await db.setItemGroupVisibility(groupName, visible))
 
   // ==================== Item Groups ====================
-  ipcMain.handle('itemGroups:get', () => db.getItemGroups())
-  ipcMain.handle('itemGroups:getAll', () => db.getAllItemGroups())
+  handle('itemGroups:get', async () => await db.getItemGroups())
+  handle('itemGroups:getAll', async () => await db.getAllItemGroups())
 
   // ==================== Tables & Rooms ====================
-  ipcMain.handle('tables:get', (_e, room?: string) => db.getTables(room))
-  ipcMain.handle('tables:updateStatus', (_e, name: string, status: string, orderId?: string) => db.updateTableStatus(name, status, orderId))
-  ipcMain.handle('rooms:get', () => db.getRooms())
+  handle('tables:get', async (_e, room?: string) => await db.getTables(room))
+  handle('tables:updateStatus', async (_e, name: string, status: string, orderId?: string) => await db.updateTableStatus(name, status, orderId))
+  handle('rooms:get', async () => await db.getRooms())
 
   // ==================== Orders ====================
-  ipcMain.handle('orders:create', (_e, data: any) => db.createOrder(data))
-  ipcMain.handle('orders:get', (_e, id: string) => db.getOrder(id))
-  ipcMain.handle('orders:getAll', (_e, filters?: any) => db.getOrders(filters))
-  ipcMain.handle('orders:getActive', () => db.getActiveOrders())
-  ipcMain.handle('orders:update', (_e, id: string, updates: any) => db.updateOrder(id, updates))
+  handle('orders:create', async (_e, data: any) => await db.createOrder(data))
+  handle('orders:get', async (_e, id: string) => await db.getOrder(id))
+  handle('orders:getAll', async (_e, filters?: any) => await db.getOrders(filters))
+  handle('orders:getActive', async () => await db.getActiveOrders())
+  handle('orders:update', async (_e, id: string, updates: any) => await db.updateOrder(id, updates))
 
   // ==================== Order Items ====================
-  ipcMain.handle('orderItems:add', (_e, data: any) => db.addOrderItem(data))
-  ipcMain.handle('orderItems:get', (_e, orderId: string) => db.getOrderItems(orderId))
-  ipcMain.handle('orderItems:update', (_e, id: string, updates: any) => db.updateOrderItem(id, updates))
-  ipcMain.handle('orderItems:remove', (_e, id: string) => db.removeOrderItem(id))
-  ipcMain.handle('orderItems:void', (_e, id: string, reason: string, voidedBy: string, remarks?: string, disposition?: string) => db.voidOrderItem(id, reason, voidedBy, remarks, disposition))
+  handle('orderItems:add', async (_e, data: any) => await db.addOrderItem(data))
+  handle('orderItems:get', async (_e, orderId: string) => await db.getOrderItems(orderId))
+  handle('orderItems:update', async (_e, id: string, updates: any) => await db.updateOrderItem(id, updates))
+  handle('orderItems:remove', async (_e, id: string) => await db.removeOrderItem(id))
+  handle('orderItems:void', async (_e, id: string, reason: string, voidedBy: string, remarks?: string, disposition?: string) => await db.voidOrderItem(id, reason, voidedBy, remarks, disposition))
 
   // ==================== Order Payments ====================
-  ipcMain.handle('orderPayments:add', (_e, orderId: string, method: string, amount: number, reference?: string, collectedByWaiter?: string) => db.addOrderPayment(orderId, method, amount, reference, collectedByWaiter))
-  ipcMain.handle('orderPayments:get', (_e, orderId: string) => db.getOrderPayments(orderId))
+  handle('orderPayments:add', async (_e, orderId: string, method: string, amount: number, reference?: string, collectedByWaiter?: string) => await db.addOrderPayment(orderId, method, amount, reference, collectedByWaiter))
+  handle('orderPayments:get', async (_e, orderId: string) => await db.getOrderPayments(orderId))
 
   // ==================== Order Edit Log ====================
-  ipcMain.handle('orderEditLog:add', (_e, data: any) => db.addOrderEditLog(data))
+  handle('orderEditLog:add', async (_e, data: any) => await db.addOrderEditLog(data))
 
   // ==================== Payment Methods ====================
-  ipcMain.handle('paymentMethods:get', () => db.getPaymentMethods())
+  handle('paymentMethods:get', async () => await db.getPaymentMethods())
 
   // ==================== Sessions / Shifts ====================
-  ipcMain.handle('sessions:getActive', () => db.getActiveSession())
-  ipcMain.handle('sessions:open', (_e, data: any) => {
-    const result = db.openSession(data)
-    saveDatabaseSync() // Critical — must persist shift open
+  handle('sessions:getActive', async () => await db.getActiveSession())
+  handle('sessions:open', async (_e, data: any) => {
+    const result = await db.openSession(data)
+    await saveDatabaseSync() // Critical — must persist shift open
     return result
   })
-  ipcMain.handle('sessions:close', (_e, sessionId: string, closingBalance: any[], remarks?: string) => {
-    const result = db.closeSession(sessionId, closingBalance, remarks)
-    saveDatabaseSync() // Extra explicit save — critical operation must persist
+  handle('sessions:close', async (_e, sessionId: string, closingBalance: any[], remarks?: string) => {
+    const result = await db.closeSession(sessionId, closingBalance, remarks)
+    await saveDatabaseSync() // Extra explicit save — critical operation must persist
     return result
   })
-  ipcMain.handle('sessions:getOrders', (_e, sessionId: string) => db.getSessionOrders(sessionId))
-  ipcMain.handle('sessions:getOpenOrders', (_e, sessionId: string) => db.getSessionOpenOrders(sessionId))
-  ipcMain.handle('sessions:getAllOpenOrders', () => db.getAllOpenOrders())
-  ipcMain.handle('sessions:getPendingSync', (_e, sessionId: string) => db.getSessionPendingSyncOrders(sessionId))
-  ipcMain.handle('sessions:getAll', (_e, limit?: number) => db.getSessions(limit))
+  handle('sessions:getOrders', async (_e, sessionId: string) => await db.getSessionOrders(sessionId))
+  handle('sessions:getOpenOrders', async (_e, sessionId: string) => await db.getSessionOpenOrders(sessionId))
+  handle('sessions:getAllOpenOrders', async () => await db.getAllOpenOrders())
+  handle('sessions:getPendingSync', async (_e, sessionId: string) => await db.getSessionPendingSyncOrders(sessionId))
+  handle('sessions:getAll', async (_e, limit?: number) => await db.getSessions(limit))
 
   // Auto-close shift: void all open/hold orders, then close the session
-  ipcMain.handle('sessions:autoClose', async () => {
+  handle('sessions:autoClose', async () => {
     try {
-      const session = db.getActiveSession()
+      const session = await db.getActiveSession()
       if (!session) return { success: false, error: 'No active session' }
 
       const database = getDb()
 
       // Void all Open/Hold orders (including previous sessions)
-      const openOrders = db.getAllOpenOrders()
+      const openOrders = await db.getAllOpenOrders()
       for (const order of openOrders) {
-        database.run(
+        await database.run(
           "UPDATE orders SET status = 'Void', void_reason = 'Auto-closed at end of day' WHERE id = ?",
           [order.id]
         )
         // Free table
         if (order.table_name) {
-          database.run("UPDATE tables_list SET status = 'Available', current_order_id = NULL WHERE name = ?", [order.table_name])
+          await database.run("UPDATE tables_list SET status = 'Available', current_order_id = NULL WHERE name = ?", [order.table_name])
         }
       }
-      saveDatabase()
+      await saveDatabase()
 
       // Force-sync pending completed orders before closing
       try { await runSync() } catch {}
 
       // Close the session with empty closing balance
       try {
-        db.closeSession(session.id, [], 'Auto-closed at scheduled time')
+        await db.closeSession(session.id, [], 'Auto-closed at scheduled time')
         return { success: true, voided: openOrders.length }
       } catch (err: any) {
         // If still can't close (pending sync), force close
-        database.run(
+        await database.run(
           "UPDATE sessions SET status = 'Closed', closed_at = datetime('now'), remarks = 'Auto-closed at scheduled time' WHERE id = ?",
           [session.id]
         )
-        saveDatabase()
+        await saveDatabase()
         return { success: true, voided: openOrders.length, forced: true }
       }
     } catch (err: any) {
@@ -307,30 +323,30 @@ export function registerIpcHandlers(): void {
   })
 
   // ==================== Modifiers ====================
-  ipcMain.handle('modifiers:getGroups', () => db.getModifierGroups())
-  ipcMain.handle('modifiers:createGroup', (_e, data: any) => db.createModifierGroup(data))
-  ipcMain.handle('modifiers:updateGroup', (_e, id: string, data: any) => db.updateModifierGroup(id, data))
-  ipcMain.handle('modifiers:deleteGroup', (_e, id: string) => db.deleteModifierGroup(id))
-  ipcMain.handle('modifiers:getForGroup', (_e, groupId: string) => db.getModifiersForGroup(groupId))
-  ipcMain.handle('modifiers:create', (_e, data: any) => db.createModifier(data))
-  ipcMain.handle('modifiers:update', (_e, id: string, data: any) => db.updateModifier(id, data))
-  ipcMain.handle('modifiers:delete', (_e, id: string) => db.deleteModifier(id))
-  ipcMain.handle('modifiers:getItemGroups', (_e, itemCode: string) => db.getItemModifierGroups(itemCode))
-  ipcMain.handle('modifiers:assignToItem', (_e, itemCode: string, groupId: string, isRequired: boolean, order: number) => db.assignModifierGroupToItem(itemCode, groupId, isRequired, order))
-  ipcMain.handle('modifiers:removeFromItem', (_e, id: string) => db.removeModifierGroupFromItem(id))
+  handle('modifiers:getGroups', async () => await db.getModifierGroups())
+  handle('modifiers:createGroup', async (_e, data: any) => await db.createModifierGroup(data))
+  handle('modifiers:updateGroup', async (_e, id: string, data: any) => await db.updateModifierGroup(id, data))
+  handle('modifiers:deleteGroup', async (_e, id: string) => await db.deleteModifierGroup(id))
+  handle('modifiers:getForGroup', async (_e, groupId: string) => await db.getModifiersForGroup(groupId))
+  handle('modifiers:create', async (_e, data: any) => await db.createModifier(data))
+  handle('modifiers:update', async (_e, id: string, data: any) => await db.updateModifier(id, data))
+  handle('modifiers:delete', async (_e, id: string) => await db.deleteModifier(id))
+  handle('modifiers:getItemGroups', async (_e, itemCode: string) => await db.getItemModifierGroups(itemCode))
+  handle('modifiers:assignToItem', async (_e, itemCode: string, groupId: string, isRequired: boolean, order: number) => await db.assignModifierGroupToItem(itemCode, groupId, isRequired, order))
+  handle('modifiers:removeFromItem', async (_e, id: string) => await db.removeModifierGroupFromItem(id))
 
   // ==================== Printers ====================
-  ipcMain.handle('printers:get', () => getPrinters())
-  ipcMain.handle('printers:add', (_e, data: any) => addPrinter(data))
-  ipcMain.handle('printers:update', (_e, id: string, data: any) => updatePrinter(id, data))
-  ipcMain.handle('printers:delete', (_e, id: string) => deletePrinter(id))
-  ipcMain.handle('printers:test', (_e, printer: any) => testPrinter(printer))
-  ipcMain.handle('printers:discoverUsb', () => discoverUsbPrinters())
+  handle('printers:get', async () => await getPrinters())
+  handle('printers:add', async (_e, data: any) => await addPrinter(data))
+  handle('printers:update', async (_e, id: string, data: any) => await updatePrinter(id, data))
+  handle('printers:delete', async (_e, id: string) => await deletePrinter(id))
+  handle('printers:test', async (_e, printer: any) => await testPrinter(printer))
+  handle('printers:discoverUsb', () => discoverUsbPrinters())
 
   // ==================== Print Routes ====================
-  ipcMain.handle('printRoutes:get', () => getPrintRoutes())
-  ipcMain.handle('printRoutes:add', (_e, data: any) => addPrintRoute(data))
-  ipcMain.handle('printRoutes:delete', (_e, id: string) => deletePrintRoute(id))
+  handle('printRoutes:get', async () => await getPrintRoutes())
+  handle('printRoutes:add', async (_e, data: any) => await addPrintRoute(data))
+  handle('printRoutes:delete', async (_e, id: string) => await deletePrintRoute(id))
 
   // ==================== Printing ====================
   // ==================== Waiter Orders ====================
@@ -368,7 +384,7 @@ export function registerIpcHandlers(): void {
     if (wo.name) {
       const dupStmt = database.prepare("SELECT id, order_number FROM orders WHERE waiter_order_name = ? AND status != 'Void'")
       dupStmt.bind([wo.name])
-      if (dupStmt.step()) {
+      if (await dupStmt.step()) {
         const existing = dupStmt.getAsObject() as any
         dupStmt.free()
         // Treat as idempotent success — do NOT reprint KOT
@@ -379,12 +395,12 @@ export function registerIpcHandlers(): void {
 
     // Get active session
     const sessionStmt = database.prepare("SELECT id, user_id, user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
-    const session = sessionStmt.step() ? sessionStmt.getAsObject() as any : null
+    const session = (await sessionStmt.step()) ? sessionStmt.getAsObject() as any : null
     sessionStmt.free()
     if (!session) return { success: false, error: 'No open shift' }
 
     // Create local order
-    const order = db.createOrder({
+    const order = await db.createOrder({
       orderType: wo.order_type || 'Dine In',
       tableName: wo.table || undefined,
       room: wo.room || undefined,
@@ -399,8 +415,8 @@ export function registerIpcHandlers(): void {
     // Immediately claim this waiter_order_name on the new row so any racing caller's
     // dup check finds it (defense-in-depth alongside the per-name mutex above).
     if (wo.name) {
-      database.run('UPDATE orders SET waiter_order_name = ? WHERE id = ?', [wo.name, order.id])
-      saveDatabase()
+      await database.run('UPDATE orders SET waiter_order_name = ? WHERE id = ?', [wo.name, order.id])
+      await saveDatabase()
     }
 
     // Add items
@@ -434,7 +450,7 @@ export function registerIpcHandlers(): void {
             modifiersStr = JSON.stringify(item.modifiers)
           }
         }
-        db.addOrderItem({
+        await db.addOrderItem({
           orderId: order.id, itemCode: item.item_code, itemName: item.item_name,
           qty: item.qty || 1, rate: item.rate || 0, amount,
           modifiers: modifiersStr, modifierTotal: item.modifier_total || 0,
@@ -454,8 +470,8 @@ export function registerIpcHandlers(): void {
     const taxTotal = subtotal * (taxRate / 100)
     const grandTotal = subtotal + taxTotal
 
-    database.run('UPDATE orders SET subtotal = ?, tax_total = ?, grand_total = ?, waiter_order_name = ?, order_notes = ? WHERE id = ?', [subtotal, taxTotal, grandTotal, wo.name || null, wo.notes || null, order.id])
-    saveDatabase()
+    await database.run('UPDATE orders SET subtotal = ?, tax_total = ?, grand_total = ?, waiter_order_name = ?, order_notes = ? WHERE id = ?', [subtotal, taxTotal, grandTotal, wo.name || null, wo.notes || null, order.id])
+    await saveDatabase()
 
     // Accept in ERPNext
     await client.acceptWaiterOrder(wo.name, order.id)
@@ -476,7 +492,7 @@ export function registerIpcHandlers(): void {
     return { success: true, orderId: order.id, orderNumber: order.order_number, kotPrinted, kotError }
   }
 
-  ipcMain.handle('waiterOrders:getPending', async () => {
+  handle('waiterOrders:getPending', async () => {
     try {
       const erpnextUrl = db.getConfig('erpnext_url')
       if (!erpnextUrl) return []
@@ -489,7 +505,7 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('waiterOrders:accept', async (_e, waiterOrderName: string) => {
+  handle('waiterOrders:accept', async (_e, waiterOrderName: string) => {
     try {
       const client = new ERPNextClient()
       const wo = await client.getDoc('ServePOS Waiter Order', waiterOrderName)
@@ -499,7 +515,7 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('waiterOrders:reject', async (_e, waiterOrderName: string) => {
+  handle('waiterOrders:reject', async (_e, waiterOrderName: string) => {
     try {
       const client = new ERPNextClient()
       await client.callMethod('servepos.api.waiter.update_order_status', { order_name: waiterOrderName, status: 'Cancelled' })
@@ -509,15 +525,15 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('print:receipt', (_e, orderId: string) => printReceipt(orderId))
-  ipcMain.handle('print:kots', (_e, orderId: string, actorName?: string, reprint?: boolean) => {
-    return printKots(orderId, reprint ? 'reprint' : 'manual', actorName)
+  handle('print:receipt', async (_e, orderId: string) => await printReceipt(orderId))
+  handle('print:kots', async (_e, orderId: string, actorName?: string, reprint?: boolean) => {
+    return await printKots(orderId, reprint ? 'reprint' : 'manual', actorName)
   })
-  ipcMain.handle('print:amendmentKot', (_e, orderId: string, amendments: any[]) => printAmendmentKot(orderId, amendments))
+  handle('print:amendmentKot', async (_e, orderId: string, amendments: any[]) => await printAmendmentKot(orderId, amendments))
 
   // Fetch print history for an order (for the "Print History" panel).
   // Joins printer name so the UI doesn't need a second lookup.
-  ipcMain.handle('printLog:getForOrder', (_e, orderId: string) => {
+  handle('printLog:getForOrder', async (_e, orderId: string) => {
     const database = getDb()
     const stmt = database.prepare(
       `SELECT pl.id, pl.print_type, pl.status, pl.error, pl.source, pl.actor_name, pl.printed_at,
@@ -529,20 +545,20 @@ export function registerIpcHandlers(): void {
     )
     stmt.bind([orderId])
     const rows: any[] = []
-    while (stmt.step()) rows.push(stmt.getAsObject())
+    while (await stmt.step()) rows.push(stmt.getAsObject())
     stmt.free()
     return rows
   })
-  ipcMain.handle('print:waiterCopy', (_e, orderId: string, cartDiscount?: any) => printWaiterCopy(orderId, cartDiscount))
-  ipcMain.handle('print:prepDoc', (_e, orderId: string) => printPrepDoc(orderId))
-  ipcMain.handle('print:invoice', (_e, orderId: string, cartDiscount?: any) => printInvoice(orderId, cartDiscount))
-  ipcMain.handle('print:voidSlip', (_e, orderId: string, voidReason: string, voidedBy: string, removedItems?: any[], voidRemarks?: string, voidDisposition?: string) => printVoidSlip(orderId, voidReason, voidedBy, removedItems, voidRemarks, voidDisposition))
-  ipcMain.handle('print:closeShift', (_e, sessionId: string) => printCloseShift(sessionId))
+  handle('print:waiterCopy', async (_e, orderId: string, cartDiscount?: any) => await printWaiterCopy(orderId, cartDiscount))
+  handle('print:prepDoc', async (_e, orderId: string) => await printPrepDoc(orderId))
+  handle('print:invoice', async (_e, orderId: string, cartDiscount?: any) => await printInvoice(orderId, cartDiscount))
+  handle('print:voidSlip', async (_e, orderId: string, voidReason: string, voidedBy: string, removedItems?: any[], voidRemarks?: string, voidDisposition?: string) => await printVoidSlip(orderId, voidReason, voidedBy, removedItems, voidRemarks, voidDisposition))
+  handle('print:closeShift', async (_e, sessionId: string) => await printCloseShift(sessionId))
 
   // Poll for "Ready to Serve" orders that need invoice printing
   // Concurrency guard to prevent double-printing
   let pollReadyRunning = false
-  ipcMain.handle('print:pollReadyOrders', async () => {
+  handle('print:pollReadyOrders', async () => {
     if (pollReadyRunning) return { printed: 0, total: 0 }
     pollReadyRunning = true
     try {
@@ -563,19 +579,19 @@ export function registerIpcHandlers(): void {
             for (const wo of remoteReady) {
               // Match on pos_order_id first, fallback to waiter_order_name
               if (wo.pos_order_id) {
-                database.run(
+                await database.run(
                   "UPDATE orders SET status = 'Ready to Serve' WHERE id = ? AND status NOT IN ('Ready to Serve', 'Invoiced', 'Completed', 'Void')",
                   [wo.pos_order_id]
                 )
               }
               if (wo.name) {
-                database.run(
+                await database.run(
                   "UPDATE orders SET status = 'Ready to Serve' WHERE waiter_order_name = ? AND status NOT IN ('Ready to Serve', 'Invoiced', 'Completed', 'Void')",
                   [wo.name]
                 )
               }
             }
-            saveDatabase()
+            await saveDatabase()
           }
         }
       } catch (err) {
@@ -587,7 +603,7 @@ export function registerIpcHandlers(): void {
         "SELECT id FROM orders WHERE status = 'Ready to Serve' AND (invoice_printed IS NULL OR invoice_printed = 0)"
       )
       const readyOrders: string[] = []
-      while (readyStmt.step()) {
+      while (await readyStmt.step()) {
         readyOrders.push((readyStmt.getAsObject() as any).id)
       }
       readyStmt.free()
@@ -595,8 +611,8 @@ export function registerIpcHandlers(): void {
       let printed = 0
       for (const orderId of readyOrders) {
         // Mark as printed BEFORE printing to prevent concurrent attempts
-        database.run('UPDATE orders SET invoice_printed = 1 WHERE id = ?', [orderId])
-        saveDatabase()
+        await database.run('UPDATE orders SET invoice_printed = 1 WHERE id = ?', [orderId])
+        await saveDatabase()
         try {
           const result = await printInvoice(orderId)
           if (result.success) {
@@ -606,15 +622,15 @@ export function registerIpcHandlers(): void {
             // Don't retry for config errors (no printer) — only retry for transient errors
             const isConfigError = result.error?.includes('No printer') || result.error?.includes('not found') || result.error?.includes('not configured')
             if (!isConfigError) {
-              database.run('UPDATE orders SET invoice_printed = 0 WHERE id = ?', [orderId])
-              saveDatabase()
+              await database.run('UPDATE orders SET invoice_printed = 0 WHERE id = ?', [orderId])
+              await saveDatabase()
             }
             console.error(`[Auto-Invoice] Failed for ${orderId}: ${result.error}`)
           }
         } catch (err: any) {
           // Retry on unexpected errors
-          database.run('UPDATE orders SET invoice_printed = 0 WHERE id = ?', [orderId])
-          saveDatabase()
+          await database.run('UPDATE orders SET invoice_printed = 0 WHERE id = ?', [orderId])
+          await saveDatabase()
           console.error(`[Auto-Invoice] Error for ${orderId}: ${err.message}`)
         }
       }
@@ -628,10 +644,10 @@ export function registerIpcHandlers(): void {
   })
 
   // Waiters (local cache)
-  ipcMain.handle('waiters:list', () => db.getWaiters())
+  handle('waiters:list', async () => await db.getWaiters())
 
   // Waiters (ERPNext CRUD) — via centralized registry
-  ipcMain.handle('waiters:fetchFromServer', async () => {
+  handle('waiters:fetchFromServer', async () => {
     try {
       const client = new ERPNextClient()
       const posProfile = db.getConfig('pos_profile') || ''
@@ -643,7 +659,7 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('waiters:create', async (_e, data: { waiter_name: string; pin: string; phone?: string }) => {
+  handle('waiters:create', async (_e, data: { waiter_name: string; pin: string; phone?: string }) => {
     try {
       const client = new ERPNextClient()
       await client.createDoc('ServePOS Waiter', {
@@ -658,7 +674,7 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('waiters:resetPin', async (_e, waiterName: string, newPin: string) => {
+  handle('waiters:resetPin', async (_e, waiterName: string, newPin: string) => {
     try {
       const client = new ERPNextClient()
       // Use Frappe's standard REST API to update the pin field
@@ -677,7 +693,7 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('waiters:toggleActive', async (_e, waiterName: string, isActive: boolean) => {
+  handle('waiters:toggleActive', async (_e, waiterName: string, isActive: boolean) => {
     try {
       const res = await fetch(`${getActiveUrl()}/api/resource/ServePOS Waiter/${encodeURIComponent(waiterName)}`, {
         method: 'PUT',
@@ -695,7 +711,7 @@ export function registerIpcHandlers(): void {
   })
 
   // ==================== Reports ====================
-  ipcMain.handle('reports:todaySummary', (_e, date?: string) => {
+  handle('reports:todaySummary', async (_e, date?: string) => {
     const database = getDb()
     const filterDate = date || new Date().toLocaleDateString('en-CA') // YYYY-MM-DD local
     const stmt = database.prepare(
@@ -712,12 +728,12 @@ export function registerIpcHandlers(): void {
        WHERE date(created_at, 'localtime') = ?`
     )
     stmt.bind([filterDate])
-    const row = stmt.step() ? stmt.getAsObject() : { totalSales: 0, orderCount: 0, avgOrderValue: 0, voidCount: 0, voidAmount: 0 }
+    const row = (await stmt.step()) ? stmt.getAsObject() : { totalSales: 0, orderCount: 0, avgOrderValue: 0, voidCount: 0, voidAmount: 0 }
     stmt.free()
     return row
   })
 
-  ipcMain.handle('reports:bestSellingItems', (_e, date?: string, limit?: number) => {
+  handle('reports:bestSellingItems', async (_e, date?: string, limit?: number) => {
     const database = getDb()
     const filterDate = date || new Date().toLocaleDateString('en-CA')
     const maxItems = limit || 10
@@ -732,12 +748,12 @@ export function registerIpcHandlers(): void {
     )
     stmt.bind([filterDate, maxItems])
     const rows: any[] = []
-    while (stmt.step()) rows.push(stmt.getAsObject())
+    while (await stmt.step()) rows.push(stmt.getAsObject())
     stmt.free()
     return rows
   })
 
-  ipcMain.handle('reports:allItemsSales', (_e, date?: string) => {
+  handle('reports:allItemsSales', async (_e, date?: string) => {
     const database = getDb()
     const filterDate = date || new Date().toLocaleDateString('en-CA')
     const stmt = database.prepare(
@@ -750,17 +766,17 @@ export function registerIpcHandlers(): void {
     )
     stmt.bind([filterDate])
     const rows: any[] = []
-    while (stmt.step()) rows.push(stmt.getAsObject())
+    while (await stmt.step()) rows.push(stmt.getAsObject())
     stmt.free()
     return rows
   })
 
-  ipcMain.handle('reports:removedItems', (_e, date?: string) => {
+  handle('reports:removedItems', async (_e, date?: string) => {
     const filterDate = date || new Date().toLocaleDateString('en-CA')
-    return db.getVoidedItems(filterDate)
+    return await db.getVoidedItems(filterDate)
   })
 
-  ipcMain.handle('reports:categorySales', (_e, date?: string) => {
+  handle('reports:categorySales', async (_e, date?: string) => {
     const database = getDb()
     const filterDate = date || new Date().toLocaleDateString('en-CA')
     const stmt = database.prepare(
@@ -775,12 +791,12 @@ export function registerIpcHandlers(): void {
     )
     stmt.bind([filterDate])
     const rows: any[] = []
-    while (stmt.step()) rows.push(stmt.getAsObject())
+    while (await stmt.step()) rows.push(stmt.getAsObject())
     stmt.free()
     return rows
   })
 
-  ipcMain.handle('reports:paymentBreakdown', (_e, date?: string) => {
+  handle('reports:paymentBreakdown', async (_e, date?: string) => {
     const database = getDb()
     const filterDate = date || new Date().toLocaleDateString('en-CA')
     const stmt = database.prepare(
@@ -793,12 +809,12 @@ export function registerIpcHandlers(): void {
     )
     stmt.bind([filterDate])
     const rows: any[] = []
-    while (stmt.step()) rows.push(stmt.getAsObject())
+    while (await stmt.step()) rows.push(stmt.getAsObject())
     stmt.free()
     return rows
   })
 
-  ipcMain.handle('reports:hourlySales', (_e, date?: string) => {
+  handle('reports:hourlySales', async (_e, date?: string) => {
     const database = getDb()
     const filterDate = date || new Date().toLocaleDateString('en-CA')
     const stmt = database.prepare(
@@ -811,12 +827,12 @@ export function registerIpcHandlers(): void {
     )
     stmt.bind([filterDate])
     const rows: any[] = []
-    while (stmt.step()) rows.push(stmt.getAsObject())
+    while (await stmt.step()) rows.push(stmt.getAsObject())
     stmt.free()
     return rows
   })
 
-  ipcMain.handle('reports:voidReport', (_e, date?: string) => {
+  handle('reports:voidReport', async (_e, date?: string) => {
     const database = getDb()
     const filterDate = date || new Date().toLocaleDateString('en-CA')
     const stmt = database.prepare(
@@ -827,12 +843,12 @@ export function registerIpcHandlers(): void {
     )
     stmt.bind([filterDate])
     const rows: any[] = []
-    while (stmt.step()) rows.push(stmt.getAsObject())
+    while (await stmt.step()) rows.push(stmt.getAsObject())
     stmt.free()
     return rows
   })
 
-  ipcMain.handle('reports:waiterPerformance', (_e, date?: string) => {
+  handle('reports:waiterPerformance', async (_e, date?: string) => {
     const database = getDb()
     const filterDate = date || new Date().toLocaleDateString('en-CA')
     const stmt = database.prepare(
@@ -846,20 +862,20 @@ export function registerIpcHandlers(): void {
     )
     stmt.bind([filterDate])
     const rows: any[] = []
-    while (stmt.step()) rows.push(stmt.getAsObject())
+    while (await stmt.step()) rows.push(stmt.getAsObject())
     stmt.free()
     return rows
   })
 
   // Promos
-  ipcMain.handle('promos:list', () => db.getPromos())
-  ipcMain.handle('voidReasons:list', () => db.getVoidReasons())
+  handle('promos:list', async () => await db.getPromos())
+  handle('voidReasons:list', async () => await db.getVoidReasons())
 
   // Voided items report
-  ipcMain.handle('voidedItems:list', (_e, date: string) => db.getVoidedItems(date))
+  handle('voidedItems:list', async (_e, date: string) => await db.getVoidedItems(date))
 
   // Vouchers — validated and consumed via ERPNext
-  ipcMain.handle('vouchers:validate', async (_e, code: string) => {
+  handle('vouchers:validate', async (_e, code: string) => {
     try {
       const client = new ERPNextClient()
       const res = await client.callMethod('servepos.api.voucher.validate_voucher', { code })
@@ -868,7 +884,7 @@ export function registerIpcHandlers(): void {
       return { valid: false, reason: err.message || 'Server error' }
     }
   })
-  ipcMain.handle('vouchers:use', async (_e, code: string, orderNumber: string) => {
+  handle('vouchers:use', async (_e, code: string, orderNumber: string) => {
     try {
       const client = new ERPNextClient()
       await client.callMethod('servepos.api.voucher.use_voucher', { code, order_number: orderNumber })
@@ -879,7 +895,7 @@ export function registerIpcHandlers(): void {
   })
 
   // Waiter accountability — orders per waiter in a session
-  ipcMain.handle('sessions:getWaiterSummary', (_e, sessionId: string) => {
+  handle('sessions:getWaiterSummary', async (_e, sessionId: string) => {
     const database = getDb()
     const stmt = database.prepare(
       `SELECT
@@ -896,14 +912,14 @@ export function registerIpcHandlers(): void {
     )
     stmt.bind([sessionId])
     const rows: any[] = []
-    while (stmt.step()) rows.push(stmt.getAsObject())
+    while (await stmt.step()) rows.push(stmt.getAsObject())
     stmt.free()
     return rows
   })
 
   // Coordinator — get active orders. Combines local orders + remote waiter orders from ERPNext
   // (so coordinator on Machine 2 can see orders accepted on Machine 1)
-  ipcMain.handle('coordinator:getActiveOrders', async () => {
+  handle('coordinator:getActiveOrders', async () => {
     const database = getDb()
 
     // Local active orders (this machine) — last 7 days (UI filters to selected date)
@@ -918,7 +934,7 @@ export function registerIpcHandlers(): void {
        ORDER BY o.created_at DESC`
     )
     const localRows: any[] = []
-    while (stmt.step()) localRows.push(stmt.getAsObject())
+    while (await stmt.step()) localRows.push(stmt.getAsObject())
     stmt.free()
 
     // Remote: pull active waiter orders from ERPNext (cross-machine visibility)
@@ -982,7 +998,7 @@ export function registerIpcHandlers(): void {
   })
 
   // Coordinator — update order status (restricted statuses)
-  ipcMain.handle('coordinator:updateStatus', async (_e, orderId: string, status: string, userRole: string) => {
+  handle('coordinator:updateStatus', async (_e, orderId: string, status: string, userRole: string) => {
     const allowedByCoordinator = ['Preparing', 'Ready to Serve']
     const allowedByCashier = ['Preparing', 'Ready to Serve', 'Invoiced', 'Completed']
 
@@ -994,9 +1010,9 @@ export function registerIpcHandlers(): void {
     }
 
     // Check if this order exists locally — remote orders don't
-    const existingOrder = db.getOrder(orderId)
+    const existingOrder = await db.getOrder(orderId)
     if (existingOrder) {
-      db.updateOrder(orderId, { status })
+      await db.updateOrder(orderId, { status })
     }
 
     // Auto-print invoice when marked as Ready to Serve (if printer is on this machine)
@@ -1005,8 +1021,8 @@ export function registerIpcHandlers(): void {
         const invoiceResult = await printInvoice(orderId)
         if (invoiceResult.success) {
           const database = getDb()
-          database.run('UPDATE orders SET invoice_printed = 1 WHERE id = ?', [orderId])
-          saveDatabase()
+          await database.run('UPDATE orders SET invoice_printed = 1 WHERE id = ?', [orderId])
+          await saveDatabase()
           console.log('[Coordinator] Invoice printed for', orderId)
         } else {
           console.log('[Coordinator] Invoice print failed (will retry via poll):', invoiceResult.error)
@@ -1021,7 +1037,7 @@ export function registerIpcHandlers(): void {
       const database = getDb()
       const orderStmt = database.prepare('SELECT erpnext_docname FROM orders WHERE id = ?')
       orderStmt.bind([orderId])
-      const order = orderStmt.step() ? orderStmt.getAsObject() as any : null
+      const order = (await orderStmt.step()) ? orderStmt.getAsObject() as any : null
       orderStmt.free()
 
       // If this order came from a waiter order, update the status in ERPNext

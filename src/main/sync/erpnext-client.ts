@@ -67,7 +67,7 @@ export class ERPNextClient {
     for (let i = 0; i < order.length; i++) {
       const url = order[i]
       try {
-        const res = await fetch(`${url}${path}`, { ...init, headers: this.headers })
+        const res = await fetch(`${url}${path}`, { ...init, headers: this.headers, signal: init?.signal || AbortSignal.timeout(15000) })
         // If this wasn't the active URL, switch to it
         if (i > 0) {
           activeUrlIndex = urls.indexOf(url)

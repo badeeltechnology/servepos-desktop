@@ -22,26 +22,15 @@ async function sendWithCopies(printer: PrinterConfig, buffer: Buffer, copies: nu
 }
 
 // Get next KOT number
-function getNextKotNumber(): number {
-  const db = getDb()
-  const today = new Date().toISOString().slice(0, 10)
-  const lastDate = getConfig('kot_seq_date')
-  let num = 1
-  if (lastDate === today) {
-    const current = getConfig('kot_seq_number')
-    num = (current ? parseInt(current) : 0) + 1
-  }
-  db.run("INSERT OR REPLACE INTO config (key, value) VALUES ('kot_seq_date', ?)", [today])
-  db.run("INSERT OR REPLACE INTO config (key, value) VALUES ('kot_seq_number', ?)", [String(num)])
-  saveDatabase()
-  return num
+async function getNextKotNumber(): Promise<number> {
+  return getDb().request('nextKotNumber')
 }
 
 // Shared helper: lookup item info (Arabic name, descriptions) from items table
-function lookupItemInfo(db: any, itemCode: string): { item_name_ar?: string; description?: string; description_ar?: string; item_group?: string; kitchen_station?: string } {
+async function lookupItemInfo(db: any, itemCode: string): Promise<{ item_name_ar?: string; description?: string; description_ar?: string; item_group?: string; kitchen_station?: string }> {
   const stmt = db.prepare('SELECT item_name_ar, description, description_ar, item_group, kitchen_station FROM items WHERE item_code = ?')
   stmt.bind([itemCode])
-  const info = stmt.step() ? stmt.getAsObject() as any : {}
+  const info = (await stmt.step()) ? stmt.getAsObject() as any : {}
   stmt.free()
   return info
 }
@@ -49,13 +38,13 @@ function lookupItemInfo(db: any, itemCode: string): { item_name_ar?: string; des
 // Resolve the human actor for a print action.
 // Since all staff share one ERPNext login, the real identity lives on the open
 // shift (sessions.user_name) or on the order itself (cashier_name / waiter_name).
-function resolveActor(orderId: string, explicit?: string): string {
+async function resolveActor(orderId: string, explicit?: string): Promise<string> {
   if (explicit && explicit.trim()) return explicit.trim()
   const db = getDb()
   // Prefer the cashier recorded on the order (set at createOrder time).
   const ordStmt = db.prepare('SELECT cashier_name, waiter_name FROM orders WHERE id = ?')
   ordStmt.bind([orderId])
-  if (ordStmt.step()) {
+  if (await ordStmt.step()) {
     const row = ordStmt.getAsObject() as any
     ordStmt.free()
     if (row.cashier_name) return row.cashier_name
@@ -65,7 +54,7 @@ function resolveActor(orderId: string, explicit?: string): string {
   }
   // Fallback: the user on the currently open shift.
   const sessStmt = db.prepare("SELECT user_name FROM sessions WHERE status = 'Open' ORDER BY opened_at DESC LIMIT 1")
-  if (sessStmt.step()) {
+  if (await sessStmt.step()) {
     const s = sessStmt.getAsObject() as any
     sessStmt.free()
     if (s.user_name) return s.user_name
@@ -82,14 +71,14 @@ function resolveActor(orderId: string, explicit?: string): string {
 //   'reprint'   — user re-triggered a print that was already done
 //   'amendment' — amendment KOT printed after order edit
 // `actorName` is the human who triggered it; resolved from session/order if omitted.
-function logPrint(orderId: string, printType: string, printerId: string, success: boolean, error?: string, source: string = 'manual', actorName?: string): void {
+async function logPrint(orderId: string, printType: string, printerId: string, success: boolean, error?: string, source: string = 'manual', actorName?: string): Promise<void> {
   const db = getDb()
-  const actor = resolveActor(orderId, actorName)
-  db.run(
+  const actor = await resolveActor(orderId, actorName)
+  await db.run(
     'INSERT INTO print_log (id, order_id, print_type, printer_id, status, error, source, actor_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [uuidv4(), orderId, printType, printerId, success ? 'success' : 'failed', error || null, source, actor]
   )
-  saveDatabase()
+  await saveDatabase()
 }
 
 export async function printReceipt(orderId: string): Promise<{ success: boolean; error?: string }> {
@@ -98,20 +87,20 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
   // Get order
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
   orderStmt.bind([orderId])
-  if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
+  if (!(await orderStmt.step())) { orderStmt.free(); return { success: false, error: 'Order not found' } }
   const order = orderStmt.getAsObject() as any
   orderStmt.free()
 
   // Get order items
-  const items = getOrderItems(orderId)
-  const payments = getOrderPayments(orderId)
+  const items = await getOrderItems(orderId)
+  const payments = await getOrderPayments(orderId)
 
   // Get receipt printer
-  const routes = getPrintRoutes()
+  const routes = await getPrintRoutes()
   const receiptRoute = routes.find((r) => r.print_type === 'receipt')
   if (!receiptRoute) return { success: false, error: 'No receipt printer configured' }
 
-  const printers = getPrinters()
+  const printers = await getPrinters()
   const printer = printers.find((p) => p.id === receiptRoute.printer_id)
   if (!printer) return { success: false, error: 'Receipt printer not found' }
 
@@ -139,22 +128,22 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
     guests: order.guests,
     cashierName: order.cashier_name || '',
     waiterName: order.waiter_name || undefined,
-    items: items.map((item: any) => {
-      const info = lookupItemInfo(db, item.item_code)
+    items: await Promise.all(items.map(async (item: any) => {
+      const info = await lookupItemInfo(db, item.item_code)
       return {
         itemName: item.item_name,
-        itemNameAr: info.item_name_ar || null,
+        itemNameAr: info.item_name_ar || undefined,
         qty: item.qty,
         rate: item.rate,
         amount: item.amount,
-        description: info.description || null,
-        descriptionAr: info.description_ar || null,
+        description: info.description || undefined,
+        descriptionAr: info.description_ar || undefined,
         modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
         specialInstructions: item.special_instructions,
         discountPercent: item.discount_percent,
         discountAmount: item.discount_amount
       }
-    }),
+    })),
     subtotal,
     taxTotal: computedTax,
     taxLabel,
@@ -171,7 +160,7 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
   const receipt = generateReceipt(receiptData)
   const printBuffer = await processForPrinter(receipt, printer.paper_width || 80)
   const result = await sendWithCopies(printer, printBuffer, getCopyCount('receipt'))
-  logPrint(orderId, 'receipt', printer.id, result.success, result.error)
+  await logPrint(orderId, 'receipt', printer.id, result.success, result.error)
   return result
 }
 
@@ -180,15 +169,15 @@ export async function printPrepDoc(orderId: string): Promise<{ success: boolean;
 
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
   orderStmt.bind([orderId])
-  if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
+  if (!(await orderStmt.step())) { orderStmt.free(); return { success: false, error: 'Order not found' } }
   const order = orderStmt.getAsObject() as any
   orderStmt.free()
 
-  const items = getOrderItems(orderId)
+  const items = await getOrderItems(orderId)
 
   // Find printer: prep_doc route → receipt route → first printer
-  const routes = getPrintRoutes()
-  const printers = getPrinters()
+  const routes = await getPrintRoutes()
+  const printers = await getPrinters()
 
   const prepRoute = routes.find((r) => r.print_type === 'prep_doc')
   const receiptRoute = routes.find((r) => r.print_type === 'receipt')
@@ -204,8 +193,8 @@ export async function printPrepDoc(orderId: string): Promise<{ success: boolean;
     waiterName: order.waiter_name || undefined,
     cashierName: order.cashier_name || '',
     orderNotes: order.order_notes || undefined,
-    items: items.map((item: any) => {
-      const info = lookupItemInfo(db, item.item_code)
+    items: await Promise.all(items.map(async (item: any) => {
+      const info = await lookupItemInfo(db, item.item_code)
       return {
         itemName: item.item_name,
         itemNameAr: info.item_name_ar || undefined,
@@ -213,13 +202,13 @@ export async function printPrepDoc(orderId: string): Promise<{ success: boolean;
         modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
         specialInstructions: item.special_instructions
       }
-    })
+    }))
   }
 
   const doc = generatePrepDoc(prepData)
   const printBuffer = await processForPrinter(doc, printer.paper_width || 80)
   const result = await sendWithCopies(printer, printBuffer, getCopyCount('prep_doc'))
-  logPrint(orderId, 'prep_doc', printer.id, result.success, result.error)
+  await logPrint(orderId, 'prep_doc', printer.id, result.success, result.error)
   return result
 }
 
@@ -228,15 +217,15 @@ export async function printInvoice(orderId: string, cartDiscount?: { percent: nu
 
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
   orderStmt.bind([orderId])
-  if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
+  if (!(await orderStmt.step())) { orderStmt.free(); return { success: false, error: 'Order not found' } }
   const order = orderStmt.getAsObject() as any
   orderStmt.free()
 
-  const items = getOrderItems(orderId)
+  const items = await getOrderItems(orderId)
 
   // Find printer: invoice route → receipt route → first printer
-  const routes = getPrintRoutes()
-  const printers = getPrinters()
+  const routes = await getPrintRoutes()
+  const printers = await getPrinters()
 
   const invoiceRoute = routes.find((r) => r.print_type === 'invoice')
   const receiptRoute = routes.find((r) => r.print_type === 'receipt')
@@ -266,22 +255,22 @@ export async function printInvoice(orderId: string, cartDiscount?: { percent: nu
     guests: order.guests,
     cashierName: order.cashier_name || '',
     waiterName: order.waiter_name || undefined,
-    items: items.map((item: any) => {
-      const info = lookupItemInfo(db, item.item_code)
+    items: await Promise.all(items.map(async (item: any) => {
+      const info = await lookupItemInfo(db, item.item_code)
       return {
         itemName: item.item_name,
-        itemNameAr: info.item_name_ar || null,
+        itemNameAr: info.item_name_ar || undefined,
         qty: item.qty,
         rate: item.rate,
         amount: item.amount,
-        description: info.description || null,
-        descriptionAr: info.description_ar || null,
+        description: info.description || undefined,
+        descriptionAr: info.description_ar || undefined,
         modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
         specialInstructions: item.special_instructions,
         discountPercent: item.discount_percent,
         discountAmount: item.discount_amount
       }
-    }),
+    })),
     subtotal,
     taxTotal,
     taxLabel,
@@ -297,7 +286,7 @@ export async function printInvoice(orderId: string, cartDiscount?: { percent: nu
   const invoice = generateInvoice(invoiceData)
   const printBuffer = await processForPrinter(invoice, printer.paper_width || 80)
   const result = await sendWithCopies(printer, printBuffer, getCopyCount('invoice'))
-  logPrint(orderId, 'invoice', printer.id, result.success, result.error)
+  await logPrint(orderId, 'invoice', printer.id, result.success, result.error)
   return result
 }
 
@@ -309,16 +298,16 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
   // Get order
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
   orderStmt.bind([orderId])
-  if (!orderStmt.step()) { orderStmt.free(); return { success: false, printed: 0, errors: ['Order not found'] } }
+  if (!(await orderStmt.step())) { orderStmt.free(); return { success: false, printed: 0, errors: ['Order not found'] } }
   const order = orderStmt.getAsObject() as any
   orderStmt.free()
 
-  const allItems = getOrderItems(orderId)
+  const allItems = await getOrderItems(orderId)
   // For reprint: print all items. Otherwise: only items not yet printed on KOT.
   const items = source === 'reprint' ? allItems : allItems.filter((i: any) => !i.kot_printed)
   if (items.length === 0) return { success: true, printed: 0, errors: [] }
-  const routes = getPrintRoutes()
-  const printers = getPrinters()
+  const routes = await getPrintRoutes()
+  const printers = await getPrinters()
 
   // Group items by their print route (item_group → printer)
   const kotRoutes = routes.filter((r) => r.print_type === 'kot')
@@ -333,7 +322,7 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
   const routeItems: Record<string, { printer: PrinterConfig; station: string; items: any[] }> = {}
 
   for (const item of items) {
-    const itemInfo = lookupItemInfo(db, item.item_code)
+    const itemInfo = await lookupItemInfo(db, item.item_code)
     const itemGroup = itemInfo.item_group || ''
     const kitchenStation = itemInfo.kitchen_station || ''
 
@@ -368,7 +357,7 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
 
   // Print KOT to each printer
   for (const [, group] of Object.entries(printerItems)) {
-    const kotNumber = getNextKotNumber()
+    const kotNumber = await getNextKotNumber()
     const kotData = {
       kotNumber,
       stationName: group.station,
@@ -378,8 +367,8 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
       cashierName: order.cashier_name || '',
       waiterName: order.waiter_name || undefined,
       orderNotes: order.order_notes || undefined,
-      items: group.items.map((item: any) => {
-        const info = lookupItemInfo(db, item.item_code)
+      items: await Promise.all(group.items.map(async (item: any) => {
+        const info = await lookupItemInfo(db, item.item_code)
         return {
           itemName: item.item_name,
           itemNameAr: info.item_name_ar || undefined,
@@ -387,13 +376,13 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
           modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
           specialInstructions: item.special_instructions
         }
-      })
+      }))
     }
 
     const kot = generateKot(kotData)
     const kotBuffer = await processForPrinter(kot, group.printer.paper_width || 80)
     const result = await sendWithCopies(group.printer, kotBuffer, getCopyCount('kot'))
-    logPrint(orderId, 'kot', group.printer.id, result.success, result.error, source, actorName)
+    await logPrint(orderId, 'kot', group.printer.id, result.success, result.error, source, actorName)
 
     if (result.success) {
       printed++
@@ -403,13 +392,13 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
   }
 
   // Mark KOT as printed on order + individual items
-  db.run('UPDATE orders SET kot_printed = 1 WHERE id = ?', [orderId])
+  await db.run('UPDATE orders SET kot_printed = 1 WHERE id = ?', [orderId])
   if (source !== 'reprint') {
     for (const item of items) {
-      db.run('UPDATE order_items SET kot_printed = 1 WHERE id = ?', [item.id])
+      await db.run('UPDATE order_items SET kot_printed = 1 WHERE id = ?', [item.id])
     }
   }
-  saveDatabase()
+  await saveDatabase()
 
   // Auto-print Prep Doc alongside KOT if enabled
   const prepDocConfig = getAllReceiptConfig()
@@ -429,19 +418,19 @@ export async function printAmendmentKot(orderId: string, amendments: { action: s
 
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
   orderStmt.bind([orderId])
-  if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
+  if (!(await orderStmt.step())) { orderStmt.free(); return { success: false, error: 'Order not found' } }
   const order = orderStmt.getAsObject() as any
   orderStmt.free()
 
-  const routes = getPrintRoutes()
-  const printers = getPrinters()
+  const routes = await getPrintRoutes()
+  const printers = await getPrinters()
   const kotRoute = routes.find((r) => r.print_type === 'kot')
   if (!kotRoute) return { success: false, error: 'No KOT printer configured' }
 
   const printer = printers.find((p) => p.id === kotRoute.printer_id)
   if (!printer) return { success: false, error: 'KOT printer not found' }
 
-  const kotNumber = getNextKotNumber()
+  const kotNumber = await getNextKotNumber()
   const kot = generateKot({
     kotNumber,
     stationName: 'KITCHEN',
@@ -456,7 +445,7 @@ export async function printAmendmentKot(orderId: string, amendments: { action: s
 
   const kotBuffer = await processForPrinter(kot, printer.paper_width || 80)
   const result = await sendToPrinter(printer, kotBuffer)
-  logPrint(orderId, 'kot_amendment', printer.id, result.success, result.error)
+  await logPrint(orderId, 'kot_amendment', printer.id, result.success, result.error)
   return result
 }
 
@@ -465,18 +454,18 @@ export async function printWaiterCopy(orderId: string, cartDiscount?: { percent:
 
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
   orderStmt.bind([orderId])
-  if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
+  if (!(await orderStmt.step())) { orderStmt.free(); return { success: false, error: 'Order not found' } }
   const order = orderStmt.getAsObject() as any
   orderStmt.free()
 
-  const items = getOrderItems(orderId)
+  const items = await getOrderItems(orderId)
 
   // Print to receipt printer
-  const routes = getPrintRoutes()
+  const routes = await getPrintRoutes()
   const receiptRoute = routes.find((r) => r.print_type === 'receipt')
   if (!receiptRoute) return { success: false, error: 'No receipt printer configured' }
 
-  const printers = getPrinters()
+  const printers = await getPrinters()
   const printer = printers.find((p) => p.id === receiptRoute.printer_id)
   if (!printer) return { success: false, error: 'Receipt printer not found' }
 
@@ -494,8 +483,8 @@ export async function printWaiterCopy(orderId: string, cartDiscount?: { percent:
     guests: order.guests,
     cashierName: order.cashier_name || '',
     orderNotes: order.order_notes || undefined,
-    items: items.map((item: any) => {
-      const info = lookupItemInfo(db, item.item_code)
+    items: await Promise.all(items.map(async (item: any) => {
+      const info = await lookupItemInfo(db, item.item_code)
       return {
         itemName: item.item_name,
         itemNameAr: info.item_name_ar || undefined,
@@ -505,7 +494,7 @@ export async function printWaiterCopy(orderId: string, cartDiscount?: { percent:
         modifiers: item.modifiers ? JSON.parse(item.modifiers) : undefined,
         specialInstructions: item.special_instructions
       }
-    }),
+    })),
     subtotal,
     discountAmount: totalDiscount,
     promoName: cartDiscount?.promoName ?? order.promo_name ?? undefined,
@@ -515,7 +504,7 @@ export async function printWaiterCopy(orderId: string, cartDiscount?: { percent:
   const copy = generateWaiterCopy(waiterData)
   const copyBuffer = await processForPrinter(copy, printer.paper_width || 80)
   const result = await sendToPrinter(printer, copyBuffer)
-  logPrint(orderId, 'waiter_copy', printer.id, result.success, result.error)
+  await logPrint(orderId, 'waiter_copy', printer.id, result.success, result.error)
   return result
 }
 
@@ -524,21 +513,21 @@ export async function printVoidSlip(orderId: string, voidReason: string, voidedB
 
   const orderStmt = db.prepare('SELECT * FROM orders WHERE id = ?')
   orderStmt.bind([orderId])
-  if (!orderStmt.step()) { orderStmt.free(); return { success: false, error: 'Order not found' } }
+  if (!(await orderStmt.step())) { orderStmt.free(); return { success: false, error: 'Order not found' } }
   const order = orderStmt.getAsObject() as any
   orderStmt.free()
 
   // Use receipt printer
-  const routes = getPrintRoutes()
+  const routes = await getPrintRoutes()
   const receiptRoute = routes.find((r) => r.print_type === 'receipt')
   if (!receiptRoute) return { success: false, error: 'No receipt printer configured' }
 
-  const printers = getPrinters()
+  const printers = await getPrinters()
   const printer = printers.find((p) => p.id === receiptRoute.printer_id)
   if (!printer) return { success: false, error: 'Receipt printer not found' }
 
   // Use provided removedItems (for single item removal) or fetch all from DB including voided (for full void)
-  const slipItems = removedItems || getOrderItems(orderId, true).map((item: any) => ({
+  const slipItems = removedItems || (await getOrderItems(orderId, true)).map((item: any) => ({
     itemName: item.item_name,
     qty: item.qty,
     rate: item.rate,
@@ -561,7 +550,7 @@ export async function printVoidSlip(orderId: string, voidReason: string, voidedB
   const slip = generateVoidSlip(voidData)
   const printBuffer = await processForPrinter(slip, printer.paper_width || 80)
   const result = await sendToPrinter(printer, printBuffer)
-  logPrint(orderId, 'void_slip', printer.id, result.success, result.error)
+  await logPrint(orderId, 'void_slip', printer.id, result.success, result.error)
   return result
 }
 
@@ -570,19 +559,19 @@ export async function printCloseShift(sessionId: string): Promise<{ success: boo
 
   const sessStmt = db.prepare('SELECT * FROM sessions WHERE id = ?')
   sessStmt.bind([sessionId])
-  if (!sessStmt.step()) { sessStmt.free(); return { success: false, error: 'Session not found' } }
+  if (!(await sessStmt.step())) { sessStmt.free(); return { success: false, error: 'Session not found' } }
   const session = sessStmt.getAsObject() as any
   sessStmt.free()
 
-  const routes = getPrintRoutes()
+  const routes = await getPrintRoutes()
   const receiptRoute = routes.find((r) => r.print_type === 'receipt')
   if (!receiptRoute) return { success: false, error: 'No receipt printer' }
-  const printers = getPrinters()
+  const printers = await getPrinters()
   const printer = printers.find((p) => p.id === receiptRoute.printer_id)
   if (!printer) return { success: false, error: 'Printer not found' }
 
-  const voidedOrders = getSessionVoidedOrders(sessionId)
-  const voidedItems = getSessionVoidedItems(sessionId)
+  const voidedOrders = await getSessionVoidedOrders(sessionId)
+  const voidedItems = await getSessionVoidedItems(sessionId)
 
   const slip = generateCloseShiftSlip({
     userName: session.user_name || '',

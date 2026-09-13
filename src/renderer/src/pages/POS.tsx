@@ -306,7 +306,7 @@ export default function POS() {
 
         // Add payments with waiter collection tracking
         for (const p of payments) {
-          await window.api.orderPayments.add(orderId!, p.method, p.amount, p.reference || null, collectedByWaiter || undefined)
+          await window.api.orderPayments.add(orderId!, p.method, p.amount, p.reference || undefined, collectedByWaiter || undefined)
         }
 
         // Compute discount & totals from order_items subtotal
@@ -890,6 +890,7 @@ export default function POS() {
       {/* Order History Panel */}
       {showOrderHistory && (
         <OrderHistoryPanel
+          setToast={setToast}
           onClose={() => setShowOrderHistory(false)}
           isSupervisor={user?.role === 'supervisor'}
           cashierId={user?.role === 'cashier' ? user.id : null}
@@ -929,12 +930,14 @@ export default function POS() {
 }
 
 // ==================== Order History Panel ====================
-function OrderHistoryPanel({ onClose, isSupervisor, cashierId, sessionId }: {
+function OrderHistoryPanel({ onClose, isSupervisor, cashierId, sessionId, setToast }: {
+  setToast: (toast: { type: 'success' | 'error' | 'info'; message: string }) => void
   onClose: () => void
   isSupervisor: boolean
   cashierId: string | null
   sessionId: string | null
 }) {
+  const user = useAuthStore(state => state.user)
   const [orders, setOrders] = useState<any[]>([])
   const [filter, setFilter] = useState('all')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)

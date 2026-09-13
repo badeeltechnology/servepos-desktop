@@ -215,6 +215,7 @@ const api = {
 
   // Backup
   backup: {
+    exportFull: () => ipcRenderer.invoke('backup:exportFull'),
     export: () => ipcRenderer.invoke('backup:export'),
     import: () => ipcRenderer.invoke('backup:import')
   },

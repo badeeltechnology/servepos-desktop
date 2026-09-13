@@ -44,7 +44,7 @@ export default function ModifierModal({ itemCode, itemName, onConfirm, onCancel 
     const defaultSelected: Record<string, string[]> = {}
 
     for (const g of grps) {
-      const mods = await window.api.modifiers.getForGroup(g.modifier_group_id)
+      const mods: Modifier[] = await window.api.modifiers.getForGroup(g.modifier_group_id)
       modMap[g.modifier_group_id] = mods
 
       // Select defaults

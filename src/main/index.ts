@@ -4,8 +4,8 @@ import { exec } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import { initDatabase, closeDatabase } from './database/schema'
-import { registerIpcHandlers } from './ipc/handlers'
-import { startAutoSync, stopAutoSync } from './sync/sync-engine'
+import { registerIpcHandlers, drainIpcHandlers, resumeIpcHandlers } from './ipc/handlers'
+import { startAutoSync, stopAndDrainSync } from './sync/sync-engine'
 import { getImageDir } from './sync/image-cache'
 
 // Register scheme as privileged before app ready
@@ -51,7 +51,13 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(async () => {
+const ownsInstance = app.requestSingleInstanceLock()
+if (!ownsInstance) app.quit()
+app.on('second-instance', () => {
+  if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus() }
+})
+
+if (ownsInstance) app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.servepos.desktop')
 
   app.on('browser-window-created', (_, window) => {
@@ -66,7 +72,7 @@ app.whenReady().then(async () => {
     return net.fetch(`file://${filePath}`)
   })
 
-  // Initialize database (async for sql.js WASM loading)
+  // Open native SQLite in its dedicated worker, migrating legacy snapshots safely
   await initDatabase()
 
   // Modifiers are synced from ERPNext — no local seeding
@@ -125,16 +131,33 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+}).catch((error: Error) => {
+  dialog.showErrorBox('Database could not be opened', error.message)
+  app.quit()
 })
 
 app.on('window-all-closed', () => {
-  closeDatabase()
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  // macOS activate reuses the open database instead of reopening a closed handle.
+  if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
-  stopAutoSync()
-  closeDatabase()
+let shutdownComplete = false
+let shuttingDown = false
+app.on('before-quit', event => {
+  if (shutdownComplete || !ownsInstance) return
+  event.preventDefault()
+  if (shuttingDown) return
+  shuttingDown = true
+  void (async () => {
+    try {
+      await Promise.all([drainIpcHandlers(), stopAndDrainSync()])
+      await closeDatabase()
+      shutdownComplete = true
+      app.quit()
+    } catch (error: any) {
+      shuttingDown = false
+      resumeIpcHandlers()
+      dialog.showErrorBox('Unable to close database safely', error.message)
+    }
+  })()
 })

@@ -223,39 +223,39 @@ export async function testPrinter(printer: PrinterConfig): Promise<{ success: bo
 
   // Update test status
   const db = getDb()
-  db.run(
+  await db.run(
     'UPDATE printers SET test_status = ?, last_tested_at = datetime("now") WHERE id = ?',
     [result.success ? 'ok' : 'error', printer.id]
   )
-  saveDatabase()
+  await saveDatabase()
 
   return result
 }
 
 // ==================== Printer CRUD ====================
 
-export function getPrinters(): PrinterConfig[] {
+export async function getPrinters(): Promise<PrinterConfig[]> {
   const db = getDb()
   const stmt = db.prepare('SELECT * FROM printers WHERE is_active = 1 ORDER BY printer_name')
   const rows: PrinterConfig[] = []
-  while (stmt.step()) rows.push(stmt.getAsObject() as any)
+  while (await stmt.step()) rows.push(stmt.getAsObject() as any)
   stmt.free()
   return rows
 }
 
-export function addPrinter(data: Omit<PrinterConfig, 'id'>): string {
+export async function addPrinter(data: Omit<PrinterConfig, 'id'>): Promise<string> {
   const db = getDb()
   const id = uuidv4()
-  db.run(
+  await db.run(
     `INSERT INTO printers (id, printer_name, connection_type, address, port, paper_width, usb_vendor_id, usb_product_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, data.printer_name, data.connection_type, data.address, data.port || 9100, data.paper_width || 80, data.usb_vendor_id || null, data.usb_product_id || null]
   )
-  saveDatabase()
+  await saveDatabase()
   return id
 }
 
-export function updatePrinter(id: string, data: Partial<PrinterConfig>): void {
+export async function updatePrinter(id: string, data: Partial<PrinterConfig>): Promise<void> {
   const db = getDb()
   const sets: string[] = []
   const vals: any[] = []
@@ -267,29 +267,29 @@ export function updatePrinter(id: string, data: Partial<PrinterConfig>): void {
   if (data.usb_product_id !== undefined) { sets.push('usb_product_id = ?'); vals.push(data.usb_product_id) }
   if (sets.length === 0) return
   vals.push(id)
-  db.run(`UPDATE printers SET ${sets.join(', ')} WHERE id = ?`, vals)
-  saveDatabase()
+  await db.run(`UPDATE printers SET ${sets.join(', ')} WHERE id = ?`, vals)
+  await saveDatabase()
 }
 
-export function deletePrinter(id: string): void {
+export async function deletePrinter(id: string): Promise<void> {
   const db = getDb()
-  db.run('DELETE FROM printers WHERE id = ?', [id])
-  db.run('DELETE FROM print_routes WHERE printer_id = ?', [id])
-  saveDatabase()
+  await db.run('DELETE FROM printers WHERE id = ?', [id])
+  await db.run('DELETE FROM print_routes WHERE printer_id = ?', [id])
+  await saveDatabase()
 }
 
 // ==================== Print Routes ====================
 
 export interface PrintRoute {
   id: string
-  print_type: 'receipt' | 'kot'
+  print_type: 'receipt' | 'kot' | 'prep_doc' | 'invoice'
   item_group: string | null
   kitchen_station: string | null
   printer_id: string
   printer_name?: string
 }
 
-export function getPrintRoutes(): PrintRoute[] {
+export async function getPrintRoutes(): Promise<PrintRoute[]> {
   const db = getDb()
   const stmt = db.prepare(
     `SELECT pr.*, p.printer_name FROM print_routes pr
@@ -298,24 +298,24 @@ export function getPrintRoutes(): PrintRoute[] {
      ORDER BY pr.print_type, pr.item_group`
   )
   const rows: PrintRoute[] = []
-  while (stmt.step()) rows.push(stmt.getAsObject() as any)
+  while (await stmt.step()) rows.push(stmt.getAsObject() as any)
   stmt.free()
   return rows
 }
 
-export function addPrintRoute(data: { printType: string; itemGroup?: string; kitchenStation?: string; printerId: string }): string {
+export async function addPrintRoute(data: { printType: string; itemGroup?: string; kitchenStation?: string; printerId: string }): Promise<string> {
   const db = getDb()
   const id = uuidv4()
-  db.run(
+  await db.run(
     'INSERT INTO print_routes (id, print_type, item_group, kitchen_station, printer_id) VALUES (?, ?, ?, ?, ?)',
     [id, data.printType, data.itemGroup || null, data.kitchenStation || null, data.printerId]
   )
-  saveDatabase()
+  await saveDatabase()
   return id
 }
 
-export function deletePrintRoute(id: string): void {
+export async function deletePrintRoute(id: string): Promise<void> {
   const db = getDb()
-  db.run('DELETE FROM print_routes WHERE id = ?', [id])
-  saveDatabase()
+  await db.run('DELETE FROM print_routes WHERE id = ?', [id])
+  await saveDatabase()
 }

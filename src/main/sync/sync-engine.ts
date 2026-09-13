@@ -4,6 +4,9 @@ import { syncUp } from './sync-up'
 
 let syncInterval: ReturnType<typeof setInterval> | null = null
 let isSyncing = false
+let startupTimer: ReturnType<typeof setTimeout> | null = null
+let activeSync: Promise<SyncStatus['lastResult']> | null = null
+let stopping = false
 let nextSyncAt: number | null = null // timestamp of next scheduled sync
 
 export interface SyncStatus {
@@ -27,7 +30,20 @@ export function getSyncStatus(): SyncStatus {
   }
 }
 
-export async function runSync(): Promise<SyncStatus['lastResult']> {
+export function runSync(): Promise<SyncStatus['lastResult']> {
+  if (stopping) return Promise.resolve(lastResult)
+  if (activeSync) return activeSync
+  activeSync = performSync().finally(() => { activeSync = null })
+  return activeSync
+}
+
+export async function stopAndDrainSync(): Promise<void> {
+  stopping = true
+  stopAutoSync()
+  await activeSync
+}
+
+async function performSync(): Promise<SyncStatus['lastResult']> {
   if (isSyncing) return lastResult
 
   // Check if setup is complete
@@ -48,7 +64,7 @@ export async function runSync(): Promise<SyncStatus['lastResult']> {
     lastResult = { down: downResult, up: upResult }
 
     // Ensure auto-sync is running (may not have started if setup wasn't done at boot)
-    if (!syncInterval) startAutoSync()
+    if (!syncInterval && !stopping) startAutoSync()
 
     return lastResult
   } catch (err: any) {
@@ -64,6 +80,7 @@ export async function runSync(): Promise<SyncStatus['lastResult']> {
 }
 
 export function startAutoSync(): void {
+  stopping = false
   stopAutoSync()
 
   // Check if setup is complete
@@ -85,7 +102,7 @@ export function startAutoSync(): void {
 
   // Run first sync after 15 seconds (give app time to load)
   nextSyncAt = Date.now() + 15000
-  setTimeout(() => {
+  startupTimer = setTimeout(() => {
     runSync().then(() => scheduleNext()).catch(() => scheduleNext())
   }, 15000)
 
@@ -96,6 +113,7 @@ export function startAutoSync(): void {
 }
 
 export function stopAutoSync(): void {
+  if (startupTimer) { clearTimeout(startupTimer); startupTimer = null }
   if (syncInterval) {
     clearInterval(syncInterval)
     syncInterval = null

@@ -6,3 +6,6 @@ dist/
 *.db-wal
 .DS_Store
 resources/icon.iconset/
+
+*.db-shm
+*.tsbuildinfo

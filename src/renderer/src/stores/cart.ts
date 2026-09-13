@@ -38,7 +38,7 @@ interface CartState {
   orderNotes: string
 
   // Actions
-  addItem: (item: Omit<CartItem, 'id' | 'amount' | 'discountAmount' | 'discountPercent' | 'modifierTotal' | 'specialInstructions'> & { modifiers?: CartModifier[]; specialInstructions?: string }) => void
+  addItem: (item: Omit<CartItem, 'id' | 'amount' | 'discountAmount' | 'discountPercent' | 'modifierTotal' | 'specialInstructions' | 'modifiers'> & { modifiers?: CartModifier[]; specialInstructions?: string }) => void
   updateItemQty: (id: string, qty: number) => void
   removeItem: (id: string) => void
   updateItemModifiers: (id: string, modifiers: CartModifier[]) => void

@@ -1654,11 +1654,11 @@ function BackupRestore() {
   const [isExporting, setIsExporting] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
 
-  const handleExport = async () => {
+  const handleExport = async (full = false) => {
     setIsExporting(true)
     setStatus(null)
     try {
-      const result = await window.api.backup.export()
+      const result = full ? await window.api.backup.exportFull() : await window.api.backup.export()
       if (result.canceled) {
         setStatus(null)
       } else if (result.success) {
@@ -1696,7 +1696,7 @@ function BackupRestore() {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Backup & Restore</h2>
-        <p className="text-sm text-muted-foreground">Export or import your settings to protect against data loss</p>
+        <p className="text-sm text-muted-foreground">Save a full database backup or transfer settings between terminals</p>
       </div>
 
       {status && (
@@ -1713,6 +1713,15 @@ function BackupRestore() {
         </div>
       )}
 
+      <div className="rounded-xl border bg-white p-6">
+        <h3 className="font-medium">Full Database Backup</h3>
+        <p className="my-3 text-sm text-muted-foreground">Includes orders, payments, shifts, and settings. Keep a copy on another device. Contact support to restore a full backup.</p>
+        <button onClick={() => handleExport(true)} disabled={isExporting || isImporting}
+          className="rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white disabled:opacity-50">
+          {isExporting ? 'Exporting...' : 'Export Full Database Backup'}
+        </button>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-xl border bg-white p-6">
           <div className="mb-4 flex items-center gap-3">
@@ -1728,10 +1737,10 @@ function BackupRestore() {
             Exports all settings including admin account, cashiers, printers, print routes, receipt config, payment methods, waiters, and modifiers.
           </p>
           <p className="mb-4 text-xs text-muted-foreground">
-            Note: Order history and transaction data are not included — they are synced from ERPNext.
+            Order history and payments are not included. Use Full Database Backup to protect local transactions.
           </p>
           <button
-            onClick={handleExport}
+            onClick={() => handleExport()}
             disabled={isExporting}
             className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
           >

@@ -20,6 +20,7 @@ function ItemImage({ item, className }: { item: { item_code: string; item_name: 
 }
 
 interface Item {
+  attributes?: string | null
   item_code: string
   item_name: string
   item_name_ar: string | null

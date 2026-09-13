@@ -23,7 +23,7 @@ export async function syncUp(): Promise<SyncResult> {
       "SELECT * FROM orders WHERE sync_status IN ('pending', 'failed') AND status = 'Completed' ORDER BY created_at"
     )
     const pendingOrders: any[] = []
-    while (pendingStmt.step()) {
+    while (await pendingStmt.step()) {
       pendingOrders.push(pendingStmt.getAsObject())
     }
     pendingStmt.free()
@@ -34,7 +34,7 @@ export async function syncUp(): Promise<SyncResult> {
         const itemsStmt = db.prepare('SELECT * FROM order_items WHERE order_id = ? AND COALESCE(voided, 0) = 0')
         itemsStmt.bind([order.id])
         const orderItems: any[] = []
-        while (itemsStmt.step()) {
+        while (await itemsStmt.step()) {
           orderItems.push(itemsStmt.getAsObject())
         }
         itemsStmt.free()
@@ -43,7 +43,7 @@ export async function syncUp(): Promise<SyncResult> {
         const payStmt = db.prepare('SELECT * FROM order_payments WHERE order_id = ?')
         payStmt.bind([order.id])
         const payments: any[] = []
-        while (payStmt.step()) {
+        while (await payStmt.step()) {
           payments.push(payStmt.getAsObject())
         }
         payStmt.free()
@@ -210,14 +210,14 @@ export async function syncUp(): Promise<SyncResult> {
           }
 
           // Update local order
-          db.run(
+          await db.run(
             "UPDATE orders SET sync_status = 'synced', erpnext_docname = ? WHERE id = ?",
             [docname, order.id]
           )
           result.synced++
         }
       } catch (err: any) {
-        db.run(
+        await db.run(
           "UPDATE orders SET sync_status = 'failed', sync_error = ? WHERE id = ?",
           [err.message, order.id]
         )
@@ -230,17 +230,17 @@ export async function syncUp(): Promise<SyncResult> {
     const voidStmt = db.prepare(
       "SELECT * FROM orders WHERE sync_status IN ('pending', 'failed') AND status = 'Void' AND erpnext_docname IS NOT NULL"
     )
-    while (voidStmt.step()) {
+    while (await voidStmt.step()) {
       const order = voidStmt.getAsObject() as any
       try {
         await client.callMethod('frappe.client.cancel', {
           doctype: 'Sales Invoice',
           name: order.erpnext_docname
         })
-        db.run("UPDATE orders SET sync_status = 'synced' WHERE id = ?", [order.id])
+        await db.run("UPDATE orders SET sync_status = 'synced' WHERE id = ?", [order.id])
         result.synced++
       } catch (err: any) {
-        db.run(
+        await db.run(
           "UPDATE orders SET sync_status = 'failed', sync_error = ? WHERE id = ?",
           [err.message, order.id]
         )
@@ -254,14 +254,14 @@ export async function syncUp(): Promise<SyncResult> {
     const unsyncedVoids = db.prepare(
       "SELECT * FROM orders WHERE status = 'Void' AND COALESCE(void_synced, 0) = 0"
     )
-    while (unsyncedVoids.step()) {
+    while (await unsyncedVoids.step()) {
       const order = unsyncedVoids.getAsObject() as any
       try {
         // Get all items (including voided) for this order
         const itemsStmt = db.prepare('SELECT * FROM order_items WHERE order_id = ?')
         itemsStmt.bind([order.id])
         const orderItems: any[] = []
-        while (itemsStmt.step()) { orderItems.push(itemsStmt.getAsObject()) }
+        while (await itemsStmt.step()) { orderItems.push(itemsStmt.getAsObject()) }
         itemsStmt.free()
 
         const voidType = order.void_reason === 'Voided at shift close' ? 'Shift Close Void'
@@ -295,7 +295,7 @@ export async function syncUp(): Promise<SyncResult> {
             void_disposition: i.void_disposition || order.void_disposition || ''
           })))
         })
-        db.run("UPDATE orders SET void_synced = 1 WHERE id = ?", [order.id])
+        await db.run("UPDATE orders SET void_synced = 1 WHERE id = ?", [order.id])
       } catch (err: any) {
         console.error(`[Sync] Failed to sync void log for ${order.order_number}:`, err.message)
       }
@@ -312,7 +312,7 @@ export async function syncUp(): Promise<SyncResult> {
        JOIN orders o ON o.id = oi.order_id
        WHERE oi.voided = 1 AND COALESCE(oi.void_synced, 0) = 0 AND o.status != 'Void'`
     )
-    while (unsyncedItemVoids.step()) {
+    while (await unsyncedItemVoids.step()) {
       const item = unsyncedItemVoids.getAsObject() as any
       try {
         await client.callMethod('servepos.api.pos_session.record_void', {
@@ -341,7 +341,7 @@ export async function syncUp(): Promise<SyncResult> {
             void_disposition: item.void_disposition || ''
           }])
         })
-        db.run("UPDATE order_items SET void_synced = 1 WHERE id = ?", [item.item_id])
+        await db.run("UPDATE order_items SET void_synced = 1 WHERE id = ?", [item.item_id])
       } catch (err: any) {
         console.error(`[Sync] Failed to sync item void for ${item.item_name}:`, err.message)
       }
@@ -353,7 +353,7 @@ export async function syncUp(): Promise<SyncResult> {
       const unsyncedShifts = db.prepare(
         "SELECT * FROM sessions WHERE status = 'Closed' AND COALESCE(shift_log_synced, 0) = 0"
       )
-      while (unsyncedShifts.step()) {
+      while (await unsyncedShifts.step()) {
         const session = unsyncedShifts.getAsObject() as any
         try {
           // Gather all completed orders for this session
@@ -362,7 +362,7 @@ export async function syncUp(): Promise<SyncResult> {
           )
           ordersStmt.bind([session.id])
           const sessionOrders: any[] = []
-          while (ordersStmt.step()) sessionOrders.push(ordersStmt.getAsObject())
+          while (await ordersStmt.step()) sessionOrders.push(ordersStmt.getAsObject())
           ordersStmt.free()
 
           // Gather voided orders for this session
@@ -371,7 +371,7 @@ export async function syncUp(): Promise<SyncResult> {
           )
           voidStmt.bind([session.id])
           const voidedOrders: any[] = []
-          while (voidStmt.step()) voidedOrders.push(voidStmt.getAsObject())
+          while (await voidStmt.step()) voidedOrders.push(voidStmt.getAsObject())
           voidStmt.free()
 
           // Gather removed/voided items for this session
@@ -382,7 +382,7 @@ export async function syncUp(): Promise<SyncResult> {
           )
           removedStmt.bind([session.id])
           const removedItems: any[] = []
-          while (removedStmt.step()) removedItems.push(removedStmt.getAsObject())
+          while (await removedStmt.step()) removedItems.push(removedStmt.getAsObject())
           removedStmt.free()
 
           // Build order list summary
@@ -417,7 +417,7 @@ export async function syncUp(): Promise<SyncResult> {
             removed_items_detail: JSON.stringify(removedItems),
             order_list: JSON.stringify(orderList)
           })
-          db.run("UPDATE sessions SET shift_log_synced = 1 WHERE id = ?", [session.id])
+          await db.run("UPDATE sessions SET shift_log_synced = 1 WHERE id = ?", [session.id])
         } catch (shiftErr: any) {
           // Non-critical: API may not exist on ERPNext yet. Will retry on next sync.
           console.log(`[Sync] Shift log sync skipped for ${session.id}: ${shiftErr.message}`)
@@ -428,7 +428,7 @@ export async function syncUp(): Promise<SyncResult> {
       // Shift log feature not available — silently skip
     }
 
-    saveDatabase()
+    await saveDatabase()
 
     if (result.failed > 0) result.success = false
     return result

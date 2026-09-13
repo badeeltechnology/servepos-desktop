@@ -11,11 +11,14 @@ files:
   - '!**/.vscode/*'
   - '!src/*'
   - '!scripts/*'
+  - '!tests/**'
+  - '!docs/**'
   - '!electron.vite.config.*'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+  - node_modules/better-sqlite3/**
 icon: resources/icon.png
 win:
   executableName: ServePOS

@@ -34,7 +34,7 @@ export default function PaymentDialog({ grandTotal, orderWaiterName, processing,
   }, [])
 
   async function loadPaymentMethods() {
-    const methods = await window.api.paymentMethods.get()
+    const methods: { name: string; mode_of_payment: string; is_default: number }[] = await window.api.paymentMethods.get()
     setPaymentMethods(methods)
 
     // Default: full amount on default payment method or first method
