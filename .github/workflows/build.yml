@@ -64,6 +64,7 @@ jobs:
 
       - name: Test native database migration and recovery
         run: npm run test:database
+        timeout-minutes: 3
 
       - name: Package for Windows
         run: npx electron-builder --win --config electron-builder.yml --publish never

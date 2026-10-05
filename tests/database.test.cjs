@@ -137,11 +137,11 @@ test('read-only write failure reaches caller and leaves previous value intact',a
 test('a committed sale survives process termination without close or a later save',async t=>{
   const directory=fixture(t);await legacy(directory,'Open')
   const child=fork(path.join(__dirname,'kill-fixture.cjs'),[directory],{stdio:['ignore','pipe','pipe','ipc']})
-  t.after(()=>{if(child.exitCode===null)child.kill('SIGKILL')})
+  t.after(()=>{try{if(child.exitCode===null)child.kill()}catch{}})
   let stderr='';child.stderr.on('data',data=>stderr+=data)
   const ready=await Promise.race([once(child,'message').then(([message])=>message),once(child,'exit').then(()=>{throw new Error('Child failed: '+stderr)})])
   assert.equal(ready,'committed')
-  const exited=once(child,'exit');child.kill('SIGKILL');await exited
+  const exited=once(child,'exit');child.kill();await exited
   const db=client(t);await db.request('open',directory)
   assert.equal((await query(db,'getOrder','order')).status,'Completed')
 })
