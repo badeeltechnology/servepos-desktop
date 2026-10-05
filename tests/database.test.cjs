@@ -14,7 +14,7 @@ const schema = fs.readFileSync(path.join(__dirname, 'fixtures/legacy-schema.sql'
 
 function fixture(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'servepos-native-test-'))
-  t.after(() => fs.rmSync(directory, {recursive:true, force:true}))
+  t.after(() => { try { fs.rmSync(directory, {recursive:true, force:true, maxRetries:3, retryDelay:200}) } catch {} })
   return directory
 }
 function client(t) {
