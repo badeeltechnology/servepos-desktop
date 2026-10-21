@@ -120,6 +120,10 @@ export function Dot({ color, size = 8, square }: { color: string; size?: number;
 }
 
 // ---------------------------------------------------------------- Overlays
+/** Overlays end where the on-screen keyboard starts (KeyboardProvider sets --kb), so a dialog's
+ *  field and its Save button stay visible while typing. */
+const ABOVE_KEYBOARD: React.CSSProperties = { bottom: 'var(--kb, 0px)', transition: 'bottom 120ms ease-out' }
+
 export function Dialog({ onClose, children, className, label, dismissable = true }: { onClose?: () => void; children: ReactNode; className?: string; label?: string; dismissable?: boolean }) {
   useEffect(() => {
     if (!onClose || !dismissable) return
@@ -128,8 +132,8 @@ export function Dialog({ onClose, children, className, label, dismissable = true
     return () => window.removeEventListener('keydown', h)
   }, [onClose, dismissable])
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(11,59,73,.6)] p-4" onMouseDown={(e) => { if (e.target === e.currentTarget && dismissable) onClose?.() }}>
-      <div role="dialog" aria-modal="true" aria-label={label} className={cn('flex max-h-full max-w-full animate-rise flex-col overflow-hidden bg-n-cream shadow-pop', className)}>
+    <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-center bg-[rgba(11,59,73,.6)] p-4" style={ABOVE_KEYBOARD} onMouseDown={(e) => { if (e.target === e.currentTarget && dismissable) onClose?.() }}>
+      <div role="dialog" aria-modal="true" aria-label={label} className={cn('flex max-h-full max-w-full animate-rise flex-col overflow-y-auto bg-n-cream shadow-pop', className)}>
         {children}
       </div>
     </div>
@@ -144,7 +148,7 @@ export function Sheet({ onClose, children, className, label }: { onClose: () => 
     return () => window.removeEventListener('keydown', h)
   }, [onClose])
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-[rgba(11,59,73,.45)]" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="fixed inset-x-0 top-0 z-40 flex justify-end bg-[rgba(11,59,73,.45)]" style={ABOVE_KEYBOARD} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <aside role="dialog" aria-label={label} className={cn('flex h-full animate-slidein flex-col bg-n-cream shadow-pop', className)}>
         {children}
       </aside>

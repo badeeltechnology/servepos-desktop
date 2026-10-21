@@ -206,6 +206,23 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
     document.addEventListener('touchend', onEnd)
   }
 
+  // Publish the docked keyboard's height as --kb so dialogs, sheets and the till lift above it.
+  useEffect(() => {
+    const root = document.documentElement
+    if (keyboardType !== 'full' || !keyboardRef.current) {
+      root.style.removeProperty('--kb')
+      return
+    }
+    const el = keyboardRef.current
+    const set = () => root.style.setProperty('--kb', `${el.offsetHeight}px`)
+    set()
+    const ro = new ResizeObserver(set)
+    ro.observe(el)
+    // keep the focused field in view once the space shrinks
+    requestAnimationFrame(() => activeInputRef.current?.scrollIntoView({ block: 'nearest' }))
+    return () => { ro.disconnect(); root.style.removeProperty('--kb') }
+  }, [keyboardType])
+
   const keyboard = keyboardType && createPortal(
     keyboardType === 'numpad' && numpadPos ? (
       <div

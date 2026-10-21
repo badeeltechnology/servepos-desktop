@@ -26,14 +26,18 @@ function App() {
     if (setupComplete) loadBrand()
   }, [setupComplete, isAdminMode, user])
 
-  // Touch keyboard: only trigger if explicitly enabled in settings (off by default)
+  // Windows touch keyboard: only if enabled in settings (off by default), and only for fields
+  // without the built-in keyboard (admin and setup screens).
   useEffect(() => {
     let enabled = false
     window.api.config.get('touch_keyboard_enabled').then((v: string) => { enabled = v === '1' }).catch(() => {})
 
     const handleFocus = (e: FocusEvent) => {
       if (!enabled) return
-      const tag = (e.target as HTMLElement)?.tagName
+      const target = e.target as HTMLElement
+      // Fields with data-keyboard get ServePOS's own keyboard; never open Windows' on top of it.
+      if (target?.getAttribute?.('data-keyboard')) return
+      const tag = target?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') {
         try { (window.api as any).keyboard?.show?.() } catch {}
       }
