@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../stores/auth'
+import { askConfirm, toast } from '../stores/ui'
 import {
   Users, Settings, Printer, Package, LayoutGrid, ClipboardList,
   Plus, Trash2, Edit3, Eye, EyeOff, Save, RefreshCw, ArrowLeft,
@@ -178,7 +179,7 @@ function UserManagement() {
               <div key={u.id} className="flex items-center justify-between px-5 py-3">
                 <div>
                   <span className={`font-medium ${!u.is_active ? 'text-muted-foreground line-through' : ''}`}>{u.name}</span>
-                  <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${u.role === 'coordinator' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{u.role}</span>
+                  <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${u.role === 'coordinator' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{u.role}</span>
                   {u.role === 'cashier' && <span className="ml-2 text-xs text-muted-foreground">Max disc: {u.max_discount_pct}%</span>}
                 </div>
                 <div className="flex items-center gap-1">
@@ -230,7 +231,7 @@ function WaiterManagement() {
   async function generateQR() {
     const result = await window.api.app.generateWaiterQR()
     if (result.dataUrl) setQrDataUrl(result.dataUrl)
-    else alert(result.error || 'Failed to generate QR code')
+    else toastMsg(result.error || 'Failed to generate QR code')
   }
 
   async function handleCreateWaiter() {
@@ -266,7 +267,7 @@ function WaiterManagement() {
   }
 
   async function handleDeleteWaiter(waiterName: string) {
-    if (!confirm(`Delete waiter "${waiterName}"?`)) return
+    if (!(await askConfirm({ title: `Remove waiter ${waiterName}?`, body: 'They can no longer sign in to the waiter app. Their past orders stay.', ok: 'Remove waiter', danger: true }))) return
     try {
       await window.api.waiters.toggleActive(waiterName, false)
       loadData()
@@ -399,19 +400,19 @@ function WaiterOrders() {
     if (result.success) {
       loadOrders()
     } else {
-      alert('Failed to accept: ' + (result.error || 'Unknown error'))
+      toastMsg('Failed to accept: ' + (result.error || 'Unknown error'))
     }
     setProcessing(null)
   }
 
   async function handleReject(name: string) {
-    if (!confirm('Reject this waiter order?')) return
+    if (!(await askConfirm({ title: 'Reject this waiter order?', body: 'The waiter sees it was rejected. Nothing goes to the kitchen.', ok: 'Reject', danger: true }))) return
     setProcessing(name)
     const result = await window.api.waiterOrders.reject(name)
     if (result.success) {
       loadOrders()
     } else {
-      alert('Failed to reject: ' + (result.error || 'Unknown error'))
+      toastMsg('Failed to reject: ' + (result.error || 'Unknown error'))
     }
     setProcessing(null)
   }
@@ -549,11 +550,11 @@ function ModifierManagement() {
               <div className="flex items-center justify-between border-b px-5 py-3">
                 <div>
                   <span className="font-semibold">{g.group_name}</span>
-                  <span className="ml-2 rounded bg-muted px-2 py-0.5 text-[10px] font-medium">{g.selection_type}</span>
-                  {g.is_required ? <span className="ml-1 rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600">Required</span> : null}
+                  <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs font-medium">{g.selection_type}</span>
+                  {g.is_required ? <span className="ml-1 rounded bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">Required</span> : null}
                   {g.max_selections > 0 && <span className="ml-1 text-xs text-muted-foreground">Max: {g.max_selections}</span>}
                 </div>
-                {g.erpnext_name && <span className="text-[10px] text-muted-foreground">Synced</span>}
+                {g.erpnext_name && <span className="text-xs text-muted-foreground">Synced</span>}
               </div>
 
               <div className="p-3">
@@ -706,9 +707,9 @@ function ItemVisibility() {
                     <div key={img.id} className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
                       <div>
                         <span className="text-sm font-medium">{img.group_name}</span>
-                        <span className="ml-2 rounded bg-muted px-2 py-0.5 text-[10px]">{img.selection_type}</span>
+                        <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs">{img.selection_type}</span>
                       </div>
-                      <span className={`rounded px-2 py-0.5 text-[10px] font-medium ${img.is_required ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${img.is_required ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
                         {img.is_required ? 'Required' : 'Optional'}
                       </span>
                     </div>
@@ -785,11 +786,13 @@ function PrinterManagement() {
 
   async function handleTestPrinter(printer: any) {
     const result = await window.api.printers.test(printer)
-    alert(result.success ? 'Printer test OK!' : `Test failed: ${result.error}`)
+    toastMsg(result.success ? 'Printer test OK!' : `Test failed: ${result.error}`)
     loadData()
   }
 
   async function handleDeletePrinter(id: string) {
+    const pr = printers.find((x: any) => x.id === id)
+    if (!(await askConfirm({ title: `Delete printer${pr?.name ? ` ${pr.name}` : ''}?`, body: 'Its print routes stop working until you add another printer.', ok: 'Delete printer', danger: true }))) return
     await window.api.printers.delete(id)
     loadData()
   }
@@ -841,7 +844,7 @@ function PrinterManagement() {
                     <div className="mb-2 space-y-1">
                       {usbDevices.map((d, i) => (
                         <button key={i} onClick={() => { setPAddress(d.name); if (!pName.trim()) setPName(d.name) }}
-                          className={`block w-full rounded-lg border px-3 py-2 text-left text-xs ${pAddress === d.name ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
+                          className={`block w-full rounded-lg border px-3 py-2 text-start text-xs ${pAddress === d.name ? 'border-primary bg-primary/5' : 'hover:bg-muted'}`}>
                           <span className="font-medium">{d.name}</span>
                           <span className="ml-2 text-muted-foreground">Port: {d.port}</span>
                         </button>
@@ -855,7 +858,7 @@ function PrinterManagement() {
                 <div className="col-span-2">
                   <label className="mb-1 block text-xs font-medium">Printer Name</label>
                   <input type="text" value={pAddress} onChange={(e) => setPAddress(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 font-mono text-sm" placeholder="e.g., POS-80C" />
-                  <p className="mt-1 text-[10px] text-muted-foreground">Use the exact printer name as shown in Windows Settings → Printers</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Use the exact printer name as shown in Windows Settings → Printers</p>
                 </div>
               </>
             )}
@@ -876,7 +879,7 @@ function PrinterManagement() {
               <div key={p.id} className="flex items-center justify-between px-5 py-3">
                 <div>
                   <span className="font-medium">{p.printer_name}</span>
-                  <span className="ml-2 rounded bg-muted px-2 py-0.5 text-[10px]">{p.connection_type}</span>
+                  <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs">{p.connection_type}</span>
                   {p.connection_type === 'network' && p.address && <span className="ml-2 font-mono text-xs text-muted-foreground">{p.address}:{p.port}</span>}
                   {p.connection_type === 'usb' && p.address && <span className="ml-2 font-mono text-xs text-muted-foreground">Port: {p.address}</span>}
                 </div>
@@ -927,7 +930,7 @@ function PrinterManagement() {
               <button
                 onClick={() => routeType === 'kot' && setShowGroupDropdown(!showGroupDropdown)}
                 disabled={routeType !== 'kot'}
-                className="flex w-full items-center justify-between rounded-lg border border-input bg-background px-3 py-2 text-sm text-left disabled:opacity-50"
+                className="flex w-full items-center justify-between rounded-lg border border-input bg-background px-3 py-2 text-sm text-start disabled:opacity-50"
               >
                 <span className={routeItemGroups.length === 0 ? 'text-muted-foreground' : ''}>
                   {routeItemGroups.length === 0 ? 'All Items' : `${routeItemGroups.length} group${routeItemGroups.length > 1 ? 's' : ''} selected`}
@@ -996,7 +999,7 @@ function PrinterManagement() {
             {routes.map((r) => (
               <div key={r.id} className="flex items-center justify-between px-5 py-2.5">
                 <span className="text-sm">
-                  <span className={`rounded px-2 py-0.5 text-[10px] font-medium uppercase ${
+                  <span className={`rounded px-2 py-0.5 text-xs font-medium uppercase ${
                     r.print_type === 'receipt' ? 'bg-green-50 text-green-700' :
                     r.print_type === 'kot' ? 'bg-orange-50 text-orange-700' :
                     r.print_type === 'prep_doc' ? 'bg-purple-50 text-purple-700' :
@@ -1006,7 +1009,7 @@ function PrinterManagement() {
                   <span className="ml-2 text-muted-foreground">→</span>
                   <span className="ml-2 font-medium">{r.printer_name}</span>
                 </span>
-                <button onClick={() => window.api.printRoutes.delete(r.id).then(loadData)} className="rounded p-1.5 text-red-400 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                <button aria-label="Delete route" onClick={async () => { if (await askConfirm({ title: 'Delete this print route?', body: `${r.printer_name ? `Items will no longer print on ${r.printer_name}.` : ''}`, ok: 'Delete route', danger: true })) window.api.printRoutes.delete(r.id).then(loadData) }} className="rounded p-1.5 text-red-400 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
               </div>
             ))}
           </div>
@@ -1061,7 +1064,7 @@ function OrderHistory() {
               <div key={o.id} className="flex items-center justify-between px-5 py-3">
                 <div>
                   <span className="font-mono text-sm font-medium">{o.order_number}</span>
-                  <span className={`ml-2 rounded px-2 py-0.5 text-[10px] font-medium ${
+                  <span className={`ml-2 rounded px-2 py-0.5 text-xs font-medium ${
                     o.status === 'Completed' ? 'bg-green-50 text-green-700' :
                     o.status === 'Hold' ? 'bg-yellow-50 text-yellow-700' :
                     o.status === 'Void' ? 'bg-red-50 text-red-700' : 'bg-muted'
@@ -1076,17 +1079,17 @@ function OrderHistory() {
                     <div className="flex gap-1">
                       <button onClick={async () => {
                         const res = await window.api.print.kots(o.id)
-                        alert(res?.success ? 'KOT reprinted' : `KOT failed: ${res?.errors?.join(', ') || 'Check printer'}`)
+                        toastMsg(res?.success ? 'KOT reprinted' : `KOT failed: ${res?.errors?.join(', ') || 'Check printer'}`)
                       }} className="rounded px-2 py-1 text-xs text-orange-600 hover:bg-orange-50">Reprint KOT</button>
                       <button onClick={async () => {
                         const res = await window.api.print.waiterCopy(o.id)
-                        alert(res?.success ? 'Waiter copy printed' : `Failed: ${res?.error || 'Check printer'}`)
+                        toastMsg(res?.success ? 'Waiter copy printed' : `Failed: ${res?.error || 'Check printer'}`)
                       }} className="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50">Waiter Copy</button>
                       {o.status === 'Completed' && (
                         <>
                           <button onClick={async () => {
                             const res = await window.api.print.receipt(o.id)
-                            alert(res?.success ? 'Receipt reprinted' : `Receipt failed: ${res?.error || 'Check printer'}`)
+                            toastMsg(res?.success ? 'Receipt reprinted' : `Receipt failed: ${res?.error || 'Check printer'}`)
                           }} className="rounded px-2 py-1 text-xs text-primary hover:bg-primary/5">Reprint Receipt</button>
                           <button onClick={() => voidOrder(o.id)} className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50">Void</button>
                         </>
@@ -1219,11 +1222,11 @@ function ShiftHistory() {
                 const closed = s.closed_at ? new Date(s.closed_at + 'Z') : null
                 return (
                   <button key={s.id} onClick={() => setSelected(s)}
-                    className={`flex w-full items-center justify-between px-5 py-3 text-left hover:bg-gray-50 ${selected?.id === s.id ? 'bg-primary/5' : ''}`}>
+                    className={`flex w-full items-center justify-between px-5 py-3 text-start hover:bg-gray-50 ${selected?.id === s.id ? 'bg-primary/5' : ''}`}>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold">{s.user_name}</span>
-                        <span className={`rounded-lg px-2 py-0.5 text-[10px] font-bold ${s.status === 'Open' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+                        <span className={`rounded-lg px-2 py-0.5 text-xs font-bold ${s.status === 'Open' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
                           {s.status}
                         </span>
                       </div>
@@ -1396,7 +1399,7 @@ function ReportsDashboard() {
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-xs text-gray-400">
+                  <tr className="border-b text-start text-xs text-gray-400">
                     <th className="pb-2">#</th>
                     <th className="pb-2">Item</th>
                     <th className="pb-2 text-right">Qty</th>
@@ -1425,7 +1428,7 @@ function ReportsDashboard() {
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-xs text-gray-400">
+                  <tr className="border-b text-start text-xs text-gray-400">
                     <th className="pb-2">Order #</th>
                     <th className="pb-2">Reason</th>
                     <th className="pb-2 text-right">Amount</th>
@@ -1515,7 +1518,7 @@ function ReportsDashboard() {
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-xs text-gray-400">
+                  <tr className="border-b text-start text-xs text-gray-400">
                     <th className="pb-2">Waiter</th>
                     <th className="pb-2 text-right">Orders</th>
                     <th className="pb-2 text-right">Revenue</th>
@@ -1547,7 +1550,7 @@ function ReportsDashboard() {
           <div className="max-h-[300px] overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-white">
-                <tr className="border-b text-left text-xs text-gray-400">
+                <tr className="border-b text-start text-xs text-gray-400">
                   <th className="pb-2">#</th>
                   <th className="pb-2">Item</th>
                   <th className="pb-2 text-right">Qty Sold</th>
@@ -1583,7 +1586,7 @@ function ReportsDashboard() {
           <div className="max-h-[250px] overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-white">
-                <tr className="border-b text-left text-xs text-gray-400">
+                <tr className="border-b text-start text-xs text-gray-400">
                   <th className="pb-2">Order #</th>
                   <th className="pb-2">Item</th>
                   <th className="pb-2 text-right">Qty</th>
@@ -1638,7 +1641,7 @@ function ReportsDashboard() {
                     className="w-full rounded-t bg-primary/80 transition-all"
                     style={{ height: `${pct}%`, minHeight: data.revenue > 0 ? '4px' : '0px' }}
                   />
-                  <span className="text-[9px] text-gray-400">{hour}</span>
+                  <span className="text-xs text-gray-400">{hour}</span>
                 </div>
               )
             })}
@@ -1675,6 +1678,7 @@ function BackupRestore() {
   }
 
   const handleImport = async () => {
+    if (!(await askConfirm({ title: 'Restore a backup?', body: 'Everything on this till is replaced by the backup you pick: orders, shifts, settings. This can’t be undone.', ok: 'Choose backup', danger: true, typeToConfirm: 'RESTORE' }))) return
     setIsImporting(true)
     setStatus(null)
     try {
@@ -1776,4 +1780,10 @@ function BackupRestore() {
       </div>
     </div>
   )
+}
+
+/** Native alert() replacement: errors in red, the rest as a confirmation toast. */
+function toastMsg(m: string) {
+  if (/fail|error|invalid|denied/i.test(m)) toast.error(m)
+  else toast.success(m)
 }

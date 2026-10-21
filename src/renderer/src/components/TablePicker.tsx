@@ -20,6 +20,9 @@ interface Props {
   onSelect: (tableName: string, room: string | null) => void
   onCancel: () => void
   currentTable?: string | null
+  /** Tap an occupied table to open the order sitting on it */
+  onOpenOrder?: (orderId: string) => void
+  activeOrderId?: string | null
 }
 
 const STATUS: Record<string, { dot: string; tile: string; label: string }> = {
@@ -29,7 +32,7 @@ const STATUS: Record<string, { dot: string; tile: string; label: string }> = {
   Blocked: { dot: '#9A958A', tile: 'bg-n-sand text-n-stone border border-transparent', label: 'Blocked' }
 }
 
-export default function TablePicker({ onSelect, onCancel, currentTable }: Props) {
+export default function TablePicker({ onSelect, onCancel, currentTable, onOpenOrder, activeOrderId }: Props) {
   const [tables, setTables] = useState<Table[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [activeRoom, setActiveRoom] = useState<string | null>(null)
@@ -72,14 +75,15 @@ export default function TablePicker({ onSelect, onCancel, currentTable }: Props)
           {filteredTables.map((table) => {
             const isAvailable = table.status === 'Available'
             const isCurrent = table.name === currentTable
+            const canOpen = !isAvailable && !isCurrent && !!table.current_order_id && !!onOpenOrder && table.current_order_id !== activeOrderId
             const s = STATUS[table.status] || STATUS.Available
             return (
               <button key={table.name} type="button"
-                onClick={() => isAvailable && onSelect(table.name, table.room)}
-                disabled={!isAvailable && !isCurrent}
-                className={cn('press relative flex h-[72px] flex-col items-center justify-center gap-0.5 rounded-md', isCurrent ? 'border-[3px] border-n-amber bg-white text-n-deep' : s.tile, isAvailable ? '' : 'cursor-not-allowed')}>
+                onClick={() => { if (isAvailable) onSelect(table.name, table.room); else if (canOpen) onOpenOrder!(table.current_order_id!) }}
+                disabled={!isAvailable && !isCurrent && !canOpen}
+                className={cn('press relative flex h-[72px] flex-col items-center justify-center gap-0.5 rounded-md', isCurrent ? 'border-[3px] border-n-amber bg-white text-n-deep' : s.tile, isAvailable || canOpen ? '' : 'cursor-not-allowed')}>
                 <span className="cond text-[26px] font-bold leading-none">{table.table_name}</span>
-                <span className="text-[11px] opacity-70">{isCurrent ? 'this order' : isAvailable ? `${table.capacity} seats` : s.label}</span>
+                <span className="text-xs opacity-80">{isCurrent ? 'this order' : isAvailable ? `${table.capacity} seats` : canOpen ? 'Open its order' : s.label}</span>
               </button>
             )
           })}

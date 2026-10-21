@@ -4,6 +4,7 @@ import { useMenu, MenuItem, groupColor } from '../stores/menu'
 import ModifierModal from './ModifierModal'
 import { Btn, Dialog, Option, SearchIcon, useTier, money, C } from '../ui'
 import { cn } from '../lib/utils'
+import { useT } from '../stores/i18n'
 
 // Menu side of the till: the category shelf (folder tabs) and the item grid, with an inline
 // search keyboard. Tapping a tile adds one; items with variants or modifiers open a chooser.
@@ -54,6 +55,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
   const [popular, setPopular] = useState<string[]>([])
   const searchRef = useRef<HTMLInputElement>(null)
   const { wide, large } = useTier()
+  const t = useT()
 
   const addOrMerge = useCartStore((s) => s.addOrMerge)
   const addItem = useCartStore((s) => s.addItem)
@@ -209,14 +211,14 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
   function pressEnd() { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null } }
 
   const cols = large ? 6 : wide ? 5 : 4
-  const title = search ? `${filteredItems.length} result${filteredItems.length === 1 ? '' : 's'}` : active === ALL ? 'All items' : active === POPULAR ? 'Popular' : active
+  const title = search ? t('{n} results', { n: filteredItems.length }) : active === ALL ? t('All items') : active === POPULAR ? t('Popular') : active
   const activeGroup = visibleGroups.find((g) => g.name === active)
   const target = tableName || (orderType === 'Dine In' ? 'the order' : orderType)
 
   const shelf: { key: string; label: string; ar?: string | null; color: string; count?: number }[] = [
-    ...(popular.length > 0 ? [{ key: POPULAR, label: 'Popular', color: C.teal }] : []),
+    ...(popular.length > 0 ? [{ key: POPULAR, label: t('Popular'), color: C.teal }] : []),
     ...visibleGroups.map((g) => ({ key: g.name, label: g.name, ar: g.name_ar, color: groupColor(g.name), count: groupCounts[g.name] })),
-    { key: ALL, label: 'All items', color: C.stone, count: mainItems.length }
+    { key: ALL, label: t('All items'), color: C.stone, count: mainItems.length }
   ]
 
   return (
@@ -227,11 +229,11 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
           const on = !search && active === c.key
           return (
             <button key={c.key} type="button" aria-pressed={on} onClick={() => pickCategory(c.key)}
-              className={cn('flex min-h-[48px] w-full flex-shrink-0 items-center gap-2.5 rounded-l-md py-1 text-left', on ? '-mr-2 bg-n-cream pr-[18px] text-n-ink' : 'bg-transparent pr-2.5 text-white')}>
+              className={cn('flex min-h-[48px] w-full flex-shrink-0 items-center gap-2.5 rounded-l-md py-1 text-start', on ? '-mr-2 bg-n-cream pr-[18px] text-n-ink' : 'bg-transparent pr-2.5 text-white')}>
               <span className="w-1.5 flex-shrink-0 self-stretch rounded-r-[3px]" style={{ background: c.color, height: on ? undefined : 22, alignSelf: on ? 'stretch' : 'center' }} />
               <span className="flex min-w-0 flex-col">
                 <span className="text-sm font-semibold leading-[1.15]">{c.label}</span>
-                {lang !== 'en' && c.ar && <span dir="rtl" className={cn('truncate text-[11px] leading-tight', on ? 'text-n-muted' : 'text-n-mist')}>{c.ar}</span>}
+                {lang !== 'en' && c.ar && <span dir="rtl" className={cn('truncate text-xs leading-tight', on ? 'text-n-muted' : 'text-n-mist')}>{c.ar}</span>}
               </span>
             </button>
           )
@@ -268,7 +270,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
             <SearchIcon />
             <input ref={searchRef} value={search} onChange={(e) => setSearch(e.target.value)} onFocus={() => setKbOpen(true)}
               onKeyDown={(e) => { if (e.key === 'Escape') { setSearch(''); setKbOpen(false); searchRef.current?.blur() } }}
-              placeholder="Search" aria-label="Search the menu" inputMode="none"
+              placeholder={t('Search')} aria-label="Search the menu" inputMode="none"
               className={cn('min-w-0 bg-transparent text-[15px] placeholder:text-sm placeholder:text-n-ink focus:outline-none', kbOpen ? 'w-[150px]' : 'w-[56px]')} />
             {search && <button type="button" aria-label="Clear search" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation() }} onClick={() => setSearch('')} className="text-lg leading-none text-n-muted">×</button>}
           </div>
@@ -290,17 +292,17 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
                   <button key={item.item_code} type="button"
                     onClick={() => { if (longPressed.current) { longPressed.current = false; return } handleItemClick(item) }}
                     onPointerDown={() => pressStart(item)} onPointerUp={pressEnd} onPointerLeave={pressEnd}
-                    className="press relative flex h-[72px] items-center gap-2.5 rounded-md bg-white py-[9px] pl-3 pr-2.5 text-left text-n-ink"
+                    className="press relative flex h-[72px] items-center gap-2.5 rounded-md bg-white py-[9px] pl-3 pr-2.5 text-start text-n-ink"
                     style={{ boxShadow: `inset 4px 0 0 ${c}, 0 1px 2px rgba(60,45,20,.12)`, gridColumn: big ? 'span 2' : undefined, outline: qty ? `2px solid ${C.deep}` : undefined, outlineOffset: -2 }}>
                     {big && (item.image
                       ? <ItemImage item={item} className="h-[46px] w-[46px] flex-shrink-0 rounded-full object-cover" />
                       : <span className="cond flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-full text-2xl font-bold text-white" style={{ background: c }}>{item.item_name.replace(/^(Hot|Iced) /, '').charAt(0)}</span>)}
                     <span className="flex h-full min-w-0 flex-1 flex-col justify-between">
                       <span dir={lang === 'ar' ? 'rtl' : 'ltr'} className={cn('flex-shrink-0 font-semibold leading-[1.2]', big ? 'text-[15px]' : 'text-[13.5px]', lang === 'both' ? 'line-clamp-1' : 'line-clamp-2', lang === 'ar' && 'text-right')}>{itemName(item)}</span>
-                      {lang === 'both' && item.item_name_ar && <span dir="rtl" className="flex-shrink-0 truncate text-right text-[11px] leading-tight text-n-muted">{item.item_name_ar}</span>}
+                      {lang === 'both' && item.item_name_ar && <span dir="rtl" className="flex-shrink-0 truncate text-right text-xs leading-tight text-n-muted">{item.item_name_ar}</span>}
                       <span className="flex flex-shrink-0 items-baseline gap-1.5 leading-none">
                         <span className={cn('cond num font-semibold', big ? 'text-[19px]' : 'text-[17px]')}>{money(item.rate)}</span>
-                        {!!item.has_variants && <span className="text-[11px] text-n-muted">choose</span>}
+                        {!!item.has_variants && <span className="text-xs text-n-muted">{t('choose')}</span>}
                       </span>
                     </span>
                     {qty > 0 && <span className="cond num absolute right-1.5 top-1.5 flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-n-deep px-[5px] text-sm font-bold text-white">{qty}</span>}
@@ -316,7 +318,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
                 return (
                   <div key={item.item_code} className="flex items-stretch gap-1.5">
                     <button type="button" onClick={() => handleItemClick(item)}
-                      className="press flex min-h-[64px] flex-1 items-center gap-3 rounded-md bg-white px-3 py-2 text-left text-n-ink"
+                      className="press flex min-h-[64px] flex-1 items-center gap-3 rounded-md bg-white px-3 py-2 text-start text-n-ink"
                       style={{ boxShadow: `inset 4px 0 0 ${c}, 0 1px 2px rgba(60,45,20,.12)`, outline: qty ? `2px solid ${C.deep}` : undefined, outlineOffset: -2 }}>
                       {item.image
                         ? <ItemImage item={item} className="h-12 w-12 flex-shrink-0 rounded-md object-cover" />
@@ -325,7 +327,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
                         <span dir={lang === 'ar' ? 'rtl' : 'ltr'} className={cn('truncate text-[15px] font-semibold', lang === 'ar' && 'text-right')}>{itemName(item)}</span>
                         {lang === 'both' && item.item_name_ar && <span dir="rtl" className="truncate text-right text-[13px] text-n-muted">{item.item_name_ar}</span>}
                         {showDescription && item.description && <span className="truncate text-xs text-n-muted">{item.description}</span>}
-                        {item.item_group && <span className="text-[11px] text-n-muted">{item.item_group}{item.has_variants ? ' · choose a size' : ''}</span>}
+                        {item.item_group && <span className="text-xs text-n-muted">{item.item_group}{item.has_variants ? ' · choose a size' : ''}</span>}
                       </span>
                       {qty > 0 && <span className="cond num flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-n-deep px-[5px] text-sm font-bold text-white">{qty}</span>}
                       <span className="cond num text-xl font-semibold">{money(item.rate)}</span>
@@ -418,7 +420,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
       {confirmItem && (
         <Dialog onClose={() => { setConfirmItem(null); setConfirmModifiers(null) }} className="w-[440px]" label="Add to a sent order">
           <div className="flex flex-col gap-2 px-5 pb-4 pt-5">
-            <span className="cond text-[26px] font-bold leading-none text-n-deep">Add to a sent order?</span>
+            <span className="cond text-[26px] font-bold leading-none text-n-deep">{t('Add to a sent order?')}</span>
             <span className="text-sm text-n-muted">
               The kitchen already has this order. <b className="text-n-ink">{confirmModifiers && confirmModifiers.qty > 1 ? `${confirmModifiers.qty} × ` : ''}{confirmItem.item_name}</b> goes under New; press Send to print the extra KOT.
             </span>
@@ -426,7 +428,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
           <div className="flex gap-2 bg-white px-4 py-3">
             <Btn size="lg" variant="outline" onClick={() => { setConfirmItem(null); setConfirmModifiers(null) }}>Cancel</Btn>
             <span className="flex-1" />
-            <Btn size="lg" variant="teal" onClick={confirmAddItem} autoFocus>Add item</Btn>
+            <Btn size="lg" variant="teal" onClick={confirmAddItem} autoFocus>{t('Add item')}</Btn>
           </div>
         </Dialog>
       )}
@@ -440,14 +442,15 @@ const NUM_ROWS = ['1234567890', '-/()&.,%\'', '@#+*=!?']
 const AR_ROWS = ['ضصثقفغعهخحج', 'شسيبلاتنمكط', 'ئءؤرىةوزظد']
 
 function MenuKeyboard({ onKey, onClear, onDone, arabic }: { onKey: (k: string) => void; onClear: () => void; onDone: () => void; arabic: boolean }) {
-  const [layout, setLayout] = useState<'en' | 'num' | 'ar'>('en')
+  const [layout, setLayout] = useState<'en' | 'num' | 'ar'>(() => (document.documentElement.dir === 'rtl' && arabic ? 'ar' : 'en'))
+  const t = useT()
   const rows = layout === 'num' ? NUM_ROWS : layout === 'ar' ? AR_ROWS : EN_ROWS
   const key = 'press flex h-12 min-w-0 items-center justify-center rounded-md text-[17px] text-n-ink shadow-key'
   const k = (ch: string) => (
     <button key={ch} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onKey(ch)} className={cn(key, 'flex-1 bg-white')}>{ch}</button>
   )
   return (
-    <div aria-label="Keyboard" className="flex flex-shrink-0 flex-col gap-1.5 bg-n-sand p-2">
+    <div aria-label="Keyboard" dir={layout === 'ar' ? 'rtl' : 'ltr'} className="flex flex-shrink-0 flex-col gap-1.5 bg-n-sand p-2">
       <div className="flex gap-1.5">{rows[0].split('').map(k)}</div>
       <div className="flex gap-1.5">
         {rows[1].split('').map(k)}
@@ -456,14 +459,14 @@ function MenuKeyboard({ onKey, onClear, onDone, arabic }: { onKey: (k: string) =
       <div className="flex gap-1.5">
         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setLayout(layout === 'num' ? 'en' : 'num')} className={cn(key, 'flex-[1.3] bg-[#CFC7B8] text-sm')}>{layout === 'num' ? 'ABC' : '123'}</button>
         {rows[2].split('').map(k)}
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onClear} className={cn(key, 'flex-[1.6] bg-[#CFC7B8] text-sm')}>Clear</button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onClear} className={cn(key, 'flex-[1.6] bg-[#CFC7B8] text-sm')}>{t('Clear')}</button>
       </div>
       <div className="flex gap-1.5">
         {arabic && (
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setLayout(layout === 'ar' ? 'en' : 'ar')} className={cn(key, 'flex-[1.3] bg-[#CFC7B8] text-sm')}>{layout === 'ar' ? 'EN' : 'ع'}</button>
         )}
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onKey(' ')} className={cn(key, 'flex-[5] bg-white text-sm text-n-muted')}>Space</button>
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onDone} className={cn(key, 'flex-[2] bg-n-deep text-[15px] font-semibold text-white')}>Done</button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onKey(' ')} className={cn(key, 'flex-[5] bg-white text-sm text-n-muted')}>{t('Space')}</button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onDone} className={cn(key, 'flex-[2] bg-n-deep text-[15px] font-semibold text-white')}>{t('Done')}</button>
       </div>
     </div>
   )

@@ -9,6 +9,7 @@ import VoidDialog, { VoidResult } from './VoidDialog'
 import { Btn, Dialog, Sheet, Option, Stepper, Cap, Field, Keypad, PinDots, Chevron, money, amountKey, pinKey, staffColor, initial } from '../ui'
 import { timeOf } from '../ui/hosts'
 import { cn } from '../lib/utils'
+import { useT } from '../stores/i18n'
 
 // The ticket: who/where at the top, what went to the kitchen (Sent) apart from what hasn't (New),
 // a tray of actions on the tapped line, and Send / Hold / Pay at the bottom.
@@ -21,6 +22,8 @@ interface CartProps {
   onPay: () => void
   onHold: () => void
   onNewOrder: () => void
+  /** Open an existing order (occupied table in the picker) */
+  onOpenOrder?: (orderId: string) => void
   taxRate: number
   taxLabel?: string
   isOrderPlaced?: boolean
@@ -35,9 +38,11 @@ interface CartProps {
   onPartialVoid?: (orderId: string, item: RemovedItem, voidQty: number, reason: string, remarks?: string, disposition?: string) => Promise<void> | void
 }
 
-export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewOrder, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, orderNumber, orderCreatedAt, sentAt, processing, onAutoVoid, onItemRemoved, onPartialVoid }: CartProps) {
+export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewOrder, onOpenOrder, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, orderNumber, orderCreatedAt, sentAt, processing, onAutoVoid, onItemRemoved, onPartialVoid }: CartProps) {
   const [discountEnabled, setDiscountEnabled] = useState(false)
   const [discountPermission, setDiscountPermission] = useState<'supervisor_only' | 'all_users'>('supervisor_only')
+  const [defaultMaxPct, setDefaultMaxPct] = useState(0)
+  const t = useT()
 
   useEffect(() => { loadDiscountConfig() }, [])
 
@@ -45,6 +50,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
     const config = await window.api.receiptConfig.getAll()
     setDiscountEnabled(config.discount_enabled === '1')
     setDiscountPermission((config.discount_permission as 'supervisor_only' | 'all_users') || 'supervisor_only')
+    setDefaultMaxPct(parseFloat(config.default_max_discount_pct || '0') || 0)
   }
 
   const cart = useCartStore()
@@ -58,6 +64,9 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
 
   const user = useAuthStore((s) => s.user)
   const canDiscount = discountEnabled && (user?.role === 'supervisor' || (discountPermission === 'all_users' && user?.role === 'cashier'))
+  // Cashier limit: their own max % if set, else the admin default; 0 means no discounts for this
+  // cashier (a supervisor can still give one). Supervisors are unlimited. Fixed amounts count as % of the gross.
+  const cashierLimit = user?.role === 'cashier' ? ((user?.max_discount_pct ?? 0) > 0 ? user!.max_discount_pct : defaultMaxPct) : null
 
   const [selected, setSelected] = useState<string | null>(null)
   const [sentOpen, setSentOpen] = useState(true)
@@ -67,6 +76,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
   const [noteFor, setNoteFor] = useState<CartItem | null>(null)
   const [discFor, setDiscFor] = useState<CartItem | null>(null)
   const [voidFor, setVoidFor] = useState<CartItem | null>(null)
+  const [voidQty, setVoidQty] = useState<number | undefined>(undefined)
 
   const subtotal = getSubtotal()
   const orderDiscVal = getOrderDiscountValue()
@@ -84,8 +94,8 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
   useEffect(() => { if (selected && !items.find((i) => i.id === selected)) setSelected(null) }, [items, selected])
 
   const shortNo = orderNumber ? orderNumber.split('-').pop() : null
-  const label = tableName || (shortNo ? `${orderType === 'Takeaway' ? 'TA' : orderType === 'Delivery' ? 'D' : '#'} ${shortNo}` : 'New')
-  const subParts = [room, orderType === 'Dine In' ? `${guests} guest${guests === 1 ? '' : 's'}` : null, waiterName, orderCreatedAt ? `since ${timeOf(orderCreatedAt)}` : null].filter(Boolean)
+  const label = tableName || (shortNo ? `${orderType === 'Takeaway' ? 'TA' : orderType === 'Delivery' ? 'D' : '#'} ${shortNo}` : t('New'))
+  const subParts = [room, orderType === 'Dine In' ? `${guests} ${t(guests === 1 ? 'guest' : 'guests')}` : null, waiterName, orderCreatedAt ? t('since {time}', { time: timeOf(orderCreatedAt) }) : null].filter(Boolean)
 
   // Persist edits on lines already saved to the order (so payment, which reads order_items, sees them)
   function persist(line: CartItem, patch: Record<string, any>) {
@@ -94,12 +104,14 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
   }
   function changeQty(line: CartItem, qty: number) {
     if (qty <= 0) { removeLine(line); return }
+    // A line already on the order only goes down through the void flow (reason, PIN, void slip)
+    if (line.dbId && qty < line.qty) { setVoidQty(line.qty - qty); setVoidFor(line); return }
     updateItemQty(line.id, qty)
     const after = useCartStore.getState().items.find((i) => i.id === line.id)
     if (after) persist(after, { qty: after.qty, amount: after.amount })
   }
   function removeLine(line: CartItem) {
-    if (line.dbId) { setVoidFor(line); return } // on the order already: needs a reason (and a PIN for cashiers)
+    if (line.dbId) { setVoidQty(undefined); setVoidFor(line); return } // on the order already: needs a reason (and a PIN for cashiers)
     removeItem(line.id)
   }
 
@@ -138,30 +150,30 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
     return (
       <div key={l.id} className={cn(sel && 'bg-n-ice shadow-[inset_3px_0_0_#0E6E86]')}>
         <button type="button" onClick={() => setSelected(sel ? null : l.id)} aria-expanded={sel}
-          className="flex min-h-[36px] w-full items-center gap-2.5 px-3 py-1 text-left text-n-ink">
+          className="flex min-h-[36px] w-full items-center gap-2.5 px-3 py-1 text-start text-n-ink">
           <span className="cond num inline-flex h-[22px] min-w-[22px] flex-shrink-0 items-center justify-center rounded px-[5px] text-[15px] font-bold text-white" style={{ background: itemColor(l.itemCode, l.itemName) }}>{l.qty}</span>
           <span className={cn('min-w-0 flex-1 text-sm', sel ? 'whitespace-normal' : 'truncate')}>
             {l.itemName}
             {mods && <span className="text-n-muted"> · {mods}</span>}
             {disc && <span className="font-semibold text-n-green"> {disc}</span>}
-            {l.dbId && !l.kotPrinted && <span className="text-[11px] font-semibold text-n-muted"> · saved</span>}
+            {l.dbId && !l.kotPrinted && <span className="text-xs font-semibold text-n-muted"> · saved</span>}
           </span>
           <span className="num text-sm font-medium">{money(l.amount)}</span>
         </button>
         {sel && (
           l.kotPrinted ? (
             <div className="flex gap-1.5 px-3 pb-2.5 pt-0.5">
-              <button type="button" className={trayBtn} onClick={reprintKot}>Reprint KOT</button>
-              <button type="button" className={trayBtn} onClick={() => setNoteFor(l)}>Kitchen note</button>
-              <button type="button" className={trayVoid} onClick={() => setVoidFor(l)}>Void</button>
+              <button type="button" className={trayBtn} onClick={reprintKot}>{t('Reprint KOT')}</button>
+              <button type="button" className={trayBtn} onClick={() => setNoteFor(l)}>{t('Kitchen note')}</button>
+              <button type="button" className={trayVoid} onClick={() => { setVoidQty(undefined); setVoidFor(l) }}>{t('Void')}</button>
             </div>
           ) : (
             <div className="flex gap-1.5 px-3 pb-2.5 pt-0.5">
               <button type="button" aria-label="One less" onClick={() => changeQty(l, l.qty - 1)} className="press flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md border border-n-edge bg-white text-xl">−</button>
               <button type="button" aria-label="One more" onClick={() => changeQty(l, l.qty + 1)} className="press flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md border border-n-edge bg-white text-xl">+</button>
-              <button type="button" className={trayBtn} onClick={() => setNoteFor(l)}>Note</button>
-              {canDiscount && <button type="button" className={trayBtn} onClick={() => setDiscFor(l)}>Discount</button>}
-              <button type="button" className={trayVoid} onClick={() => removeLine(l)}>Remove</button>
+              <button type="button" className={trayBtn} onClick={() => setNoteFor(l)}>{t('Note')}</button>
+              {canDiscount && <button type="button" className={trayBtn} onClick={() => setDiscFor(l)}>{t('Discount')}</button>}
+              <button type="button" className={trayVoid} onClick={() => removeLine(l)}>{t('Remove')}</button>
             </div>
           )
         )}
@@ -180,22 +192,22 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
         <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <span className="relative self-start">
             <button type="button" onClick={() => setTypeMenu(!typeMenu)} aria-haspopup="menu"
-              className="flex h-[26px] items-center gap-[5px] rounded-[5px] border-[1.5px] border-n-teal px-2 text-xs font-semibold text-n-teal">
-              {orderType === 'Dine In' ? 'Dine in' : orderType}<Chevron size={10} strokeWidth={3.5} />
+              className="relative flex h-[26px] items-center gap-[5px] rounded-[5px] border-[1.5px] border-n-teal px-2 text-xs font-semibold text-n-teal after:absolute after:-inset-[9px] after:content-['']">
+              {t(orderType === 'Dine In' ? 'Dine in' : orderType)}<Chevron size={10} strokeWidth={3.5} />
             </button>
             {typeMenu && (
               <span role="menu" className="absolute left-0 top-full z-30 mt-1 flex w-40 flex-col overflow-hidden rounded-md bg-white shadow-pop">
-                {(['Dine In', 'Takeaway', 'Delivery'] as const).map((t) => (
-                  <button key={t} role="menuitem" type="button" onClick={() => { setOrderType(t); if (t !== 'Dine In') cart.setTable(null); setTypeMenu(false) }}
-                    className={cn('h-12 px-3 text-left text-sm', orderType === t ? 'bg-n-ice font-semibold text-n-deep' : 'text-n-ink')}>
-                    {t === 'Dine In' ? 'Dine in' : t}
+                {(['Dine In', 'Takeaway', 'Delivery'] as const).map((tp) => (
+                  <button key={tp} role="menuitem" type="button" onClick={() => { setOrderType(tp); if (tp !== 'Dine In') cart.setTable(null); setTypeMenu(false) }}
+                    className={cn('h-12 px-3 text-start text-sm', orderType === tp ? 'bg-n-ice font-semibold text-n-deep' : 'text-n-ink')}>
+                    {t(tp === 'Dine In' ? 'Dine in' : tp)}
                   </button>
                 ))}
               </span>
             )}
           </span>
-          <button type="button" onClick={() => setSheet('order')} className="truncate text-left text-xs text-n-muted">
-            {subParts.length ? subParts.join(' · ') : orderType === 'Dine In' ? 'Tap to pick a table, guests and waiter' : 'Tap for waiter and notes'}
+          <button type="button" onClick={() => setSheet('order')} className="truncate py-1 text-start text-xs text-n-muted">
+            {subParts.length ? subParts.join(' · ') : orderType === 'Dine In' ? t('Tap to pick a table, guests and waiter') : t('Tap for waiter and notes')}
           </button>
         </span>
         <button type="button" aria-label="More actions" onClick={() => setSheet('order')}
@@ -208,18 +220,18 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
       <div className="scroll-none min-h-0 flex-1 overflow-y-auto pb-0.5 pt-1" onClick={() => typeMenu && setTypeMenu(false)}>
         {items.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-            <span className="cond text-2xl font-bold text-n-ink">Nothing on the ticket</span>
-            <span className="text-sm text-n-muted">Tap the menu to add items, or open an order from the rail.</span>
+            <span className="cond text-2xl font-bold text-n-ink">{t('Nothing on the ticket')}</span>
+            <span className="text-sm text-n-muted">{t('Tap the menu to add items, or open an order from the rail.')}</span>
           </div>
         ) : (
           <>
             {sentLines.length > 0 && (
               <>
                 <button type="button" onClick={() => setSentOpen(!sentOpen)} aria-expanded={sentOpen}
-                  className="flex h-[30px] w-full items-center gap-2 px-3 text-left">
-                  <Cap className="text-n-muted">{sentAt ? `Sent ${sentAt}` : 'Sent'}</Cap>
+                  className="flex h-[30px] w-full items-center gap-2 px-3 text-start">
+                  <Cap className="text-n-muted">{sentAt ? t('Sent {time}', { time: sentAt }) : t('Sent')}</Cap>
                   <span className="h-px flex-1 bg-n-line" />
-                  <span className="num text-xs text-n-muted">{sentSum.qty} item{sentSum.qty === 1 ? '' : 's'} · {money(sentSum.amt)}</span>
+                  <span className="num text-xs text-n-muted">{sentSum.qty} {t(sentSum.qty === 1 ? 'item' : 'items')} · {money(sentSum.amt)}</span>
                   <Chevron dir={sentOpen ? 'down' : 'right'} size={14} strokeWidth={2.5} className="text-n-muted" />
                 </button>
                 {sentOpen && sentLines.map(lineRow)}
@@ -228,9 +240,9 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
             {newLines.length > 0 && (
               <>
                 <div className="flex h-[30px] items-center gap-2 px-3">
-                  <Cap className="text-n-teal">New</Cap>
+                  <Cap className="text-n-teal">{t('New')}</Cap>
                   <span className="h-px flex-1 bg-[#CFE0E5]" />
-                  <span className="num text-xs text-n-teal">{newSum.qty} item{newSum.qty === 1 ? '' : 's'} · {money(newSum.amt)}</span>
+                  <span className="num text-xs text-n-teal">{newSum.qty} {t(newSum.qty === 1 ? 'item' : 'items')} · {money(newSum.amt)}</span>
                 </div>
                 {newLines.map(lineRow)}
               </>
@@ -254,28 +266,28 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
         </div>
       )}
       <div className="flex h-9 flex-shrink-0 items-center gap-2.5 border-t border-n-line px-3 text-[13px] text-n-muted">
-        <span className="num">{itemCount} item{itemCount === 1 ? '' : 's'}</span>
+        <span className="num">{itemCount} {t(itemCount === 1 ? 'item' : 'items')}</span>
         <button type="button" onClick={() => setSheet('offers')} disabled={items.length === 0}
-          className="-ml-2 h-[30px] px-2 text-[13px] font-semibold text-n-teal disabled:text-n-stone">
-          {orderDiscVal > 0 ? 'Change discount' : 'Add discount'}
+          className="-ms-2 h-9 px-2 text-[13px] font-semibold text-n-teal disabled:text-n-stone">
+          {orderDiscVal > 0 ? t('Change discount') : t('Add discount')}
         </button>
         <span className="flex-1" />
-        <span>Subtotal</span><span className="num font-semibold text-n-ink">{money(subtotal)}</span>
+        <span>{t('Subtotal')}</span><span className="num font-semibold text-n-ink">{money(subtotal)}</span>
       </div>
 
       {/* Send / Hold / Pay */}
       <div className="flex flex-shrink-0 gap-2 bg-white px-2.5 pb-2.5 pt-2">
         <button type="button" onClick={onPlaceOrder} disabled={processing || newLines.length === 0}
           className={cn('press h-16 flex-1 whitespace-nowrap rounded-lg text-base font-bold', newLines.length ? 'bg-n-teal text-white' : 'border-[1.5px] border-n-edge bg-white text-n-muted')}>
-          {processing ? 'Sending…' : newLines.length ? `Send ${newSum.qty}` : items.length ? 'Sent' : 'Send'}
+          {processing ? t('Sending…') : newLines.length ? t('Send {n}', { n: newSum.qty }) : items.length ? t('Sent') : t('Send')}
         </button>
         <button type="button" onClick={onHold} disabled={processing || items.length === 0}
           className="press h-16 w-16 flex-shrink-0 rounded-lg border-[1.5px] border-n-edge bg-white text-[15px] font-semibold text-n-ink disabled:text-n-stone">
-          Hold
+          {t('Hold')}
         </button>
         <button type="button" onClick={onPay} disabled={processing || items.length === 0}
           className="press flex h-16 flex-[1.7] items-center justify-between gap-2 whitespace-nowrap rounded-lg bg-n-amber px-3.5 leading-none text-n-ink disabled:bg-n-sand disabled:text-n-stone">
-          <span className="text-base font-bold">Pay</span>
+          <span className="text-base font-bold">{t('Pay')}</span>
           <span className="cond num text-2xl font-bold">{cur} {money(grandTotal)}</span>
         </button>
       </div>
@@ -286,10 +298,11 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
           onUpdateOnly={() => { setSheet(null); onUpdateOnly?.() }} onNewOrder={() => { setSheet(null); onNewOrder() }}
           onPickTable={() => setShowTablePicker(true)} grandTotal={grandTotal} />
       )}
-      {sheet === 'offers' && <OffersSheet onClose={() => setSheet(null)} canDiscount={canDiscount} />}
+      {sheet === 'offers' && <OffersSheet onClose={() => setSheet(null)} canDiscount={canDiscount} limit={cashierLimit} />}
 
       {showTablePicker && (
         <TablePicker onSelect={(name, rm) => { cart.setTable(name, rm); if (orderType !== 'Dine In') setOrderType('Dine In'); setShowTablePicker(false) }}
+          onOpenOrder={onOpenOrder ? (id) => { setShowTablePicker(false); setSheet(null); onOpenOrder(id) } : undefined} activeOrderId={activeOrderId}
           onCancel={() => setShowTablePicker(false)} currentTable={tableName} />
       )}
 
@@ -299,7 +312,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
       )}
 
       {discFor && (
-        <LineDiscountDialog line={discFor} maxPct={user?.role === 'cashier' ? user?.max_discount_pct ?? 0 : 0} onCancel={() => setDiscFor(null)}
+        <LineDiscountDialog line={discFor} limit={cashierLimit} onCancel={() => setDiscFor(null)}
           onApply={(pct, amt) => {
             updateItemDiscount(discFor.id, pct, amt)
             const after = useCartStore.getState().items.find((i) => i.id === discFor.id)
@@ -311,19 +324,20 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
       {voidFor && (
         <VoidDialog
           requirePin={user?.role !== 'supervisor'}
+          initialQty={voidQty}
           target={{
             kind: 'line',
-            title: `${voidFor.kotPrinted ? 'Void' : 'Remove'} from ${label}`,
+            title: t(voidFor.kotPrinted ? 'Void from {label}' : 'Remove from {label}', { label }),
             subtitle: voidFor.kotPrinted
-              ? `Already in the kitchen. A cancel slip prints there and this is logged under ${user?.name || 'you'}.`
-              : `Saved on the order but not sent to the kitchen. Logged under ${user?.name || 'you'}.`,
+              ? t('Already in the kitchen. A cancel slip prints there and this is logged under {name}.', { name: user?.name || 'you' })
+              : t('Saved on the order but not sent to the kitchen. Logged under {name}.', { name: user?.name || 'you' }),
             itemName: voidFor.itemName,
             itemColor: itemColor(voidFor.itemCode, voidFor.itemName),
             detail: `${voidFor.kotPrinted ? (sentAt ? `Sent ${sentAt} · ` : 'Sent · ') : ''}${voidFor.qty} on the order · ${money(voidFor.amount / voidFor.qty)} each`,
             maxQty: voidFor.qty,
             unitPrice: voidFor.amount / voidFor.qty
           }}
-          onCancel={() => setVoidFor(null)}
+          onCancel={() => { setVoidFor(null); setVoidQty(undefined) }}
           onConfirm={(r) => confirmVoid(voidFor, r)}
         />
       )}
@@ -438,7 +452,7 @@ function OrderSheet({ onClose, activeOrderId, canUpdateOnly, onUpdateOnly, onNew
 }
 
 // ------------------------------------------------------------------ discount, promo, voucher
-function OffersSheet({ onClose, canDiscount }: { onClose: () => void; canDiscount: boolean }) {
+function OffersSheet({ onClose, canDiscount, limit }: { onClose: () => void; canDiscount: boolean; limit: number | null }) {
   const { orderDiscountPercent, orderDiscountAmount, orderDiscountReason, setOrderDiscount, promoName, setPromo, voucherCode, setVoucher, getOrderDiscountValue } = useCartStore()
   const user = useAuthStore((s) => s.user)
   const cur = useStatus((s) => s.currency)
@@ -458,9 +472,9 @@ function OffersSheet({ onClose, canDiscount }: { onClose: () => void; canDiscoun
     const v = parseFloat(entry || '0') || 0
     const pct = mode === 'pct' ? v : 0
     const amt = mode === 'amt' ? v : 0
-    const maxPct = user?.max_discount_pct ?? 0
-    if (user?.role === 'cashier' && maxPct > 0 && pct > maxPct) { setError(`Max discount: ${maxPct}%`); return }
-    if (pct > 100) { setError('Can’t be more than 100%'); return }
+    const gross = useCartStore.getState().getSubtotal()
+    const err = discountError(pct, amt, gross, limit)
+    if (err) { setError(err); return }
     setOrderDiscount(pct, amt, reason)
     onClose()
   }
@@ -501,7 +515,7 @@ function OffersSheet({ onClose, canDiscount }: { onClose: () => void; canDiscoun
               <span className="font-sans text-[13px] font-medium text-n-muted">{mode === 'pct' ? 'Percent off' : `${cur} off`}</span>
               {entry || '0'}{mode === 'pct' ? '%' : ''}
             </div>
-            {user?.role === 'cashier' && (user?.max_discount_pct ?? 0) > 0 && <span className="text-xs text-n-muted">You can give up to {user?.max_discount_pct}%.</span>}
+            {limit !== null && <span className="text-xs text-n-muted">{limit > 0 ? `You can give up to ${limit}% (fixed amounts count as a % of the bill).` : 'No discount limit is set for you. Ask a supervisor.'}</span>}
             <Keypad mode="decimal" tone="light" className="h-[232px]" onKey={(k) => { setError(''); setEntry(amountKey(entry, k)) }} />
             <Field data-keyboard="full" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason, e.g. manager discount" />
             {error && <span className="text-sm font-semibold text-n-red">{error}</span>}
@@ -566,7 +580,7 @@ function NoteDialog({ line, sent, onSave, onCancel }: { line: CartItem; sent: bo
   )
 }
 
-function LineDiscountDialog({ line, maxPct, onApply, onCancel }: { line: CartItem; maxPct: number; onApply: (pct: number, amt: number) => void; onCancel: () => void }) {
+function LineDiscountDialog({ line, limit, onApply, onCancel }: { line: CartItem; limit: number | null; onApply: (pct: number, amt: number) => void; onCancel: () => void }) {
   const [mode, setMode] = useState<'pct' | 'amt'>(line.discountAmount > 0 && !line.discountPercent ? 'amt' : 'pct')
   const [entry, setEntry] = useState(String((mode === 'amt' ? line.discountAmount : line.discountPercent) || ''))
   const [error, setError] = useState('')
@@ -576,8 +590,8 @@ function LineDiscountDialog({ line, maxPct, onApply, onCancel }: { line: CartIte
     const v = parseFloat(entry || '0') || 0
     const pct = mode === 'pct' ? v : 0
     const amt = mode === 'amt' ? v : 0
-    if (maxPct > 0 && pct > maxPct) { setError(`Max discount: ${maxPct}%`); return }
-    if (pct > 100) { setError('Can’t be more than 100%'); return }
+    const err = discountError(pct, amt, gross, limit)
+    if (err) { setError(err); return }
     onApply(pct, amt)
   }
   return (
@@ -606,4 +620,16 @@ function LineDiscountDialog({ line, maxPct, onApply, onCancel }: { line: CartIte
       </div>
     </Dialog>
   )
+}
+
+/** Discount rules: no more than 100% / the gross; cashiers capped at their limit, fixed amounts as a % of the gross. */
+function discountError(pct: number, amt: number, gross: number, limit: number | null): string | null {
+  if (pct < 0 || amt < 0) return 'Discount can’t be negative'
+  if (pct > 100) return 'Can’t be more than 100%'
+  if (amt > gross + 0.0001) return `Can’t be more than ${money(gross)}`
+  if (limit === null) return null
+  const asPct = pct + (gross > 0 ? (amt / gross) * 100 : 0)
+  if (limit <= 0 && asPct > 0) return 'No discount limit is set for you. Ask a supervisor.'
+  if (asPct > limit + 0.0001) return amt > 0 ? `That is ${asPct.toFixed(1)}% of the bill; your limit is ${limit}%` : `Max discount: ${limit}%`
+  return null
 }

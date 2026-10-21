@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../stores/auth'
+import { askConfirm, toast } from '../stores/ui'
 import { ArrowLeft, Save, Printer, Image, FileText, Users, Settings, Database, Loader2, Wifi } from 'lucide-react'
 
 type Tab = 'print-format' | 'system' | 'supervisor'
@@ -391,14 +392,14 @@ export default function AdminPanel() {
                 {/* Classic Design Preview */}
                 <button
                   onClick={() => updateField('receipt_design', 'classic')}
-                  className={`rounded-md border-2 p-3 text-left transition-all ${(receiptConfig.receipt_design || 'classic') === 'classic' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-200 hover:border-gray-300'}`}
+                  className={`rounded-md border-2 p-3 text-start transition-all ${(receiptConfig.receipt_design || 'classic') === 'classic' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-200 hover:border-gray-300'}`}
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-sm font-bold">Classic</span>
-                    {(receiptConfig.receipt_design || 'classic') === 'classic' && <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-white">Active</span>}
+                    {(receiptConfig.receipt_design || 'classic') === 'classic' && <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-white">Active</span>}
                   </div>
                   <div className="rounded-lg bg-white border p-3 font-mono text-[8px] leading-tight text-gray-600">
-                    <div className="text-center font-bold text-[9px]">Restaurant Name</div>
+                    <div className="text-center font-bold text-xs">Restaurant Name</div>
                     <div className="my-1 border-t border-dashed border-gray-300" />
                     <div className="text-center text-[7px]">Address Line 1</div>
                     <div className="text-center text-[7px]">Tel: +974 1234 5678</div>
@@ -423,14 +424,14 @@ export default function AdminPanel() {
                 {/* Modern Design Preview */}
                 <button
                   onClick={() => updateField('receipt_design', 'modern')}
-                  className={`rounded-md border-2 p-3 text-left transition-all ${receiptConfig.receipt_design === 'modern' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-200 hover:border-gray-300'}`}
+                  className={`rounded-md border-2 p-3 text-start transition-all ${receiptConfig.receipt_design === 'modern' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-200 hover:border-gray-300'}`}
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-sm font-bold">Modern</span>
-                    {receiptConfig.receipt_design === 'modern' && <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-white">Active</span>}
+                    {receiptConfig.receipt_design === 'modern' && <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-white">Active</span>}
                   </div>
                   <div className="rounded-lg bg-white border p-3 font-mono text-[8px] leading-tight text-gray-600">
-                    <div className="text-center font-bold text-[10px]">RESTAURANT NAME</div>
+                    <div className="text-center font-bold text-xs">RESTAURANT NAME</div>
                     <div className="text-center text-[7px]">Address Line 1</div>
                     <div className="text-center text-[7px]">CR: 12345 | VAT: 67890</div>
                     <div className="my-1 border-t-2 border-gray-400" />
@@ -446,7 +447,7 @@ export default function AdminPanel() {
                     <div className="my-1 border-t-2 border-gray-400" />
                     <div className="flex justify-between"><span>  Subtotal</span><span>70.00</span></div>
                     <div className="my-0.5 border-t border-dashed border-gray-300" />
-                    <div className="text-center font-bold text-[10px]">TOTAL: 70.00 QAR</div>
+                    <div className="text-center font-bold text-xs">TOTAL: 70.00 QAR</div>
                     <div className="my-0.5 border-t border-dashed border-gray-300" />
                     <div className="my-1 border-t-2 border-gray-400" />
                     <div className="text-center text-[7px]">Thank you!</div>
@@ -712,6 +713,8 @@ function SupervisorManagement() {
 
   async function handleDelete(id: string) {
     if (supervisors.length <= 1) { setError('Cannot delete the last supervisor'); return }
+    const sup = supervisors.find((x: any) => x.id === id)
+    if (!(await askConfirm({ title: `Delete supervisor${sup?.name ? ` ${sup.name}` : ''}?`, body: 'They can no longer sign in or approve voids on this till.', ok: 'Delete supervisor', danger: true }))) return
     try {
       await window.api.users.delete(id)
       setSuccess('Supervisor deleted')
@@ -739,7 +742,7 @@ function SupervisorManagement() {
               <div key={s.id} className="flex items-center justify-between py-3">
                 <div>
                   <span className="font-medium">{s.user_name}</span>
-                  <span className="ml-2 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">Supervisor</span>
+                  <span className="ml-2 rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">Supervisor</span>
                 </div>
                 <div className="flex gap-2">
                   {editingId === s.id ? (
@@ -1003,9 +1006,9 @@ function SystemSettings() {
         </p>
         <button
           onClick={async () => {
-            if (!confirm('Clear all orders and transaction data? This cannot be undone.\n\nItems, printers, users, and settings will NOT be affected.')) return
+            if (!(await askConfirm({ title: 'Clear all transactions?', body: 'Every order, payment and shift on this till is deleted. Items, printers, users and settings are kept.\nThis cannot be undone.', ok: 'Clear transactions', danger: true, typeToConfirm: 'CLEAR' }))) return
             const result = await window.api.app.clearTransactions()
-            alert(`Cleared ${result.orders} orders and ${result.sessions} sessions.`)
+            toast.success(`Cleared ${result.orders} orders and ${result.sessions} sessions.`)
           }}
           className="rounded-lg border-2 border-orange-300 px-4 py-2 text-sm font-medium text-orange-600 hover:bg-orange-50"
         >

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Field, money } from '../ui'
 import { cn } from '../lib/utils'
+import { useT } from '../stores/i18n'
 
 // Count the drawer note by note. Tap + for one, hold + for ten. "Type a total" keeps the old
 // single-amount entry for drawers with odd coins.
@@ -25,6 +26,7 @@ export default function CashCount({ counts, onCounts, manual, onManual, rowHeigh
   const hold = useRef<number | null>(null)
   const held = useRef(false)
   const [, force] = useState(0)
+  const t = useT()
 
   function set(d: number, delta: number) {
     const n = { ...counts, [d]: Math.max(0, (counts[d] || 0) + delta) }
@@ -44,7 +46,7 @@ export default function CashCount({ counts, onCounts, manual, onManual, rowHeigh
         <span className="hidden truncate text-[13px] text-n-muted min-[1200px]:inline">{manual === null ? hint : 'Typing the total instead of counting notes'}</span>
         <span className="flex-1" />
         <button type="button" onClick={() => onManual(manual === null ? '' : null)} className="whitespace-nowrap text-[13px] font-semibold text-n-teal">
-          {manual === null ? 'Type a total' : 'Count notes'}
+          {manual === null ? t('Type a total') : t('Count notes')}
         </button>
       </div>
       {manual !== null ? (

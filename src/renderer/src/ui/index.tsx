@@ -2,6 +2,7 @@
 // Tokens live in tailwind.config.js under `n-*`; this file turns them into components.
 import { ReactNode, useEffect, useState, ButtonHTMLAttributes, forwardRef } from 'react'
 import { cn } from '../lib/utils'
+import { useT } from '../stores/i18n'
 
 export const C = {
   deep: '#0B3B49', rail: '#0E4A5B', cream: '#F4EFE6', amber: '#F4A52A', teal: '#0E6E86', red: '#C83E2E',
@@ -26,7 +27,11 @@ export function initial(name?: string | null) {
   return (name || '?').trim().charAt(0).toUpperCase()
 }
 
-export function money(n: number | null | undefined, decimals = 2) {
+// One money formatter for the whole renderer. Decimals come from the receipt config
+// (currency_decimals) once loaded; the currency symbol is shown next to totals via useStatus.
+let MONEY_DECIMALS = 2
+export function setMoneyDecimals(d: number) { if (Number.isFinite(d) && d >= 0 && d <= 4) MONEY_DECIMALS = d }
+export function money(n: number | null | undefined, decimals = MONEY_DECIMALS) {
   const v = Number(n) || 0
   return v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
@@ -170,7 +175,7 @@ export function Option({ active, onClick, children, className, disabled }: { act
       aria-pressed={!!active}
       disabled={disabled}
       onClick={onClick}
-      className={cn('press flex h-12 items-center justify-between gap-2 rounded-md bg-white px-3 text-left text-sm disabled:opacity-40', active ? 'border-2 border-n-deep font-semibold' : 'border border-n-edge', className)}
+      className={cn('press flex h-12 items-center justify-between gap-2 rounded-md bg-white px-3 text-start text-sm disabled:opacity-40', active ? 'border-2 border-n-deep font-semibold' : 'border border-n-edge', className)}
     >
       {children}
     </button>
@@ -203,7 +208,7 @@ export function Keypad({ onKey, mode = 'pin', tone = 'dark', className, keyClass
   const keys: KeypadKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', mode === 'pin' ? 'C' : '.', '0', 'back']
   const toneCls = tone === 'light' ? 'bg-white text-n-ink shadow-keydeep' : tone === 'deep' ? 'bg-n-deep text-white' : 'bg-n-rail text-white'
   return (
-    <div className={cn('grid grid-cols-3 grid-rows-4 gap-2', className)}>
+    <div dir="ltr" className={cn('grid grid-cols-3 grid-rows-4 gap-2', className)}>
       {keys.map((k) => (
         <button key={k} type="button" aria-label={k === 'back' ? 'Delete' : k === 'C' ? 'Clear' : k}
           onMouseDown={(e) => e.preventDefault()} onClick={() => onKey(k)}
@@ -254,11 +259,12 @@ export function PinDots({ count, filled, size = 16, tone = 'dark' }: { count: nu
 }
 
 // ---------------------------------------------------------------- Bars
-export function BackButton({ onClick, label = 'Back' }: { onClick: () => void; label?: string }) {
+export function BackButton({ onClick, label }: { onClick: () => void; label?: string }) {
+  const t = useT()
   return (
     <button type="button" onClick={onClick} className="press flex h-11 items-center gap-1.5 whitespace-nowrap rounded-md bg-n-deep pl-2 pr-3 text-sm font-semibold text-white">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
-      {label}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="rtl:rotate-180"><path d="M15 18l-6-6 6-6" /></svg>
+      {label ?? t('Back')}
     </button>
   )
 }

@@ -10,6 +10,8 @@
 //   ?autoaccept=0     waiter_order_auto_accept off (manual accept)
 //   ?setup=1          first-run setup
 //   ?empty=1          no open orders
+//   ?idle=0.25        inactivity timeout in minutes (default 600)
+//   ?printfail=1      KOT and receipt printing fail (to test sticky errors + Retry)
 
 const q = new URLSearchParams(location.search)
 const opt = {
@@ -17,7 +19,8 @@ const opt = {
   wo: (q.get('wo') || 'later') as 'now' | 'later' | 'none',
   autoAccept: q.get('autoaccept') !== '0',
   setup: q.get('setup') === '1',
-  empty: q.get('empty') === '1'
+  empty: q.get('empty') === '1',
+  printFail: q.get('printfail') === '1'
 }
 
 let seq = 1000
@@ -131,7 +134,7 @@ const printers = [
 
 const config: Record<string, string> = {
   setup_complete: opt.setup ? '0' : '1', erpnext_url: 'https://demo.example.com', pos_profile: 'Cocktail · Till 2', company: 'Harbour Lane Hospitality',
-  inactivity_timeout: '600', touch_keyboard_enabled: '0', last_sync_at: new Date(Date.now() - 4 * 60000).toISOString()
+  inactivity_timeout: q.get('idle') || '600', touch_keyboard_enabled: '0', last_sync_at: new Date(Date.now() - 4 * 60000).toISOString()
 }
 const receiptConfig: Record<string, string> = {
   restaurant_name: 'COCKTAIL BAR', restaurant_name_ar: 'كوكتيل بار', address_line_1: 'Corniche, Doha', address_line_1_ar: 'الكورنيش، الدوحة', phone: '+974 4400 1234',
@@ -180,7 +183,7 @@ if (!opt.empty) {
     lineFor('Hot Latte', 1, { modifiers: M([['Milk', 'Oat', 3]]) }), lineFor('Iced Spanish Latte', 2), lineFor('Cappuccino', 1),
     lineFor('Classic Mint Mojito 16 oz', 2, { modifiers: M([['Ice', 'Less ice', 0]]) }), lineFor('Açai Bowl (L)', 1, { modifiers: M([['Toppings', 'Cashew nut', 3]]) }), lineFor('Croissant Cheese', 1)
   ])
-  makeOrder({ table_name: 'T8', room: 'Terrace', guests: 4, waiter_id: 'Ahmed', waiter_name: 'Ahmed', created_at: ago(41) }, [lineFor('Mango Tango 16 oz', 2), lineFor('Club Sandwich', 1, { special_instructions: 'No mayo' }), lineFor('Açai Bowl (L)', 2)])
+  makeOrder({ table_name: 'T8', room: 'Terrace', guests: 4, waiter_id: 'Ahmed', waiter_name: 'Ahmed', created_at: ago(41), order_notes: 'Nut allergy, seat 2' }, [lineFor('Mango Tango 16 oz', 2), lineFor('Club Sandwich', 1, { special_instructions: 'No mayo' }), lineFor('Açai Bowl (L)', 2)])
   makeOrder({ table_name: 'T7', room: 'Terrace', guests: 2, waiter_id: 'Ahmed', waiter_name: 'Ahmed', status: 'Preparing', created_at: ago(9) }, [lineFor('Cappuccino', 2)])
   makeOrder({ order_type: 'Takeaway', guests: 1, status: 'Ready to Serve', created_at: ago(14), order_notes: 'Fatima · 5550 1234' }, [lineFor('Iced Spanish Latte', 1), lineFor('Cookies', 1)])
   makeOrder({ order_type: 'Delivery', guests: 1, created_at: ago(19), order_notes: 'Talabat 4412' }, [lineFor('Chicken Caesar', 1, { special_instructions: 'Dressing on the side' }), lineFor('Iced Latte', 2), lineFor('Brownies', 1)])
@@ -188,6 +191,8 @@ if (!opt.empty) {
   makeOrder({ table_name: 'T3', room: 'Terrace', guests: 2, status: 'Hold', created_at: ago(33) }, [lineFor('Karak Tea', 2), lineFor('Croissant Zaatar', 1)])
   makeOrder({ table_name: 'T6', room: 'Terrace', guests: 3, status: 'Hold', cashier_name: 'Joseph', kot_printed: 0, created_at: ago(48) }, [lineFor('Orange Juice 12 oz', 1, { kot_printed: 0 }), lineFor('Mango Cake', 1, { kot_printed: 0 })])
   makeOrder({ table_name: 'T9', room: 'Terrace', guests: 8, waiter_id: 'Sara', waiter_name: 'Sara', status: 'Invoiced', created_at: ago(52) }, [lineFor('Cappuccino', 3), lineFor('Orange Juice 12 oz', 2), lineFor('Crepe Nutella', 2), lineFor('Mango Cake', 1, { special_instructions: 'Birthday candle' })])
+  // opened before midnight and still open (must stay visible on the kitchen pass)
+  makeOrder({ table_name: 'T2', room: 'Terrace', guests: 2, waiter_id: 'Sara', waiter_name: 'Sara', status: 'Preparing', created_at: ago(new Date().getHours() * 60 + new Date().getMinutes() + 25) }, [lineFor('Moroccan Mint Tea', 2)])
   makeOrder({ table_name: 'Bed 4', room: 'Pool', guests: 2, waiter_id: 'Omar', waiter_name: 'Omar', created_at: ago(11) }, [lineFor('Peach Mojito 16 oz', 2), lineFor('Açai Smoothie (M)', 1)])
 }
 // completed history
@@ -310,9 +315,10 @@ const impl: Record<string, Record<string, (...a: any[]) => any>> = {
   printers: { get: () => clone(printers), test: () => ({ success: true }), discoverUsb: () => [] },
   printRoutes: { get: () => [] },
   print: {
-    receipt: async (orderId: string) => { await sleep(300); log(orderId, 'receipt'); return { success: true } },
+    receipt: async (orderId: string) => { await sleep(300); if (opt.printFail) return { success: false, error: 'Counter printer offline' }; log(orderId, 'receipt'); return { success: true } },
     kots: async (orderId: string, actor?: string, reprint?: boolean) => {
       await sleep(250)
+      if (opt.printFail) { opt.printFail = false; return { success: false, errors: ['Kitchen printer offline'] } } // fails once, Retry works
       const o = orders.find((x) => x.id === orderId); if (o) o.kot_printed = 1
       for (const i of liveItems(orderId)) i.kot_printed = 1
       log(orderId, 'kot', reprint ? 'reprint' : 'manual', actor || 'Mariam')

@@ -3,7 +3,8 @@ import { useAuthStore } from '../stores/auth'
 import { useCartStore } from '../stores/cart'
 import { useStatus, refreshPendingSync } from '../stores/status'
 import { useMenu } from '../stores/menu'
-import { toast, askConfirm } from '../stores/ui'
+import { toast, askConfirm, useSessionGuard } from '../stores/ui'
+import { useT, useLang } from '../stores/i18n'
 import ItemGrid from '../components/ItemGrid'
 import Cart from '../components/Cart'
 import PaymentDialog, { PaymentEntry } from '../components/PaymentDialog'
@@ -24,7 +25,12 @@ import { cn } from '../lib/utils'
 type View = 'till' | 'orders' | 'history' | 'closeShift'
 
 export default function POS() {
-  const { user, logout } = useAuthStore()
+  const { user, logout: rawLogout } = useAuthStore()
+  const t = useT()
+  const { lang, setLang } = useLang()
+  // In-flight guard: a second tap while Send / Hold / Pay / Save is running is ignored
+  const busy = useRef(false)
+  const activeRef = useRef<string | null>(null)
   const cart = useCartStore()
   const [showPayment, setShowPayment] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -194,7 +200,8 @@ export default function POS() {
 
   // Send: place order & print KOT (only unprinted items go to the kitchen)
   const handlePlaceOrder = useCallback(async () => {
-    if (useCartStore.getState().items.length === 0) return
+    if (useCartStore.getState().items.length === 0 || busy.current) return
+    busy.current = true
     setProcessing(true)
     try {
       let order: any
@@ -232,7 +239,8 @@ export default function POS() {
       await syncSentFlags(order.id, kotOk)
       setOrderMeta({ number: order.order_number, createdAt: order.created_at, sentAt: timeOf(new Date().toISOString()) })
       if (!kotOk) {
-        toast.error(`Order placed but KOT print failed: ${kotResult?.errors?.join(', ') || 'Unknown error'}`)
+        const oid = order.id
+        toast.sticky(`Order placed but KOT print failed: ${kotResult?.errors?.join(', ') || 'Unknown error'}`, () => retryKot(oid))
       } else {
         toast.success(`Sent to the kitchen · ${order.order_number}`)
       }
@@ -240,13 +248,25 @@ export default function POS() {
     } catch (err: any) {
       toast.error(`Failed: ${err.message}`)
     } finally {
+      busy.current = false
       setProcessing(false)
     }
   }, [user, taxRate, activeOrderId, activeSession])
 
+  /** Retry a failed KOT: prints only what the kitchen hasn't had yet, then refreshes Sent flags. */
+  async function retryKot(orderId: string) {
+    let r: any
+    try { r = await window.api.print.kots(orderId, user?.name) } catch (e: any) { r = { success: false, errors: [e.message] } }
+    const ok = !(r?.success === false || (r?.errors && r.errors.length > 0))
+    if (activeRef.current === orderId) await syncSentFlags(orderId, ok)
+    if (ok) toast.success('KOT printed')
+    else toast.sticky(`KOT print failed again: ${r?.errors?.join(', ') || 'check the printer'}`, () => retryKot(orderId))
+  }
+
   // Update order without printing KOT (e.g. adding water before payment)
   const handleUpdateOnly = useCallback(async () => {
-    if (!activeOrderId || useCartStore.getState().items.length === 0) return
+    if (!activeOrderId || useCartStore.getState().items.length === 0 || busy.current) return
+    busy.current = true
     setProcessing(true)
     try {
       await saveNewLines(activeOrderId)
@@ -258,6 +278,7 @@ export default function POS() {
     } catch (err: any) {
       toast.error(`Update failed: ${err.message}`)
     } finally {
+      busy.current = false
       setProcessing(false)
     }
   }, [taxRate, activeOrderId])
@@ -271,6 +292,8 @@ export default function POS() {
   // Complete payment. Returns true on success; the payment screen then shows the change.
   const handlePaymentComplete = useCallback(
     async (payments: PaymentEntry[], collectedByWaiter: string | null, tipAmount?: number, receiptCopies = 1): Promise<boolean> => {
+      if (busy.current) return false
+      busy.current = true
       setProcessing(true)
       try {
         let orderId = activeOrderId
@@ -342,7 +365,14 @@ export default function POS() {
         loadActiveOrders()
         refreshPendingSync(activeSession?.id || null)
         if (receiptResult?.success === false) {
-          toast.error(`Order completed but receipt print failed: ${receiptResult?.error || 'Check printer'}`)
+          const oid = orderId!
+          const retryReceipt = async () => {
+            let r: any
+            try { r = await window.api.print.receipt(oid) } catch (e: any) { r = { success: false, error: e.message } }
+            if (r?.success === false) toast.sticky(`Receipt print failed again: ${r?.error || 'check the printer'}`, retryReceipt)
+            else toast.success('Receipt printed')
+          }
+          toast.sticky(`${order.order_number} paid, but the receipt did not print: ${receiptResult?.error || 'check the printer'}`, retryReceipt)
         } else {
           toast.success(`${order.order_number} paid${receiptCopies > 0 ? ' · receipt printed' : ''}`)
         }
@@ -351,6 +381,7 @@ export default function POS() {
         toast.error(`Payment failed: ${err.message}`)
         return false
       } finally {
+        busy.current = false
         setProcessing(false)
       }
     },
@@ -358,8 +389,10 @@ export default function POS() {
   )
 
   // Hold order
-  const handleHoldOrder = useCallback(async () => {
-    if (useCartStore.getState().items.length === 0) return
+  const handleHoldOrder = useCallback(async (opts?: { silent?: boolean; noKot?: boolean }) => {
+    if (useCartStore.getState().items.length === 0 || busy.current) return
+    busy.current = true
+    setProcessing(true)
     try {
       let order: any
 
@@ -372,19 +405,43 @@ export default function POS() {
       } else {
         // Not saved yet — create as Hold + print KOT so kitchen starts
         order = await saveCartAsOrder('Hold')
-        try {
-          const kotRes = await window.api.print.kots(order.id, user?.name)
-          if (kotRes?.success === false) toast.error(`KOT print failed: ${kotRes?.errors?.join(', ') || 'Check printer'}`)
-        } catch {}
+        if (!opts?.noKot) {
+          const oid = order.id
+          try {
+            const kotRes = await window.api.print.kots(order.id, user?.name)
+            if (kotRes?.success === false) toast.sticky(`KOT print failed: ${kotRes?.errors?.join(', ') || 'Check printer'}`, () => retryKot(oid))
+          } catch {}
+        }
       }
 
       resetTicket()
       loadActiveOrders()
-      toast.success(`On hold: ${orderLabel(order)} · ${order.order_number}`)
+      if (!opts?.silent) toast.success(`On hold: ${orderLabel(order)} · ${order.order_number}`)
     } catch (err: any) {
       toast.error(`Hold failed: ${err.message}`)
+    } finally {
+      busy.current = false
+      setProcessing(false)
     }
   }, [user, taxRate, activeOrderId, activeSession])
+
+  // Before anyone is signed out (inactivity or Sign out): put the ticket on hold so the order link
+  // is kept. Unsent items are held without a KOT; the next cashier opens it from the rail and Sends once.
+  activeRef.current = activeOrderId
+  const holdRef = useRef(handleHoldOrder)
+  holdRef.current = handleHoldOrder
+  useEffect(() => {
+    useSessionGuard.getState().setBeforeSignOut(async () => {
+      if (useCartStore.getState().items.length === 0) return
+      await holdRef.current({ silent: true, noKot: true })
+      useCartStore.getState().clearCart()
+    })
+    return () => useSessionGuard.getState().setBeforeSignOut(null)
+  }, [])
+  const logout = useCallback(async () => {
+    try { await useSessionGuard.getState().beforeSignOut?.() } catch {}
+    rawLogout()
+  }, [rawLogout])
 
   /** Before leaving the current ticket. Returns false to stay. */
   async function leaveCurrent(nextLabel: string): Promise<boolean> {
@@ -393,11 +450,11 @@ export default function POS() {
     const unsaved = c.items.filter((i) => !i.dbId).length
     if (activeOrderId) {
       if (unsaved === 0) return true // everything is on the order already; it stays open
-      const hold = await askConfirm({ title: 'Hold this order first?', body: `${unsaved} item${unsaved === 1 ? ' is' : 's are'} not saved yet. Hold keeps ${unsaved === 1 ? 'it' : 'them'} on the order before you ${nextLabel}.`, ok: 'Hold and continue', cancel: 'Stay' })
+      const hold = await askConfirm({ title: t('Hold this order first?'), body: `${unsaved} item${unsaved === 1 ? ' is' : 's are'} not saved yet. Hold keeps ${unsaved === 1 ? 'it' : 'them'} on the order before you ${nextLabel}.`, ok: t('Hold and continue'), cancel: t('Stay') })
       if (hold) await handleHoldOrder()
       return hold
     }
-    return askConfirm({ title: 'Discard this ticket?', body: `${c.items.length} item${c.items.length === 1 ? '' : 's'} not saved to any order will be lost.`, ok: 'Discard', cancel: 'Keep', danger: true })
+    return askConfirm({ title: t('Discard this ticket?'), body: `${c.items.length} item${c.items.length === 1 ? '' : 's'} not saved to any order will be lost.`, ok: t('Discard'), cancel: t('Keep'), danger: true })
   }
 
   // Resume a held/open order — load into cart, NO voiding
@@ -534,11 +591,12 @@ export default function POS() {
           ['Kitchen view', () => setShowCoordinator(true)],
           ...(user?.role === 'supervisor' ? [['Settings', () => setShowSettings(true)]] : []),
           ['Close shift', () => setView('closeShift')],
+          ['lang', () => setLang(lang === 'ar' ? 'en' : 'ar')],
           ['Sign out', logout]
         ].map(([label, fn]) => (
           <button key={label as string} role="menuitem" type="button" onClick={() => { setUserMenu(false); (fn as () => void)() }}
-            className={cn('h-12 px-4 text-left text-sm font-medium hover:bg-n-cream', label === 'Sign out' && 'border-t border-n-line text-n-red')}>
-            {label as string}
+            className={cn('h-12 px-4 text-start text-sm font-medium hover:bg-n-cream', label === 'Sign out' && 'border-t border-n-line text-n-red', label === 'lang' && 'border-t border-n-line')}>
+            {label === 'lang' ? (lang === 'ar' ? 'English' : 'العربية') : t(label as string)}
           </button>
         ))}
       </div>
@@ -580,8 +638,9 @@ export default function POS() {
                 onPlaceOrder={handlePlaceOrder}
                 onUpdateOnly={activeOrderId ? handleUpdateOnly : undefined}
                 onPay={handlePay}
-                onHold={handleHoldOrder}
+                onHold={() => handleHoldOrder()}
                 onNewOrder={handleNewOrder}
+                onOpenOrder={handleResumeOrder}
                 taxRate={taxRate}
                 taxLabel={taxLabel}
                 isOrderPlaced={isOrderPlaced}
@@ -647,8 +706,8 @@ export default function POS() {
           tax={cart.getTaxTotal(taxRate)}
           taxLabel={taxLabel}
           lines={cart.items}
-          orderLabel={cart.tableName || (orderMeta.number ? orderMeta.number.split('-').pop()! : 'Quick sale')}
-          orderSub={[cart.room, cart.orderType === 'Dine In' ? `${cart.guests} guest${cart.guests === 1 ? '' : 's'}` : cart.orderType, cart.waiterName].filter(Boolean).join(' · ')}
+          orderLabel={cart.tableName || (orderMeta.number ? orderMeta.number.split('-').pop()! : t('Quick sale'))}
+          orderSub={[cart.room, cart.orderType === 'Dine In' ? `${cart.guests} ${t(cart.guests === 1 ? 'guest' : 'guests')}` : t(cart.orderType), cart.waiterName].filter(Boolean).join(' · ')}
           orderNumber={orderMeta.number}
           orderWaiterName={cart.waiterName}
           processing={processing}

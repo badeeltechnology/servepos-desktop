@@ -82,8 +82,9 @@ export default function History({ onClose, isSupervisor, cashierId, sessionId, b
     setOrderPayments(payments)
   }
 
-  async function doVoidOrder(id: string, reason: string, remarks?: string, disposition?: string) {
-    const voidedByName = cashierId ? 'Cashier' : (user?.name || 'Supervisor')
+  async function doVoidOrder(id: string, reason: string, remarks?: string, disposition?: string, approver?: string) {
+    // Record who approved it: the supervisor whose PIN was entered, or the signed-in supervisor
+    const voidedByName = approver || user?.name || (cashierId ? 'Cashier' : 'Supervisor')
     await window.api.orders.update(id, { status: 'Void', voidReason: reason, voidRemarks: remarks || undefined, voidedBy: voidedByName, voidDisposition: disposition || undefined })
     // Print void slip
     try { await window.api.print.voidSlip(id, reason, voidedByName, undefined, remarks, disposition) } catch {}
@@ -159,7 +160,7 @@ export default function History({ onClose, isSupervisor, cashierId, sessionId, b
             </div>
             <div className="overflow-y-auto">
               {pending.map((p) => (
-                <button key={p.id} type="button" onClick={() => viewOrderDetail(p)} className="flex h-11 w-full items-center gap-3 border-t border-[#F0ECE3] px-3.5 text-left text-[13px]">
+                <button key={p.id} type="button" onClick={() => viewOrderDetail(p)} className="flex h-11 w-full items-center gap-3 border-t border-[#F0ECE3] px-3.5 text-start text-[13px]">
                   <span className="cond num w-[110px] text-[17px] font-bold">{p.order_number}</span>
                   <span className="num w-[54px] text-n-muted">{timeOf(p.created_at)}</span>
                   <span className="min-w-0 flex-1 truncate">{orderLabel(p)} · {typeShort(p.order_type).toLowerCase()}</span>
@@ -193,7 +194,7 @@ export default function History({ onClose, isSupervisor, cashierId, sessionId, b
         </div>
 
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md bg-white shadow-tile">
-          <div className={cn(grid, 'h-8 flex-shrink-0 border-b border-n-line text-[11px] font-bold uppercase tracking-[.08em] text-n-muted')}>
+          <div className={cn(grid, 'h-8 flex-shrink-0 border-b border-n-line text-xs font-bold uppercase tracking-[.08em] text-n-muted')}>
             <span>Invoice</span><span>Time</span><span>Order</span><span>Status</span><span>ERPNext</span><span className="text-right">Total</span><span />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -318,7 +319,7 @@ export default function History({ onClose, isSupervisor, cashierId, sessionId, b
             amount: voidTarget.grand_total
           }}
           onCancel={() => setVoidTarget(null)}
-          onConfirm={(r) => doVoidOrder(voidTarget.id, r.reason, r.remarks, r.disposition)}
+          onConfirm={(r) => doVoidOrder(voidTarget.id, r.reason, r.remarks, r.disposition, r.approver?.name)}
         />
       )}
     </div>

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { setMoneyDecimals } from '../ui'
 
 // Live status for the lamps in the status band. The POS shell polls and writes here;
 // every full-screen view reads the same values so lamps never disagree.
@@ -22,6 +23,8 @@ interface StatusState {
   erpConfigured: boolean
   brand: { name: string; sub: string }
   currency: string
+  /** Payment method treated as cash (change, drawer). From config `cash_payment_method`, else the method named like "cash". */
+  cashMethod: string | null
   setSync: (s: SyncStatus | null) => void
   set: (p: Partial<Omit<StatusState, 'set' | 'setSync'>>) => void
 }
@@ -35,6 +38,7 @@ export const useStatus = create<StatusState>((set) => ({
   erpConfigured: true,
   brand: { name: 'ServePOS', sub: '' },
   currency: 'QAR',
+  cashMethod: null,
   setSync: (sync) => set((st) => (JSON.stringify(st.sync) === JSON.stringify(sync) ? st : { sync })),
   set: (p) => set(p as any)
 }))
@@ -44,7 +48,8 @@ export async function loadBrand() {
   try {
     const [rc, profile] = await Promise.all([window.api.receiptConfig.getAll(), window.api.config.get('pos_profile')])
     const name = (rc?.restaurant_name || 'ServePOS').trim()
-    useStatus.getState().set({ brand: { name, sub: profile || '' }, currency: rc?.currency_symbol || 'QAR' })
+    useStatus.getState().set({ brand: { name, sub: profile || '' }, currency: rc?.currency_symbol || 'QAR', cashMethod: rc?.cash_payment_method || null })
+    setMoneyDecimals(parseInt(rc?.currency_decimals ?? '2'))
   } catch { /* keep default */ }
   try {
     const printers = await window.api.printers.get()
@@ -71,4 +76,12 @@ export async function refreshPendingSync(sessionId: string | null) {
 export function today() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Is this payment method the cash drawer? Configured name wins; otherwise any method called "cash" (EN/AR). */
+export function isCashMethod(method: string | null | undefined, configured?: string | null): boolean {
+  if (!method) return false
+  const cfg = configured ?? useStatus.getState().cashMethod
+  if (cfg) return method === cfg
+  return /cash|نقد/i.test(method)
 }

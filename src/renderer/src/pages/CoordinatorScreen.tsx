@@ -132,6 +132,8 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
   const [ticks, setTicks] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem(TICKS_KEY) || '{}') } catch { return {} } })
   const [allDayPage, setAllDayPage] = useState(0)
   const knownIds = useRef<Set<string> | null>(null)
+  const lateNotified = useRef<Set<string>>(new Set())
+  const lateArmed = useRef(false)
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const { large } = useTier()
@@ -170,6 +172,15 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
         if (fresh && chimeRef.current) chime()
       }
       knownIds.current = ids
+      // Escalation: chime once when a ticket still being made passes 30 minutes
+      for (const o of data) {
+        if (['Open', 'Hold', 'Preparing'].includes(o.status) && getElapsedMinutes(o.created_at) >= 30 && !lateNotified.current.has(o.id)) {
+          lateNotified.current.add(o.id)
+          // Orders already late when the screen opens don't chime; later ones do
+          if (lateArmed.current && chimeRef.current) chime()
+        }
+      }
+      lateArmed.current = true
     } catch { /* ignore */ }
     try { useStatus.getState().setSync(await window.api.sync.status()) } catch {}
   }, [])
@@ -227,7 +238,9 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
     const y = d.getFullYear()
     const m = String(d.getMonth() + 1).padStart(2, '0')
     const day = String(d.getDate()).padStart(2, '0')
-    return `${y}-${m}-${day}` === dateFilter
+    const key = `${y}-${m}-${day}`
+    // "Today" also keeps still-open orders started before midnight (they are still on the pass)
+    return dateFilter === todayLocal() ? key <= dateFilter : key === dateFilter
   }), [orders, dateFilter])
 
   // Unique values for dropdowns (based on date-filtered set)
@@ -378,7 +391,7 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
     </div>
   ) : (
     <div className="overflow-hidden rounded-md bg-white shadow-tile">
-      <div className="grid h-9 grid-cols-[110px_90px_1fr_120px_130px_150px] items-center gap-3 border-b border-n-line px-4 text-[11px] font-bold uppercase tracking-[.08em] text-n-muted">
+      <div className="grid h-9 grid-cols-[110px_90px_1fr_120px_130px_150px] items-center gap-3 border-b border-n-line px-4 text-xs font-bold uppercase tracking-[.08em] text-n-muted">
         <span>Order</span><span>Table</span><span>Items</span><span>Status</span><span>Time</span><span />
       </div>
       {list.map((order) => {
@@ -505,7 +518,7 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
                 const collapsed = collapsedGroups[key]
                 return (
                   <div key={key}>
-                    <button type="button" onClick={() => toggleGroup(key)} className="mb-2 flex h-10 w-full items-center gap-2 text-left">
+                    <button type="button" onClick={() => toggleGroup(key)} className="mb-2 flex h-10 w-full items-center gap-2 text-start">
                       <span className={cn('transition-transform', collapsed ? '' : 'rotate-90')}>▶</span>
                       <Cap className="text-n-muted">{groupBy === 'status' ? (STAGE[key]?.label || key) : key}</Cap>
                       <span className="cond num text-lg font-bold">{groupOrders.length}</span>
@@ -561,6 +574,7 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
 }
 
 // ==================== Ticket ====================
+const ALLERGY = /allerg|حساسي|nut|gluten|lactose|shellfish|peanut/i
 const TEXT: Record<TextSize, string> = { sm: 'text-[13px]', md: 'text-[15px]', lg: 'text-[18px]' }
 
 function Ticket({ order, items, ticks, tickKey, textSize, loading, onTick, onAdvance, onOpen, selected }: {
@@ -583,7 +597,7 @@ function Ticket({ order, items, ticks, tickKey, textSize, loading, onTick, onAdv
   return (
     <article className={cn('flex min-h-0 flex-col overflow-hidden rounded-md shadow-tile', isReady ? 'bg-n-wash' : 'bg-white', selected && 'outline outline-[3px] -outline-offset-[3px] outline-n-teal', urgent && 'animate-edited')}>
       <span className="h-[7px] flex-shrink-0" style={{ background: st.color }} />
-      <button type="button" onClick={onOpen} className="flex items-start gap-2 px-3 pb-1.5 pt-2 text-left">
+      <button type="button" onClick={onOpen} className="flex items-start gap-2 px-3 pb-1.5 pt-2 text-start">
         <span className="flex min-w-0 flex-1 flex-col leading-tight">
           <span className="flex items-baseline gap-2">
             <span className="cond text-[36px] font-bold leading-none">{orderTitle(order)}</span>
@@ -593,13 +607,15 @@ function Ticket({ order, items, ticks, tickKey, textSize, loading, onTick, onAdv
         </span>
         <span className={cn('cond num flex h-[34px] min-w-[54px] items-center justify-center rounded px-2 text-[22px] font-bold', late || urgent ? 'bg-n-red text-white' : warn ? 'text-[#B56A00]' : 'text-n-muted')}>{formatElapsed(elapsed)}</span>
       </button>
-      {order.order_notes && <div className="mx-3 mb-1 truncate rounded-md bg-[#FBEFD9] px-2 py-1 text-[13px] font-semibold text-[#8A5A00]">{order.order_notes}</div>}
+      {order.order_notes && (
+        <div className={cn('mx-3 mb-1 rounded-md px-2 py-1 text-[13px] font-semibold', ALLERGY.test(order.order_notes) ? 'bg-n-red text-white' : 'line-clamp-2 bg-[#FBEFD9] text-[#8A5A00]')}>{order.order_notes}</div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-1.5">
         {shown.map((it) => {
           const k = tickKey(order, it)
           const done = !!ticks[k] || isReady || order.status === 'Invoiced'
           return (
-            <button key={it.key} type="button" aria-pressed={done} onClick={() => onTick(k)} className="flex min-h-[40px] items-start gap-2.5 rounded-md px-1.5 py-[7px] text-left">
+            <button key={it.key} type="button" aria-pressed={done} onClick={() => onTick(k)} className="flex min-h-[40px] items-start gap-2.5 rounded-md px-1.5 py-[7px] text-start">
               <span className={cn('flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-md', done ? 'bg-n-green' : 'border-2 border-[#B9B2A4]')}>
                 {done && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10" /></svg>}
               </span>
@@ -607,13 +623,13 @@ function Ticket({ order, items, ticks, tickKey, textSize, loading, onTick, onAdv
                 <span className={cn('font-semibold leading-tight', TEXT[textSize], done && 'text-n-stone line-through')}>
                   <span className="cond num mr-1.5 inline-block rounded px-1 text-white" style={{ background: itemColor(it.code, it.name) }}>{it.qty}</span>{it.name}
                 </span>
-                {it.mods && <span className="text-[12.5px] font-semibold text-n-red">{it.mods}</span>}
-                {it.note && <span className="text-[12.5px] font-semibold text-[#2E6DA4]">{it.note}</span>}
+                {it.mods && <span className="text-[13px] font-semibold text-n-red">{it.mods}</span>}
+                {it.note && <span className={cn('text-[13px] font-semibold', ALLERGY.test(it.note) ? 'rounded bg-n-red px-1.5 text-white' : 'text-[#2E6DA4]')}>{it.note}</span>}
               </span>
             </button>
           )
         })}
-        {more > 0 && <button type="button" onClick={onOpen} className="px-2 py-0.5 text-left text-[13px] text-n-muted">+ {more} more item{more === 1 ? '' : 's'}, tap to open</button>}
+        {more > 0 && <button type="button" onClick={onOpen} className="px-2 py-0.5 text-start text-[13px] text-n-muted">+ {more} more item{more === 1 ? '' : 's'}, tap to open</button>}
         {items.length === 0 && <span className="px-2 py-1 text-[13px] text-n-muted">{order.item_count} items</span>}
       </div>
       <div className="flex gap-1.5 px-2.5 pb-2.5 pt-2">
@@ -668,7 +684,7 @@ function OrderDetail({ order, items, raw, onUpdateStatus, onClose, loading, cur 
         </div>
 
         <div className="rounded-md bg-white p-3 shadow-tile">
-          <span className="flex justify-between"><Cap className="text-n-muted">Items</Cap><span className="text-[11px] text-n-muted">{items.length} line{items.length === 1 ? '' : 's'}</span></span>
+          <span className="flex justify-between"><Cap className="text-n-muted">Items</Cap><span className="text-xs text-n-muted">{items.length} line{items.length === 1 ? '' : 's'}</span></span>
           {items.length === 0 && <div className="py-3 text-center text-xs text-n-muted">No items</div>}
           {items.map((it, i) => {
             const r = raw?.[i]
@@ -681,7 +697,7 @@ function OrderDetail({ order, items, raw, onUpdateStatus, onClose, loading, cur 
                   <div className="font-medium">{it.name}</div>
                   {it.mods && <div className="text-xs text-n-red">{it.mods}</div>}
                   {it.note && <div className="text-xs italic text-[#2E6DA4]">{it.note}</div>}
-                  {rate > 0 && <div className="text-[11px] text-n-muted">@ {money(rate)}</div>}
+                  {rate > 0 && <div className="text-xs text-n-muted">@ {money(rate)}</div>}
                 </div>
                 {amount > 0 && <div className="num text-xs font-semibold">{money(amount)}</div>}
               </div>
@@ -743,21 +759,21 @@ function formatLogTime(s: string): string {
 function PrintHistory({ log, isRemote }: { log: any[]; isRemote: boolean }) {
   return (
     <div className="rounded-md bg-white p-3 shadow-tile">
-      <span className="flex justify-between"><Cap className="text-n-muted">Print history</Cap><span className="text-[11px] text-n-muted">{log.length} event{log.length === 1 ? '' : 's'}</span></span>
+      <span className="flex justify-between"><Cap className="text-n-muted">Print history</Cap><span className="text-xs text-n-muted">{log.length} event{log.length === 1 ? '' : 's'}</span></span>
       {isRemote && log.length === 0 ? (
-        <div className="py-2 text-center text-[11px] italic text-n-muted">Print history is recorded on the cashier machine</div>
+        <div className="py-2 text-center text-xs italic text-n-muted">Print history is recorded on the cashier machine</div>
       ) : log.length === 0 ? (
-        <div className="py-2 text-center text-[11px] text-n-muted">No prints yet</div>
+        <div className="py-2 text-center text-xs text-n-muted">No prints yet</div>
       ) : (
         <div className="mt-1.5 flex flex-col gap-1.5">
           {log.map((row) => {
             const source = row.source || 'manual'
             const failed = row.status !== 'success'
             return (
-              <div key={row.id} className="flex items-center gap-2 text-[11px]">
+              <div key={row.id} className="flex items-center gap-2 text-xs">
                 <span className="num w-14 text-n-muted">{formatLogTime(row.printed_at)}</span>
                 <span className="w-16 font-semibold">{PRINT_TYPE_LABEL[row.print_type] || row.print_type}</span>
-                <span className="rounded-full bg-n-cream px-1.5 py-0.5 text-[9px] font-bold uppercase text-n-muted">{source}</span>
+                <span className="rounded-full bg-n-cream px-1.5 py-0.5 text-xs font-bold uppercase text-n-muted">{source}</span>
                 <span className="flex-1 truncate text-n-muted" title={row.printer_name || ''}>{row.printer_name || '—'}</span>
                 {row.actor_name && <span className="truncate text-n-muted" title={row.actor_name}>{row.actor_name}</span>}
                 {failed ? <span className="text-n-red" title={row.error || ''}>✗</span> : <span className="text-n-green">✓</span>}

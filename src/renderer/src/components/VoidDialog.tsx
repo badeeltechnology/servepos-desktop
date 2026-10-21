@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useStatus } from '../stores/status'
 import { Btn, Dialog, Option, Keypad, PinDots, Stepper, Cap, Field, pinKey, money, C } from '../ui'
 import { cn } from '../lib/utils'
+import { useT } from '../stores/i18n'
 
 // One void flow for everything: a sent line on the ticket, a held/open order, a paid sale.
 // Reason → was it made (waste / return) → optional remarks, with the supervisor PIN inline
@@ -27,9 +28,11 @@ export interface VoidTarget {
   amount?: number
 }
 
-export default function VoidDialog({ target, requirePin, onCancel, onConfirm }: {
+export default function VoidDialog({ target, requirePin, initialQty, onCancel, onConfirm }: {
   target: VoidTarget
   requirePin: boolean
+  /** Pre-selected quantity (e.g. 1 when the cashier pressed minus) */
+  initialQty?: number
   onCancel: () => void
   onConfirm: (r: VoidResult) => Promise<void> | void
 }) {
@@ -41,7 +44,8 @@ export default function VoidDialog({ target, requirePin, onCancel, onConfirm }: 
   const [disposition, setDisposition] = useState<VoidResult['disposition'] | ''>('')
   const [remarks, setRemarks] = useState('')
   const [showRemarks, setShowRemarks] = useState(false)
-  const [qty, setQty] = useState(target.maxQty || 1)
+  const t = useT()
+  const [qty, setQty] = useState(Math.min(target.maxQty || 1, initialQty || target.maxQty || 1))
   const [pin, setPin] = useState('')
   const [approver, setApprover] = useState<{ id: string; name: string } | null>(null)
   const [pinError, setPinError] = useState('')
@@ -64,8 +68,8 @@ export default function VoidDialog({ target, requirePin, onCancel, onConfirm }: 
         const u = await window.api.users.verifyPin(pin)
         if (mySeq !== verifySeq.current) return
         if (u && u.role === 'supervisor') { setApprover({ id: u.id, name: u.name }); setPinError('') }
-        else if (u) { setPinError(`${u.name} is not a supervisor`); setPin('') }
-        else if (pin.length >= 8) { setPinError('Invalid PIN'); setPin('') }
+        else if (u) { setPinError(t('{name} is not a supervisor', { name: u.name })); setPin('') }
+        else if (pin.length >= 8) { setPinError(t('Invalid PIN')); setPin('') }
       } catch { /* keep typing */ }
     })()
   }, [pin, requirePin, approver])
@@ -76,10 +80,10 @@ export default function VoidDialog({ target, requirePin, onCancel, onConfirm }: 
   const ready = !!finalReason && !!disposition && pinOk && !busy
 
   let label: string
-  if (!finalReason) label = 'Choose why'
-  else if (!disposition) label = 'Was it made?'
-  else if (!pinOk) label = 'Needs the supervisor PIN'
-  else label = target.kind === 'line' ? `Void ${qty} · ${cur} ${money(lineAmount)}` : `Void order${target.amount ? ` · ${cur} ${money(target.amount)}` : ''}`
+  if (!finalReason) label = t('Choose why')
+  else if (!disposition) label = t('Was it made?')
+  else if (!pinOk) label = t('Needs the supervisor PIN')
+  else label = target.kind === 'line' ? t('Void {n} · {amount}', { n: qty, amount: `${cur} ${money(lineAmount)}` }) : target.amount ? t('Void order · {amount}', { amount: `${cur} ${money(target.amount)}` }) : t('Void order')
 
   async function submit() {
     if (!ready || !disposition) return
@@ -112,52 +116,52 @@ export default function VoidDialog({ target, requirePin, onCancel, onConfirm }: 
         )}
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-semibold">Why</span>
+          <span className="text-sm font-semibold">{t('Why')}</span>
           <div className="grid grid-cols-2 gap-1.5">
             {reasons.map((r) => (
               <Option key={r.name} active={!other && reason === r.reason_name} onClick={() => { setReason(r.reason_name); setOther(false) }}>
                 <span className="truncate">{r.reason_name}</span>
               </Option>
             ))}
-            <Option active={other} onClick={() => setOther(true)}>Other</Option>
+            <Option active={other} onClick={() => setOther(true)}>{t('Other')}</Option>
           </div>
           {other && (
-            <Field data-keyboard="full" autoFocus={reasons.length > 0} value={otherText} onChange={(e) => setOtherText(e.target.value)} placeholder="Type the reason" />
+            <Field data-keyboard="full" autoFocus={reasons.length > 0} value={otherText} onChange={(e) => setOtherText(e.target.value)} placeholder={t('Type the reason')} />
           )}
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-semibold">Was it made?</span>
+          <span className="text-sm font-semibold">{t('Was it made?')}</span>
           <div className="grid grid-cols-2 gap-1.5">
-            <Option active={disposition === 'Waste'} onClick={() => setDisposition('Waste')}>Yes, record as waste</Option>
-            <Option active={disposition === 'Return to Inventory'} onClick={() => setDisposition('Return to Inventory')}>No, return the stock</Option>
+            <Option active={disposition === 'Waste'} onClick={() => setDisposition('Waste')}>{t('Yes, record as waste')}</Option>
+            <Option active={disposition === 'Return to Inventory'} onClick={() => setDisposition('Return to Inventory')}>{t('No, return the stock')}</Option>
           </div>
         </div>
 
         {showRemarks ? (
           <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-semibold">Remarks <span className="font-normal text-n-muted">(optional)</span></span>
+            <span className="text-sm font-semibold">{t('Remarks')} <span className="font-normal text-n-muted">(optional)</span></span>
             <Field data-keyboard="full" autoFocus value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Anything the supervisor should know" />
           </div>
         ) : (
-          <button type="button" onClick={() => setShowRemarks(true)} className="self-start text-sm font-semibold text-n-teal">+ Add a remark</button>
+          <button type="button" onClick={() => setShowRemarks(true)} className="self-start text-sm font-semibold text-n-teal">{t('+ Add a remark')}</button>
         )}
 
         <span className="flex-1" />
         <div className="flex gap-2">
-          <Btn size="lg" variant="outline" onClick={onCancel}>Keep it</Btn>
+          <Btn size="lg" variant="outline" onClick={onCancel}>{t('Keep it')}</Btn>
           <span className="flex-1" />
-          <Btn size="lg" variant="danger" disabled={!ready} onClick={submit} className="px-[22px] text-base font-bold">{busy ? 'Voiding…' : label}</Btn>
+          <Btn size="lg" variant="danger" disabled={!ready} onClick={submit} className="px-[22px] text-base font-bold">{busy ? t('Voiding…') : label}</Btn>
         </div>
       </div>
 
       {requirePin && (
         <div className="flex w-[270px] flex-shrink-0 flex-col gap-2.5 bg-n-deep px-4 py-[18px] text-white">
-          <Cap className="text-n-mist">Supervisor PIN</Cap>
+          <Cap className="text-n-mist">{t('Supervisor PIN')}</Cap>
           {approver ? (
-            <span className="text-[13px] font-semibold text-n-lamp">Approved by {approver.name}</span>
+            <span className="text-[13px] font-semibold text-n-lamp">{t('Approved by {name}', { name: approver.name })}</span>
           ) : (
-            <span className={cn('text-[13px]', pinError ? 'font-semibold text-n-coral' : 'text-n-frost')}>{pinError || 'A supervisor enters their PIN to approve.'}</span>
+            <span className={cn('text-[13px]', pinError ? 'font-semibold text-n-coral' : 'text-n-frost')}>{pinError || t('A supervisor enters their PIN to approve.')}</span>
           )}
           <PinDots count={Math.max(6, pin.length)} filled={approver ? Math.max(6, pin.length) : pin.length} size={14} />
           <Keypad className="flex-1" onKey={(k) => { if (approver) { setApprover(null); setPin(pinKey('', k)); return } setPinError(''); setPin(pinKey(pin, k)) }} keyClass="text-[28px]" />

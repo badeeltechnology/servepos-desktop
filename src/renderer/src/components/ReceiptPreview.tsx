@@ -80,7 +80,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
           </div>
 
           {/* Receipt content */}
-          <div ref={receiptRef} className="overflow-y-auto px-6 py-5 font-mono text-[11.5px] leading-relaxed text-n-ink">
+          <div ref={receiptRef} className="overflow-y-auto px-6 py-5 font-mono text-xs leading-relaxed text-n-ink">
             {/* Header */}
             <div className="text-center">
               {showArabic && config.restaurant_name_ar && (
@@ -137,10 +137,10 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
                   <p className="pl-6 text-n-muted" dir="rtl">{itemInfo.item_name_ar}</p>
                 )}
                 {config.show_description_on_receipt === '1' && itemInfo.description && (
-                  <p className="pl-6 text-n-muted" style={{ fontSize: '9px' }}>{itemInfo.description}</p>
+                  <p className="pl-6 text-n-muted" style={{ fontSize: '12px' }}>{itemInfo.description}</p>
                 )}
                 {config.show_description_ar_on_receipt === '1' && itemInfo.description_ar && (
-                  <p className="pl-6 text-n-muted" dir="rtl" style={{ fontSize: '9px' }}>{itemInfo.description_ar}</p>
+                  <p className="pl-6 text-n-muted" dir="rtl" style={{ fontSize: '12px' }}>{itemInfo.description_ar}</p>
                 )}
                 {item.modifiers && JSON.parse(item.modifiers).map((m: any, i: number) => (
                   <div key={i} className="flex justify-between text-n-muted pl-4">

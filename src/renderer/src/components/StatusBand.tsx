@@ -1,3 +1,4 @@
+import { useT } from '../stores/i18n'
 import { ReactNode, useState } from 'react'
 import { useStatus } from '../stores/status'
 import { useAppStore } from '../stores/app'
@@ -23,19 +24,20 @@ export default function StatusBand({ userName, onUser, onWaiter, showWaiter = tr
   const { sync, pendingSync, failedSync, printers, waiterPending, erpConfigured, brand } = useStatus()
   const online = useAppStore((s) => s.isOnline)
   const [running, setRunning] = useState(false)
+  const t = useT()
 
   const erpOk = sync?.lastResult ? !(sync.lastResult.down && sync.lastResult.down.success === false) && !(sync.lastResult.up && sync.lastResult.up.success === false) : true
   const erpTone = !erpConfigured ? 'off' : !online ? 'bad' : erpOk ? 'ok' : 'warn'
-  const erpLabel = !erpConfigured ? 'ERPNext not set' : !online ? 'Offline' : erpOk ? 'ERPNext' : 'ERPNext error'
+  const erpLabel = !erpConfigured ? t('ERPNext not set up') : !online ? t('Offline') : erpOk ? 'ERPNext' : t('ERPNext error')
   const erpTitle = sync?.lastResult?.down?.error || sync?.lastResult?.up?.errors?.[0] || (sync?.lastSyncAt ? `Last sync ${new Date(sync.lastSyncAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : '')
 
   const syncing = running || !!sync?.isSyncing
   const next = countdown(sync?.nextSyncIn)
   let syncLamp: ReactNode
-  if (syncing) syncLamp = <Lamp tone="info" label="Syncing…" />
-  else if (failedSync > 0) syncLamp = <Lamp tone="bad" label={`${failedSync} failed to sync`} onClick={runSync} title="Tap to sync now" />
-  else if (pendingSync > 0) syncLamp = <Lamp tone="warn" strong label={`${pendingSync} to sync${next ? ` · ${next}` : ''}`} onClick={runSync} title="Tap to sync now" />
-  else syncLamp = <Lamp tone="ok" label={next ? `All synced · ${next}` : 'All synced'} onClick={runSync} title="Tap to sync now" />
+  if (syncing) syncLamp = <Lamp tone="info" label={t('Syncing…')} />
+  else if (failedSync > 0) syncLamp = <Lamp tone="bad" label={t('{n} failed to sync', { n: failedSync })} onClick={runSync} title="Tap to sync now" />
+  else if (pendingSync > 0) syncLamp = <Lamp tone="warn" strong label={`${t('{n} to sync', { n: pendingSync })}${next ? ` · ${next}` : ''}`} onClick={runSync} title="Tap to sync now" />
+  else syncLamp = <Lamp tone="ok" label={next ? `${t('All synced')} · ${next}` : t('All synced')} onClick={runSync} title="Tap to sync now" />
 
   async function runSync() {
     if (syncing) return
@@ -43,7 +45,7 @@ export default function StatusBand({ userName, onUser, onWaiter, showWaiter = tr
     try {
       const r: any = await window.api.sync.run()
       if (r?.up && r.up.success === false) toast.error(`Sync finished with errors: ${r.up.errors?.[0] || ''}`)
-      else toast.success('Sync complete')
+      else toast.success(t('Sync complete'))
     } catch (e: any) {
       toast.error(`Sync failed: ${e?.message || e}`)
     } finally {
@@ -60,11 +62,11 @@ export default function StatusBand({ userName, onUser, onWaiter, showWaiter = tr
       <span className="flex-1" />
       <span className="hidden items-center gap-[18px] min-[900px]:flex">
         <Lamp tone={erpTone} label={erpLabel} title={erpTitle} />
-        <Lamp tone={printers > 0 ? 'ok' : 'warn'} strong={printers === 0} label={printers > 0 ? `Printers ${printers}` : 'No printer'} />
+        <Lamp tone={printers > 0 ? 'ok' : 'warn'} strong={printers === 0} label={printers > 0 ? t('Printers {n}', { n: printers }) : t('No printer set up')} />
       </span>
       {syncLamp}
       {showWaiter && (
-        <Lamp tone={waiterPending > 0 ? 'ok' : 'off'} strong={waiterPending > 0} label={waiterPending > 0 ? `Waiter app · ${waiterPending} new` : 'Waiter app'} onClick={onWaiter} />
+        <Lamp tone={waiterPending > 0 ? 'ok' : 'off'} strong={waiterPending > 0} label={waiterPending > 0 ? t('Waiter app · {n} new', { n: waiterPending }) : t('Waiter app')} onClick={onWaiter} />
       )}
       {right}
       <Clock className="cond num text-[17px] font-semibold text-white" />

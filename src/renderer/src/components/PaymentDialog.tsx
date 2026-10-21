@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { CartItem } from '../stores/cart'
 import { useAuthStore } from '../stores/auth'
-import { useStatus } from '../stores/status'
+import { useStatus, isCashMethod } from '../stores/status'
+import { useSessionGuard } from '../stores/ui'
+import { useT } from '../stores/i18n'
 import StatusBand from './StatusBand'
 import { Btn, SubBar, BackButton, Cap, Keypad, Field, Dot, money, amountKey, C } from '../ui'
 import { cn } from '../lib/utils'
@@ -75,6 +77,14 @@ export default function PaymentDialog(props: Props) {
   const [copies, setCopies] = useState<0 | 1 | 2>(1)
   const [error, setError] = useState('')
   const [done, setDone] = useState<null | { change: number; tip: number; payments: PaymentEntry[] }>(null)
+  const [finishing, setFinishing] = useState(false)
+  const t = useT()
+
+  // No inactivity sign-out while this screen is open
+  useEffect(() => {
+    useSessionGuard.getState().setPaymentOpen(true)
+    return () => useSessionGuard.getState().setPaymentOpen(false)
+  }, [])
 
   useEffect(() => {
     window.api.paymentMethods.get().then((m: Method[]) => {
@@ -86,27 +96,29 @@ export default function PaymentDialog(props: Props) {
     window.api.receiptConfig.getAll().then((c: any) => setRc(c || {})).catch(() => {})
   }, [])
 
-  const isCash = method === 'Cash'
-  const isCard = method === 'Card'
+  const cashMethod = useStatus((s) => s.cashMethod)
+  const cashy = (m: string) => isCashMethod(m, cashMethod)
+  const isCash = cashy(method)
   const received = parseFloat(cashEntry || '0') || 0
   const tipVal = parseFloat(tip || '0') || 0
 
-  // What we will hand to onComplete (before capping), same shape as before
-  const payments: PaymentEntry[] = useMemo(() => {
+  // Tender lines before the tip. Non-cash lines are capped at what is owed; only cash can go over
+  // (the excess is change). The tip is explicit (Tip button) and rides on the first non-cash line.
+  const lines: PaymentEntry[] = useMemo(() => {
     if (split) return parts
     if (!method) return []
     if (isCash) return [{ method, amount: fresh && !cashEntry ? due : received, reference: '' }]
-    return [{ method, amount: Math.round((due + (isCard ? tipVal : 0)) * 100) / 100, reference }]
-  }, [split, parts, method, isCash, isCard, fresh, cashEntry, received, due, tipVal, reference])
-
-  const totalPaid = payments.reduce((s, p) => s + p.amount, 0)
-  const remaining = Math.round((due - totalPaid) * 100) / 100
-  const hasCard = payments.some((p) => p.method === 'Card' && p.amount > 0)
-  const cardOverpay = hasCard ? Math.max(0, totalPaid - due) : 0
-  const tipAmount = cardOverpay // For card: overpayment is tip
-  const change = !hasCard && totalPaid > due ? totalPaid - due : 0 // For cash: overpayment is change
+    return [{ method, amount: due, reference }]
+  }, [split, parts, method, isCash, fresh, cashEntry, received, due, reference])
+  const tipLine = lines.findIndex((p) => !cashy(p.method) && p.amount > 0)
+  const tipAmount = tipLine >= 0 ? Math.round(tipVal * 100) / 100 : 0
+  const covered = lines.reduce((s, p) => s + p.amount, 0)
+  const remaining = Math.round((due - covered) * 100) / 100
+  const change = covered > due && lines.some((p) => cashy(p.method)) ? Math.round((covered - due) * 100) / 100 : 0
   const short = remaining > 0.004
-  const ok = !short && payments.length > 0 && !processing
+  const ok = !short && lines.length > 0 && !processing && !finishing
+  // What goes to onComplete: same shape as before (a card line carrying a tip is due + tip)
+  const payments: PaymentEntry[] = lines.map((p, i) => (i === tipLine && tipAmount > 0 ? { ...p, amount: Math.round((p.amount + tipAmount) * 100) / 100 } : p))
 
   // Quick cash: exact + the notes a guest is likely to hand over
   const chips = useMemo(() => {
@@ -121,12 +133,20 @@ export default function PaymentDialog(props: Props) {
   function onKey(k: Parameters<typeof amountKey>[1]) {
     setError('')
     if (done) return
+    if (tipMode) { setTip(amountKey(tip, k)); return }
     if (split) {
-      setParts((ps) => ps.map((p, i) => (i === activePart ? { ...p, amount: parseFloat(amountKey(partFresh || !p.amount ? '' : String(p.amount), k)) || 0 } : p)))
+      setParts((ps) => ps.map((p, i) => {
+        if (i !== activePart) return p
+        let amt = parseFloat(amountKey(partFresh || !p.amount ? '' : String(p.amount), k)) || 0
+        if (!cashy(p.method)) {
+          const others = ps.reduce((s, x, j) => (j === i ? s : s + x.amount), 0)
+          amt = Math.min(amt, Math.max(0, Math.round((due - others) * 100) / 100))
+        }
+        return { ...p, amount: amt }
+      }))
       setPartFresh(false)
       return
     }
-    if (tipMode) { setTip(amountKey(tip, k)); return }
     if (isCash) {
       const base = fresh ? '' : cashEntry
       setCashEntry(amountKey(base, k))
@@ -148,27 +168,31 @@ export default function PaymentDialog(props: Props) {
 
   async function handleComplete() {
     if (done) { onDone?.(); return }
+    if (finishing) return
     if (short) { setError(`Payment is short by ${money(remaining)}`); return }
-    // Cap only cash payments (excess cash = change returned, not stored)
-    // Card payments keep full amount (excess = tip, actually charged to card)
+    // Cap cash at what is still owed (the excess is change handed back, not stored).
+    // Non-cash lines are already capped; the one carrying the tip keeps it.
     let left = due
-    const capped = payments.map((p) => {
-      if (p.method === 'Cash') {
-        const amt = Math.min(p.amount, left)
-        left = Math.max(0, left - amt)
-        return { ...p, amount: Math.round(amt * 100) / 100 }
-      }
-      left = Math.max(0, left - p.amount)
-      return p
+    const capped = payments.map((p, i) => {
+      const base = i === tipLine ? p.amount - tipAmount : p.amount
+      const amt = Math.min(base, left)
+      left = Math.max(0, left - amt)
+      return { ...p, amount: Math.round((amt + (i === tipLine ? tipAmount : 0)) * 100) / 100 }
     }).filter((p) => p.amount > 0)
-    const res = await onComplete(capped, collectedBy || null, tipAmount > 0 ? tipAmount : undefined, copies)
-    if (res === false) return
-    setDone({ change, tip: tipAmount, payments: capped })
+    setFinishing(true)
+    try {
+      const res = await onComplete(capped, collectedBy || null, tipAmount > 0 ? tipAmount : undefined, copies)
+      if (res === false) return
+      setDone({ change, tip: tipAmount, payments: capped })
+    } finally {
+      setFinishing(false)
+    }
   }
 
   const heroChange = done ? done.change : change
-  const entryLabel = split ? `${parts[activePart]?.method || ''} amount` : tipMode ? 'Tip on card' : isCash ? 'Cash received' : 'Amount'
-  const entryValue = split ? (parts[activePart]?.amount || 0) : tipMode ? tipVal : isCash ? (fresh && !cashEntry ? due : received) : due + (isCard ? tipVal : 0)
+  const tipMethod = tipLine >= 0 ? lines[tipLine].method : null
+  const entryLabel = tipMode ? t('Tip on {method}', { method: tipMethod || '' }) : split ? `${parts[activePart]?.method || ''} amount` : isCash ? t('Cash received') : t('Amount')
+  const entryValue = tipMode ? tipVal : split ? (parts[activePart]?.amount || 0) : isCash ? (fresh && !cashEntry ? due : received) : due
   const rcMethodLine = (done?.payments || payments).map((p) => `Paid ${p.method.toLowerCase()}`)
 
   return (
@@ -179,19 +203,19 @@ export default function PaymentDialog(props: Props) {
         <span className="cond text-2xl font-bold">{snap.label}</span>
         <span className="truncate text-[13px] text-n-mist">{snap.sub}</span>
         <span className="flex-1" />
-        <Btn variant="ghostDark" aria-pressed={split} onClick={startSplit} disabled={!!done || methods.length < 2} className={cn(split && 'bg-white text-n-deep')}>Split</Btn>
-        <Btn variant="ghostDark" aria-pressed={tipMode} disabled={!!done || split || !isCard} onClick={() => setTipMode(!tipMode)} className={cn(tipMode && 'bg-white text-n-deep')}>Tip</Btn>
+        <Btn variant="ghostDark" aria-pressed={split} onClick={startSplit} disabled={!!done || methods.length < 2} className={cn(split && 'bg-white text-n-deep')}>{t('Split')}</Btn>
+        <Btn variant="ghostDark" aria-pressed={tipMode} disabled={!!done || tipLine < 0} onClick={() => setTipMode(!tipMode)} className={cn(tipMode && 'bg-white text-n-deep')}>{tipAmount > 0 ? `${t('Tip')} ${money(tipAmount)}` : t('Tip')}</Btn>
         {waiters.length > 0 && (
           <span className="relative">
             <Btn variant="ghostDark" disabled={!!done} onClick={() => setShowCollector(!showCollector)} aria-haspopup="menu">
-              {collectedBy ? `Collected by ${collectedBy}` : 'Collected by cashier'}
+              {collectedBy ? t('Collected by {name}', { name: collectedBy }) : t('Collected by cashier')}
             </Btn>
             {showCollector && (
               <span role="menu" className="absolute right-0 top-full z-50 mt-1 flex max-h-[60vh] w-56 flex-col overflow-y-auto rounded-md bg-white text-n-ink shadow-pop">
-                <button type="button" role="menuitem" onClick={() => { setCollectedBy(''); setShowCollector(false) }} className={cn('h-12 px-3 text-left text-sm', !collectedBy && 'bg-n-ice font-semibold')}>Cashier (direct)</button>
+                <button type="button" role="menuitem" onClick={() => { setCollectedBy(''); setShowCollector(false) }} className={cn('h-12 px-3 text-start text-sm', !collectedBy && 'bg-n-ice font-semibold')}>Cashier (direct)</button>
                 {waiters.map((w) => (
                   <button key={w.name} type="button" role="menuitem" onClick={() => { setCollectedBy(w.waiter_name); setShowCollector(false) }}
-                    className={cn('h-12 px-3 text-left text-sm', collectedBy === w.waiter_name && 'bg-n-ice font-semibold')}>{w.waiter_name}</button>
+                    className={cn('h-12 px-3 text-start text-sm', collectedBy === w.waiter_name && 'bg-n-ice font-semibold')}>{w.waiter_name}</button>
                 ))}
               </span>
             )}
@@ -201,7 +225,7 @@ export default function PaymentDialog(props: Props) {
 
       <div className="flex min-h-0 flex-1 gap-3 p-3">
         {/* Receipt, as it will print */}
-        <aside aria-label="Receipt" className="hidden w-[250px] flex-shrink-0 flex-col gap-px overflow-hidden bg-white px-3.5 pb-3 pt-3.5 font-mono text-[11.5px] leading-normal shadow-tile min-[900px]:flex">
+        <aside aria-label="Receipt" className="hidden w-[250px] flex-shrink-0 flex-col gap-px overflow-hidden bg-white px-3.5 pb-3 pt-3.5 font-mono text-xs leading-normal shadow-tile min-[900px]:flex">
           <div className="text-center text-[13px] font-semibold">{rc.restaurant_name || 'RECEIPT'}</div>
           {rc.address_line_1 && <div className="text-center">{rc.address_line_1}</div>}
           <div className="my-1.5 border-t border-dashed border-[#B9B2A4]" />
@@ -228,7 +252,7 @@ export default function PaymentDialog(props: Props) {
             <div className="my-1.5 border-t border-dashed border-[#B9B2A4]" />
             <div className="text-center">{rc.footer_message || 'Thank you'}</div>
           </div>
-          <div className="mt-1 flex items-center gap-1.5 font-sans text-[11px] text-n-muted">
+          <div className="mt-1 flex items-center gap-1.5 font-sans text-xs text-n-muted">
             <Dot color={copies ? C.green : C.stone} size={7} />{copies === 0 ? 'Nothing printed' : `Counter printer · ${copies} cop${copies === 1 ? 'y' : 'ies'}`}
           </div>
         </aside>
@@ -236,9 +260,9 @@ export default function PaymentDialog(props: Props) {
         {/* Tender */}
         <section className="flex min-w-0 flex-1 flex-col gap-2.5">
           <div className="flex items-baseline gap-3 px-0.5">
-            <Cap className="text-n-muted">To pay</Cap>
+            <Cap className="text-n-muted">{t('To pay')}</Cap>
             <span className="cond num text-[44px] font-bold leading-none text-n-deep">{cur} {money(due)}</span>
-            {split && <span className="ml-auto text-sm text-n-muted">{short ? <>Left to split <b className="num text-n-red">{money(remaining)}</b></> : 'Fully covered'}</span>}
+            {split && <span className="ml-auto text-sm text-n-muted">{short ? <b className="num text-n-red">{t('Left to split {amount}', { amount: money(remaining) })}</b> : t('Fully covered')}</span>}
           </div>
 
           <div role="radiogroup" aria-label="Method" className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, methods.length))}, minmax(0, 1fr))` }}>
@@ -249,7 +273,7 @@ export default function PaymentDialog(props: Props) {
                   onClick={() => {
                     setError('')
                     if (split) setParts((ps) => ps.map((p, i) => (i === activePart ? { ...p, method: m.mode_of_payment } : p)))
-                    else { setMethod(m.mode_of_payment); setTipMode(false); if (m.mode_of_payment !== 'Card') setTip('') }
+                    else { setMethod(m.mode_of_payment); setTipMode(false); if (cashy(m.mode_of_payment)) setTip('') }
                   }}
                   className={cn('press h-14 truncate whitespace-nowrap rounded-md px-2 text-base font-semibold', on ? 'bg-n-deep text-white' : 'border border-n-edge bg-white text-n-ink')}>
                   {m.mode_of_payment}
@@ -268,15 +292,15 @@ export default function PaymentDialog(props: Props) {
                 <div className="flex min-h-0 flex-col gap-1.5 overflow-y-auto">
                   {parts.map((p, i) => (
                     <div key={i} className={cn('flex h-12 flex-shrink-0 items-center gap-2 rounded-md bg-white px-3 text-sm', i === activePart ? 'border-2 border-n-deep' : 'border border-n-edge')}>
-                      <button type="button" className="flex flex-1 items-center justify-between gap-2 text-left" onClick={() => setActivePart(i)}>
+                      <button type="button" className="flex flex-1 items-center justify-between gap-2 text-start" onClick={() => setActivePart(i)}>
                         <span className="font-semibold">{p.method}</span>
                         <span className="cond num text-xl font-bold">{money(p.amount)}</span>
                       </button>
                       {parts.length > 1 && <button type="button" aria-label={`Remove ${p.method}`} onClick={() => { setParts(parts.filter((_, j) => j !== i)); setActivePart(0) }} className="h-9 w-9 text-xl text-n-red">×</button>}
                     </div>
                   ))}
-                  {parts.length < methods.length && <Btn variant="outline" onClick={addPart} className="flex-shrink-0">+ Add another method</Btn>}
-                  {parts[activePart] && parts[activePart].method !== 'Cash' && (
+                  {parts.length < methods.length && <Btn variant="outline" onClick={addPart} className="flex-shrink-0">{t('+ Add another method')}</Btn>}
+                  {parts[activePart] && !cashy(parts[activePart].method) && (
                     <Field data-keyboard="full" value={parts[activePart].reference} placeholder={`${parts[activePart].method} reference (optional)`}
                       onChange={(e) => setParts(parts.map((x, j) => (j === activePart ? { ...x, reference: e.target.value } : x)))} />
                   )}
@@ -285,23 +309,23 @@ export default function PaymentDialog(props: Props) {
                 <div className="grid flex-shrink-0 grid-cols-4 gap-2">
                   {chips.map((v, i) => (
                     <button key={v} type="button" aria-label={i === 0 ? 'Exact amount' : `Received ${money(v, 0)}`} disabled={!!done} onClick={() => { setCashEntry(String(v)); setFresh(false); setError('') }}
-                      className="press cond num h-[52px] rounded-md border border-n-edge bg-white text-xl font-semibold">{i === 0 ? 'Exact' : money(v, 0)}</button>
+                      className="press cond num h-[52px] rounded-md border border-n-edge bg-white text-xl font-semibold">{i === 0 ? t('Exact') : money(v, 0)}</button>
                   ))}
                 </div>
               ) : (
                 <div className="flex flex-shrink-0 flex-col gap-2">
-                  <div className="rounded-md bg-white px-3 py-2.5 text-[13px] text-n-muted">{isCard ? 'Charged exactly what is owed. Use Tip to add a tip on the card.' : 'Charged exactly what is owed.'}</div>
+                  <div className="rounded-md bg-white px-3 py-2.5 text-[13px] text-n-muted">{t('Charged exactly what is owed. Use Tip to add a tip.')}</div>
                   <Field data-keyboard="full" value={reference} onChange={(e) => setReference(e.target.value)} placeholder={`${method} reference (optional)`} disabled={!!done} />
                 </div>
               )}
 
               <div className={cn('flex min-h-[100px] flex-1 items-center justify-between rounded-md px-4', done ? 'bg-n-amber text-n-ink' : short ? 'bg-white text-n-red shadow-[inset_0_0_0_2px_#C83E2E]' : 'bg-n-amber text-n-ink')}>
-                <Cap>{!done && short ? 'Still owed' : tipAmount > 0 && !done ? 'Tip on card' : 'Change'}</Cap>
-                <span className="cond num text-[56px] font-bold leading-none">{cur} {money(!done && short ? remaining : tipAmount > 0 && !done ? tipAmount : heroChange)}</span>
+                <Cap>{!done && short ? t('Still owed') : t('Change')}</Cap>
+                <span className="cond num text-[56px] font-bold leading-none">{cur} {money(!done && short ? remaining : heroChange)}</span>
               </div>
 
               <div role="radiogroup" aria-label="Receipt" className="flex flex-shrink-0 gap-1.5">
-                {([[1, 'Print'], [2, 'Print 2 copies'], [0, 'No receipt']] as [0 | 1 | 2, string][]).map(([v, l]) => (
+                {([[1, t('Print')], [2, t('Print 2 copies')], [0, t('No receipt')]] as [0 | 1 | 2, string][]).map(([v, l]) => (
                   <button key={v} type="button" role="radio" aria-checked={copies === v} disabled={!!done} onClick={() => setCopies(v)}
                     className={cn('press h-11 flex-1 whitespace-nowrap rounded-md bg-white text-[13px]', copies === v ? 'border-2 border-n-deep font-semibold' : 'border border-n-edge')}>{l}</button>
                 ))}
@@ -314,8 +338,8 @@ export default function PaymentDialog(props: Props) {
           <button type="button" onClick={handleComplete} disabled={!done && !ok}
             className={cn('press flex h-16 flex-shrink-0 items-center justify-between rounded-lg px-[18px] text-xl font-bold',
               done ? 'bg-n-green text-white' : ok ? 'bg-n-deep text-white' : 'bg-n-sand text-n-stone')}>
-            <span>{done ? (copies ? 'Done, printing' : 'Done') : processing ? 'Completing…' : short ? `Still owed ${money(remaining)}` : 'Finish sale'}</span>
-            <span className="text-[13px] font-medium">{done ? 'Tap for the next order' : copies ? 'Prints the receipt' : ''}</span>
+            <span>{done ? (copies ? t('Done, printing') : t('Done')) : processing || finishing ? t('Completing…') : short ? `${t('Still owed')} ${money(remaining)}` : t('Finish sale')}</span>
+            <span className="text-[13px] font-medium">{done ? t('Tap for the next order') : copies ? t('Prints the receipt') : ''}</span>
           </button>
         </section>
       </div>

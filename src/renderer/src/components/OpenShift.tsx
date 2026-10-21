@@ -1,5 +1,6 @@
+import { useT } from '../stores/i18n'
 import { useState, useEffect } from 'react'
-import { useStatus } from '../stores/status'
+import { useStatus, isCashMethod } from '../stores/status'
 import StatusBand from './StatusBand'
 import CashCount, { Counts, countTotal } from './CashCount'
 import { SubBar, Btn, Cap, Dot, money, C } from '../ui'
@@ -24,6 +25,7 @@ export default function OpenShift({ userName, userId, onOpen, onSignOut }: Props
   const [itemCount, setItemCount] = useState<number | null>(null)
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
   const { printers, currency: cur } = useStatus()
+  const t = useT()
 
   useEffect(() => {
     loadPaymentMethods()
@@ -40,11 +42,12 @@ export default function OpenShift({ userName, userId, onOpen, onSignOut }: Props
     setPaymentMethods(methods)
   }
 
+  const cashName = paymentMethods.find((m: any) => isCashMethod(m.mode_of_payment))?.mode_of_payment || 'Cash'
   const total = manual !== null ? parseFloat(manual || '0') || 0 : countTotal(counts)
   let lastFloat: number | null = null
   try {
     const cb = last?.closing_balance ? JSON.parse(last.closing_balance) : null
-    const cash = Array.isArray(cb) ? cb.find((b: any) => b.mode === 'Cash') : null
+    const cash = Array.isArray(cb) ? cb.find((b: any) => b.mode === cashName) : null
     if (cash) lastFloat = Number(cash.amount) || 0
   } catch {}
 
@@ -55,7 +58,7 @@ export default function OpenShift({ userName, userId, onOpen, onSignOut }: Props
       // Opening balance: counted cash, 0 for every other method (same shape as before)
       const balances: Record<string, number> = {}
       for (const m of paymentMethods) balances[m.mode_of_payment] = 0
-      balances['Cash'] = Math.round(total * 100) / 100
+      balances[cashName] = Math.round(total * 100) / 100
       const openingBalance = Object.entries(balances).map(([mode, amount]) => ({ mode, amount }))
       const sessionId = await window.api.sessions.open({
         userId,
@@ -76,18 +79,18 @@ export default function OpenShift({ userName, userId, onOpen, onSignOut }: Props
     <div className="flex h-screen flex-col overflow-hidden bg-n-cream text-n-ink">
       <StatusBand userName={userName} showWaiter={false} />
       <SubBar className="px-3.5">
-        <span className="cond text-2xl font-bold">Open shift</span>
+        <span className="cond text-2xl font-bold">{t('Open shift')}</span>
         <span className="truncate text-[13px] text-n-mist">{now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} · {timeOf(now.toISOString())}</span>
         <span className="flex-1" />
-        {onSignOut && <Btn variant="ghostDark" onClick={onSignOut}>Sign out</Btn>}
+        {onSignOut && <Btn variant="ghostDark" onClick={onSignOut}>{t('Sign out')}</Btn>}
       </SubBar>
 
       <div className="flex min-h-0 flex-1 gap-3 p-3">
-        <CashCount title="Count the float in the drawer" hint="Tap + for one note, hold for ten" counts={counts} onCounts={setCounts} manual={manual} onManual={setManual} />
+        <CashCount title={t('Count the float in the drawer')} hint="Tap + for one note, hold for ten" counts={counts} onCounts={setCounts} manual={manual} onManual={setManual} />
 
         <aside className="flex w-[330px] flex-shrink-0 flex-col gap-3">
           <div className="flex flex-col gap-1 rounded-md bg-n-deep p-4 text-white">
-            <Cap className="text-n-mist">Opening float</Cap>
+            <Cap className="text-n-mist">{t('Opening float')}</Cap>
             <span className="cond num text-[52px] font-bold leading-none">{cur} {money(total)}</span>
             <span className="text-[13px] text-n-mist">{manual === null ? 'Counted note by note' : 'Typed as a total'}</span>
           </div>
@@ -108,7 +111,7 @@ export default function OpenShift({ userName, userId, onOpen, onSignOut }: Props
           {error && <span className="text-sm font-semibold text-n-red">{error}</span>}
           <button type="button" onClick={handleOpen} disabled={loading}
             className="press flex h-16 items-center justify-between rounded-lg bg-n-amber px-[18px] text-lg font-bold text-n-ink disabled:bg-n-sand disabled:text-n-stone">
-            {loading ? 'Opening…' : 'Open shift'}<span className="text-[13px] font-medium">{total === 0 ? 'with an empty drawer' : `float ${money(total)}`}</span>
+            {loading ? 'Opening…' : t('Open shift')}<span className="text-[13px] font-medium">{total === 0 ? 'with an empty drawer' : `float ${money(total)}`}</span>
           </button>
         </aside>
       </div>

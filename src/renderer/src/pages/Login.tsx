@@ -4,6 +4,7 @@ import { useStatus } from '../stores/status'
 import { Btn, Dialog, Cap, Field, Keypad, PinDots, Dot, staffColor, initial, KeypadKey, C } from '../ui'
 import { Clock } from '../ui/hosts'
 import { cn } from '../lib/utils'
+import { useT, useLang } from '../stores/i18n'
 
 // Sign in: who is on the till (optional, a hint) + a 6–8 digit PIN that verifies itself.
 // "Supervisor tools" opens the admin login (same credentials as before).
@@ -24,6 +25,10 @@ export default function Login() {
   const { brand, printers, erpConfigured } = useStatus()
   const [rc, setRc] = useState<Record<string, string>>({})
   const verifySeq = useRef(0)
+  const [shakeKey, setShakeKey] = useState(0)
+  const t = useT()
+  const { lang, setLang } = useLang()
+  const fail = (msg: string) => { setError(msg); setPin(''); setShakeKey((k) => k + 1) }
 
   const { setUser, setAdminMode } = useAuthStore()
   const maxPinLength = 8
@@ -46,8 +51,7 @@ export default function Login() {
 
   function signIn(user: any) {
     if (who && user.id !== who.id) {
-      setError(`That PIN isn’t ${who.name}’s`)
-      setPin('')
+      fail(t('That PIN isn’t {name}’s', { name: who.name }))
       return
     }
     setPin('')
@@ -69,7 +73,7 @@ export default function Login() {
           const user = await window.api.users.verifyPin(newPin)
           if (mySeq !== verifySeq.current) return
           if (user) signIn(user)
-          else if (newPin.length >= maxPinLength) { setError('Invalid PIN'); setPin('') }
+          else if (newPin.length >= maxPinLength) fail(t('Invalid PIN'))
         } catch {
           // continue, might be 7 or 8 digit pin
         } finally {
@@ -87,7 +91,8 @@ export default function Login() {
 
   const handleSubmit = useCallback(async () => {
     if (pin.length < 6) {
-      setError('PIN must be at least 6 digits')
+      setError(t('PIN must be at least 6 digits'))
+      setShakeKey((k) => k + 1)
       return
     }
     try {
@@ -95,12 +100,10 @@ export default function Login() {
       if (user) {
         signIn(user)
       } else {
-        setError('Invalid PIN')
-        setPin('')
+        fail(t('Invalid PIN'))
       }
     } catch {
-      setError('Error verifying PIN')
-      setPin('')
+      fail('Error verifying PIN')
     }
   }, [pin, setUser, who])
 
@@ -159,12 +162,13 @@ export default function Login() {
         <span className="text-sm text-n-mist">{now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
         <span className="flex-1" />
         <div className="flex flex-col gap-2.5 text-[13px] text-n-frost">
-          <span className="flex items-center gap-2"><Dot color={erpConfigured ? '#5FD38D' : C.mist} />{erpConfigured ? 'ERPNext set up' : 'ERPNext not set up'}</span>
-          <span className="flex items-center gap-2"><Dot color={printers > 0 ? '#5FD38D' : C.amber} />{printers > 0 ? `${printers} printer${printers === 1 ? '' : 's'} set up` : 'No printer set up'}</span>
-          <span className="flex items-center gap-2"><Dot color={shiftOpen ? '#5FD38D' : C.mist} />{shiftOpen === null ? 'Checking the shift…' : shiftOpen ? 'A shift is open on this till' : 'No shift open on this till'}</span>
+          <span className="flex items-center gap-2"><Dot color={erpConfigured ? '#5FD38D' : C.mist} />{erpConfigured ? t('ERPNext set up') : t('ERPNext not set up')}</span>
+          <span className="flex items-center gap-2"><Dot color={printers > 0 ? '#5FD38D' : C.amber} />{printers > 0 ? t('{n} printers set up', { n: printers }) : t('No printer set up')}</span>
+          <span className="flex items-center gap-2"><Dot color={shiftOpen ? '#5FD38D' : C.mist} />{shiftOpen === null ? t('Checking the shift…') : shiftOpen ? t('A shift is open on this till') : t('No shift open on this till')}</span>
         </div>
         <div className="mt-[22px] flex items-center gap-3">
-          <Btn variant="ghostDark" onClick={() => setShowAdminLogin(true)}>Supervisor tools</Btn>
+          <Btn variant="ghostDark" onClick={() => setShowAdminLogin(true)}>{t('Supervisor tools')}</Btn>
+          <Btn variant="ghostDark" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} title="Language">{lang === 'ar' ? 'English' : 'العربية'}</Btn>
           <span className="text-xs text-n-steel">v{appVersion}</span>
         </div>
         {updateInfo && (
@@ -176,13 +180,13 @@ export default function Login() {
 
       <section className="flex min-w-0 flex-1 gap-5 py-9 pr-9 max-[1100px]:pr-6">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <Cap className="mb-1.5 text-n-mist">Who is on the till</Cap>
+          <Cap className="mb-1.5 text-n-mist">{t('Who is on the till')}</Cap>
           <div className="scroll-none flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
             {staff.map((s) => {
               const on = who?.id === s.id
               return (
                 <button key={s.id} type="button" aria-pressed={on} onClick={() => { setWho(on ? null : s); setPin(''); setError('') }}
-                  className={cn('press flex h-14 flex-shrink-0 items-center gap-3 rounded-md px-2.5 text-left', on ? 'bg-white text-n-deep' : 'bg-n-rail text-white')}>
+                  className={cn('press flex h-14 flex-shrink-0 items-center gap-3 rounded-md px-2.5 text-start', on ? 'bg-white text-n-deep' : 'bg-n-rail text-white')}>
                   <span className="cond flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xl font-bold text-white" style={{ background: staffColor(s.name) }}>{initial(s.name)}</span>
                   <span className="flex min-w-0 flex-col leading-tight">
                     <span className="truncate text-base font-semibold">{s.full_name || s.name}</span>
@@ -191,18 +195,18 @@ export default function Login() {
                 </button>
               )
             })}
-            {staff.length === 0 && <span className="text-sm text-n-mist">Staff appear here once they are added in Supervisor tools.</span>}
+            {staff.length === 0 && <span className="text-sm text-n-mist">{t('Staff appear here once they are added in Supervisor tools.')}</span>}
           </div>
         </div>
         <div className="flex w-[262px] flex-shrink-0 flex-col gap-2.5">
-          <Cap className="mb-0.5 text-n-mist">{who ? `${who.name}, enter your PIN` : 'Enter your PIN'}</Cap>
-          <PinDots count={Math.max(6, pin.length)} filled={pin.length} />
+          <Cap className="mb-0.5 text-n-mist">{who ? t('{name}, enter your PIN', { name: who.name }) : t('Enter your PIN')}</Cap>
+          <div key={shakeKey} className={shakeKey ? 'shake' : ''}><PinDots count={Math.max(6, pin.length)} filled={pin.length} /></div>
           <Keypad className="flex-1" onKey={onKey} />
           <button type="button" onClick={handleSubmit} disabled={!ok}
             className={cn('press flex h-14 items-center justify-center rounded-md text-base font-bold', ok ? 'bg-n-amber text-n-ink' : 'pointer-events-none bg-n-rail text-n-steel')}>
-            {checking ? 'Checking…' : ok ? 'Sign in' : 'Enter 6 to 8 digits'}
+            {checking ? t('Checking…') : ok ? t('Sign in') : t('Enter 6 to 8 digits')}
           </button>
-          <span className={cn('min-h-[18px] text-center text-xs', error ? 'font-semibold text-n-coral' : 'text-n-mist')}>{error || 'Signs in by itself once the PIN is right'}</span>
+          <span className={cn('min-h-[18px] text-center text-sm', error ? 'font-semibold text-n-coral' : 'text-n-mist')}>{error || t('Signs in by itself once the PIN is right')}</span>
         </div>
       </section>
 

@@ -6,6 +6,7 @@ import { toast } from '../stores/ui'
 import { SubBar, BackButton, RailTab, Chip, Dot, SearchIcon, staffColor, initial, money, useTier, Btn } from '../ui'
 import { minutesSince, ageLabel, useTick } from '../ui/hosts'
 import { cn } from '../lib/utils'
+import { useT } from '../stores/i18n'
 
 // Every open order on one board: tabs by type, chips by stage, late ones first. Tap to open.
 
@@ -24,6 +25,7 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
   onRefresh: () => void
 }) {
   useTick(30000)
+  const t = useT()
   const { wide, large } = useTier()
   const cur = useStatus((s) => s.currency)
   const [tab, setTab] = useState<Tab>('All')
@@ -49,14 +51,14 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
       })
   }, [inTab, chip, query])
 
-  const tabs: [Tab, string][] = [['All', 'All'], ['Dine In', 'Dine in'], ['Takeaway', 'Takeaway'], ['Delivery', 'Delivery'], ['Waiter', 'With waiter']]
+  const tabs: [Tab, string][] = [['All', t('All')], ['Dine In', t('Dine in')], ['Takeaway', t('Takeaway')], ['Delivery', t('Delivery')], ['Waiter', t('With waiter')]]
   const cols = large ? 6 : wide ? 5 : 4
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-n-cream">
       <SubBar className="gap-2.5">
-        <BackButton onClick={onBack} label={activeLabel ? `Back to ${activeLabel}` : 'Back'} />
-        <span className="cond ml-1.5 whitespace-nowrap text-2xl font-bold">Open orders</span>
+        <BackButton onClick={onBack} label={activeLabel ? t('Back to {name}', { name: activeLabel }) : t('Back')} />
+        <span className="cond ml-1.5 whitespace-nowrap text-2xl font-bold">{t('Open orders')}</span>
         <span className="flex-1" />
         <div className="flex gap-0.5 overflow-x-auto">
           {tabs.map(([k, l]) => (
@@ -73,13 +75,13 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
           if (!n && chip !== k && k === 'invoiced') return null
           return (
             <Chip key={k} active={chip === k} onClick={() => setChip(chip === k ? null : k)}>
-              <Dot color={STAGE[k].color} size={9} square />{STAGE[k].label} <span className="num opacity-60">{n}</span>
+              <Dot color={STAGE[k].color} size={9} square />{t(STAGE[k].label)} <span className="num opacity-60">{n}</span>
             </Chip>
           )
         })}
         <span className="flex-1" />
         {waiterPending > 0 && <Btn variant="teal" onClick={onWaiter}>Waiter app · {waiterPending} new</Btn>}
-        {!finding && <span className="hidden text-xs text-n-muted min-[1100px]:inline">Late first, then oldest</span>}
+        {!finding && <span className="hidden text-xs text-n-muted min-[1100px]:inline">{t('Late first, then oldest')}</span>}
         {finding ? (
           <label className="flex h-11 items-center gap-2 rounded-full border-2 border-n-teal bg-white px-3">
             <SearchIcon />
@@ -94,7 +96,7 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
       <main className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto px-3 pb-2.5 pt-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: 104 }}>
         {shown.length === 0 && (
           <div className="col-span-full flex flex-col items-center justify-center gap-1 py-20 text-n-muted">
-            <span className="cond text-2xl font-bold text-n-ink">{orders.length ? 'No orders match' : 'No open orders'}</span>
+            <span className="cond text-2xl font-bold text-n-ink">{orders.length ? t('No orders match') : t('No open orders')}</span>
             <span className="text-sm">{orders.length ? 'Clear the filter to see everything.' : 'New orders show up here as soon as they are sent or held.'}</span>
           </div>
         )}
@@ -108,7 +110,7 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
           return (
             <div key={o.id} className="relative">
               <button type="button" onClick={() => onOpen(o.id)}
-                className={cn('press relative flex h-full w-full overflow-hidden rounded-md bg-white text-left text-n-ink shadow-tile',
+                className={cn('press relative flex h-full w-full overflow-hidden rounded-md bg-white text-start text-n-ink shadow-tile',
                   current ? 'outline outline-[3px] -outline-offset-[3px] outline-n-amber' : late ? 'outline outline-2 -outline-offset-2 outline-n-red' : '')}>
                 <span className="w-[7px] flex-shrink-0" style={{ background: STAGE[st].color }} />
                 <span className="flex min-w-0 flex-1 flex-col px-2.5 py-2">
@@ -119,13 +121,13 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
                   <span className="mt-[3px] truncate text-xs text-n-muted">{sub}</span>
                   <span className="mt-auto flex items-center gap-1.5 text-xs">
                     <Dot color={STAGE[st].color} size={9} square />
-                    <span className="font-semibold">{late && st === 'kitchen' ? 'Late' : STAGE[st].label}</span>
+                    <span className="font-semibold">{late && st === 'kitchen' ? t('Late') : t(STAGE[st].label)}</span>
                     <span className="flex-1" />
                     <span className="num text-sm font-semibold">{o.grand_total ? `${cur} ${money(o.grand_total)}` : ''}</span>
                   </span>
                 </span>
                 {who && (
-                  <span className="absolute bottom-8 right-2 flex h-[22px] w-[22px] items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: staffColor(who) }} title={who}>{initial(who)}</span>
+                  <span className="absolute bottom-8 right-2 flex h-[22px] w-[22px] items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: staffColor(who) }} title={who}>{initial(who)}</span>
                 )}
               </button>
               {isSupervisor && st === 'hold' && (
@@ -143,9 +145,9 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(11,59,73,.45)]" onMouseDown={(e) => { if (e.target === e.currentTarget) setMenuFor(null) }}>
           <div className="flex w-80 animate-rise flex-col overflow-hidden rounded-md bg-white shadow-pop">
             <span className="border-b border-n-line px-4 py-3 text-[15px] font-semibold">{orderLabel(menuFor)} · {menuFor.order_number}</span>
-            <button type="button" className="h-12 px-4 text-left text-sm" onClick={() => { const id = menuFor.id; setMenuFor(null); onOpen(id) }}>Open on the till</button>
-            <button type="button" className="h-12 px-4 text-left text-sm" onClick={async () => { const id = menuFor.id; setMenuFor(null); try { const r = await window.api.print.invoice(id); r?.success === false ? toast.error('Invoice print failed') : toast.success('Invoice printed') } catch { toast.error('Invoice print failed') } }}>Print invoice</button>
-            <button type="button" className="h-12 border-t border-n-line px-4 text-left text-sm font-semibold text-n-red" onClick={() => { setVoidFor(menuFor); setMenuFor(null) }}>Void order</button>
+            <button type="button" className="h-12 px-4 text-start text-sm" onClick={() => { const id = menuFor.id; setMenuFor(null); onOpen(id) }}>{t('Open on the till')}</button>
+            <button type="button" className="h-12 px-4 text-start text-sm" onClick={async () => { const id = menuFor.id; setMenuFor(null); try { const r = await window.api.print.invoice(id); r?.success === false ? toast.error('Invoice print failed') : toast.success('Invoice printed') } catch { toast.error('Invoice print failed') } }}>{t('Print invoice')}</button>
+            <button type="button" className="h-12 border-t border-n-line px-4 text-start text-sm font-semibold text-n-red" onClick={() => { setVoidFor(menuFor); setMenuFor(null) }}>{t('Void order')}</button>
           </div>
         </div>
       )}

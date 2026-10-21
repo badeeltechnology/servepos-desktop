@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuthStore } from './stores/auth'
 import Setup from './pages/Setup'
 import Login from './pages/Login'
@@ -8,6 +8,9 @@ import CoordinatorScreen from './pages/CoordinatorScreen'
 import { KeyboardProvider } from './components/keyboard'
 import { ToastHost, ConfirmHost } from './ui/hosts'
 import { loadBrand } from './stores/status'
+import { useSessionGuard } from './stores/ui'
+import { useT } from './stores/i18n'
+import { Btn } from './ui'
 
 function App() {
   const [loading, setLoading] = useState(true)
@@ -39,30 +42,45 @@ function App() {
     return () => { document.removeEventListener('focusin', handleFocus) }
   }, [])
 
-  // Inactivity timeout
+  // Inactivity timeout: warn first ("Still there?"), then put the open order on hold and sign out.
+  // Never times out while the payment screen is open. inactivity_timeout is in minutes (0 = off).
+  const [idleWarn, setIdleWarn] = useState<number | null>(null)
+  const lastTouch = useRef(Date.now())
+  const signingOut = useRef(false)
   useEffect(() => {
-    if (!user) return
+    if (!user) { setIdleWarn(null); return }
+    lastTouch.current = Date.now()
+    signingOut.current = false
+    let timeoutMs = 10 * 60 * 1000
+    window.api.config.get('inactivity_timeout').then((v: string) => {
+      const minutes = v !== null && v !== undefined && v !== '' ? parseFloat(v) : 10
+      timeoutMs = Number.isFinite(minutes) ? minutes * 60 * 1000 : 10 * 60 * 1000
+    }).catch(() => {})
 
-    const checkInactivity = async () => {
-      const timeoutStr = await window.api.config.get('inactivity_timeout')
-      const timeoutMinutes = timeoutStr ? parseInt(timeoutStr) : 10
-      const timeoutMs = timeoutMinutes * 60 * 1000
-      const { lastActivity } = useAuthStore.getState()
-
-      if (Date.now() - lastActivity > timeoutMs) {
-        logout()
-      }
-    }
-
-    const interval = setInterval(checkInactivity, 30000) // check every 30 seconds
-
-    const handleActivity = () => updateActivity()
+    const handleActivity = () => { lastTouch.current = Date.now(); updateActivity() }
     window.addEventListener('mousedown', handleActivity)
     window.addEventListener('keydown', handleActivity)
     window.addEventListener('touchstart', handleActivity)
 
+    const tick = setInterval(async () => {
+      if (timeoutMs <= 0 || signingOut.current) { setIdleWarn(null); return }
+      if (useSessionGuard.getState().paymentOpen) { lastTouch.current = Date.now(); setIdleWarn(null); return }
+      const idle = Date.now() - lastTouch.current
+      const warnMs = Math.min(30000, timeoutMs / 3)
+      if (idle >= timeoutMs) {
+        signingOut.current = true
+        setIdleWarn(null)
+        try { await useSessionGuard.getState().beforeSignOut?.() } catch { /* still sign out */ }
+        logout()
+      } else if (idle >= timeoutMs - warnMs) {
+        setIdleWarn(Math.ceil((timeoutMs - idle) / 1000))
+      } else {
+        setIdleWarn((w) => (w === null ? w : null))
+      }
+    }, 1000)
+
     return () => {
-      clearInterval(interval)
+      clearInterval(tick)
       window.removeEventListener('mousedown', handleActivity)
       window.removeEventListener('keydown', handleActivity)
       window.removeEventListener('touchstart', handleActivity)
@@ -83,6 +101,7 @@ function App() {
   return (
     <>
       {renderScreen()}
+      {idleWarn !== null && <StillThere seconds={idleWarn} onHere={() => { lastTouch.current = Date.now(); setIdleWarn(null) }} />}
       <ToastHost />
       <ConfirmHost />
     </>
@@ -131,6 +150,20 @@ function App() {
       </KeyboardProvider>
     )
   }
+}
+
+function StillThere({ seconds, onHere }: { seconds: number; onHere: () => void }) {
+  const t = useT()
+  return (
+    <div className="fixed inset-0 z-[10040] flex items-center justify-center bg-[rgba(11,59,73,.7)] p-4" role="alertdialog" aria-label={t('Still there?')}>
+      <div className="flex w-[440px] animate-rise flex-col items-center gap-3 bg-n-cream px-6 pb-5 pt-6 text-center shadow-pop">
+        <span className="cond text-[34px] font-bold leading-none text-n-deep">{t('Still there?')}</span>
+        <span className="cond num text-[64px] font-bold leading-none text-n-red">{seconds}</span>
+        <span className="text-sm text-n-muted">{t('Signing out in {n}s. The open order will be put on hold.', { n: seconds })}</span>
+        <Btn size="xl" variant="amber" className="mt-1 w-full" onClick={onHere}>{t("I'm here")}</Btn>
+      </div>
+    </div>
+  )
 }
 
 export default App
