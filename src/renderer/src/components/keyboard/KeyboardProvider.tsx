@@ -210,17 +210,17 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
     keyboardType === 'numpad' && numpadPos ? (
       <div
         ref={keyboardRef}
-        className="fixed z-[9999] rounded-2xl border border-gray-200 bg-white shadow-2xl"
+        className="fixed z-[9999] rounded-md bg-n-cream shadow-pop"
         style={{ top: numpadPos.top, left: numpadPos.left, width: 240 }}
         onMouseDown={(e) => { if ((e.target as HTMLElement).closest('[data-drag-handle]')) return; e.preventDefault() }}
       >
         <div
           data-drag-handle
-          className="flex cursor-grab items-center justify-center rounded-t-2xl bg-gray-100 py-1.5 active:cursor-grabbing"
+          className="flex cursor-grab items-center justify-center rounded-t-md bg-n-sand py-2 active:cursor-grabbing"
           onMouseDown={(e) => { e.preventDefault(); handleDragStart(e) }}
           onTouchStart={handleDragStart}
         >
-          <div className="h-1 w-10 rounded-full bg-gray-300" />
+          <div className="h-1 w-10 rounded-full bg-n-stone" />
         </div>
         <div className="p-3 pt-2">
           <NumPad onKey={handleKey} />
@@ -229,10 +229,10 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
     ) : (
       <div
         ref={keyboardRef}
-        className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-gray-200 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.1)]"
+        className="fixed bottom-0 left-0 right-0 z-[9999] bg-n-sand shadow-[0_-4px_20px_rgba(0,0,0,0.15)]"
         onMouseDown={(e) => e.preventDefault()}
       >
-        <div className="px-3 py-2">
+        <div className="mx-auto max-w-[1100px] p-2">
           <FullKeyboard onKey={handleKey} onDone={() => { handleKey('done') }} />
         </div>
       </div>

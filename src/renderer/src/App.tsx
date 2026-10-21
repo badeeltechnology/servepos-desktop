@@ -6,6 +6,8 @@ import AdminPanel from './pages/AdminPanel'
 import POS from './pages/POS'
 import CoordinatorScreen from './pages/CoordinatorScreen'
 import { KeyboardProvider } from './components/keyboard'
+import { ToastHost, ConfirmHost } from './ui/hosts'
+import { loadBrand } from './stores/status'
 
 function App() {
   const [loading, setLoading] = useState(true)
@@ -15,6 +17,11 @@ function App() {
   useEffect(() => {
     checkSetup()
   }, [])
+
+  // Brand line + printer count for the status band (re-read after setup / admin changes)
+  useEffect(() => {
+    if (setupComplete) loadBrand()
+  }, [setupComplete, isAdminMode, user])
 
   // Touch keyboard: only trigger if explicitly enabled in settings (off by default)
   useEffect(() => {
@@ -73,47 +80,57 @@ function App() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="mb-4 text-4xl font-bold text-primary">ServePOS</div>
-          <div className="text-muted-foreground">Loading...</div>
+  return (
+    <>
+      {renderScreen()}
+      <ToastHost />
+      <ConfirmHost />
+    </>
+  )
+
+  function renderScreen() {
+    if (loading) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-n-deep text-white">
+          <div className="text-center">
+            <div className="cond mb-2 text-5xl font-bold tracking-[.03em]">ServePOS</div>
+            <div className="text-sm text-n-mist">Loading…</div>
+          </div>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  // First time setup
-  if (!setupComplete) {
-    return <Setup onComplete={() => setSetupComplete(true)} />
-  }
+    // First time setup
+    if (!setupComplete) {
+      return <Setup onComplete={() => setSetupComplete(true)} />
+    }
 
-  // Admin panel (accessed via gear icon)
-  if (isAdminMode) {
-    return <AdminPanel />
-  }
+    // Admin panel (opened from "Supervisor tools" on the sign-in screen)
+    if (isAdminMode) {
+      return <AdminPanel />
+    }
 
-  // Not logged in — show PIN screen
-  if (!user) {
-    return <Login />
-  }
+    // Not logged in — show PIN screen
+    if (!user) {
+      return <Login />
+    }
 
-  // Coordinator role → coordinator screen
-  if (user.role === 'coordinator') {
+    // Coordinator role → coordinator screen
+    if (user.role === 'coordinator') {
+      return (
+        <KeyboardProvider>
+          <CoordinatorScreen />
+        </KeyboardProvider>
+      )
+    }
+
+    // Cashier / Supervisor → POS
     return (
       <KeyboardProvider>
-        <CoordinatorScreen />
+        <POS />
       </KeyboardProvider>
     )
   }
-
-  // Cashier / Supervisor → POS
-  return (
-    <KeyboardProvider>
-      <POS />
-    </KeyboardProvider>
-  )
 }
 
 export default App

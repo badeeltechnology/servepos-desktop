@@ -28,24 +28,25 @@ export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
   ]
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <div className="flex w-56 flex-col border-r bg-white">
-        <div className="border-b p-4">
-          <button onClick={onBack} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+    <div className="flex h-screen bg-n-cream">
+      <div className="flex w-56 flex-shrink-0 flex-col bg-n-deep text-white">
+        <div className="border-b border-n-dim p-4">
+          <button onClick={onBack} className="press flex h-11 items-center gap-2 rounded-md bg-n-rail pl-2 pr-3 text-sm font-semibold text-white">
             <ArrowLeft className="h-4 w-4" />
             Back to POS
           </button>
-          <h1 className="mt-3 text-lg font-bold">Settings</h1>
+          <h1 className="cond mt-4 text-[28px] font-bold leading-none">Settings</h1>
+          <p className="mt-1 text-xs text-n-mist">{user?.name ? `Signed in as ${user.name}` : 'Supervisor'}</p>
         </div>
-        <nav className="flex-1 p-2">
+        <nav className="flex-1 overflow-y-auto p-2">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm ${
+              className={`mb-0.5 flex h-11 w-full items-center gap-2.5 rounded-md px-3 text-sm ${
                 activeTab === tab.key
-                  ? 'bg-primary/10 font-medium text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  ? 'bg-white font-semibold text-n-deep'
+                  : 'text-n-frost hover:bg-n-rail'
               }`}
             >
               {tab.icon}
@@ -129,14 +130,14 @@ function UserManagement() {
   return (
     <div className="max-w-2xl">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">User Management</h2>
+        <h2 className="cond text-[30px] font-bold leading-none text-n-deep">User Management</h2>
         <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
           <Plus className="h-4 w-4" /> Add User
         </button>
       </div>
 
       {showForm && (
-        <div className="mb-4 rounded-xl border bg-white p-5">
+        <div className="mb-4 rounded-md border bg-white p-5">
           <h3 className="mb-3 font-semibold">{editingId ? 'Edit User' : 'New User'}</h3>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div>
@@ -168,7 +169,7 @@ function UserManagement() {
         </div>
       )}
 
-      <div className="rounded-xl border bg-white">
+      <div className="rounded-md border bg-white">
         {users.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">No users yet. Add one above.</p>
         ) : (
@@ -275,7 +276,7 @@ function WaiterManagement() {
   return (
     <div className="max-w-2xl">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Waiter Management</h2>
+        <h2 className="cond text-[30px] font-bold leading-none text-n-deep">Waiter Management</h2>
         <div className="flex gap-2">
           <button onClick={generateQR} className="flex items-center gap-1.5 rounded-lg border-2 border-primary/30 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/5">
             QR Code
@@ -292,7 +293,7 @@ function WaiterManagement() {
       {/* QR Code Modal */}
       {qrDataUrl && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setQrDataUrl(null)}>
-          <div className="rounded-2xl bg-white p-8 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="rounded-md bg-white p-8 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="mb-2 text-center text-lg font-bold">Waiter App QR Code</h3>
             <p className="mb-4 text-center text-sm text-muted-foreground">Scan this from the ServePOS Waiter app</p>
             <img src={qrDataUrl} alt="QR Code" className="mx-auto h-64 w-64" />
@@ -304,7 +305,7 @@ function WaiterManagement() {
 
       {/* Add Waiter Form */}
       {showAdd && (
-        <div className="mb-4 rounded-xl border bg-white p-5">
+        <div className="mb-4 rounded-md border bg-white p-5">
           <h3 className="mb-3 font-semibold">New Waiter</h3>
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -328,7 +329,7 @@ function WaiterManagement() {
       )}
 
       {/* Waiters List */}
-      <div className="rounded-xl border bg-white">
+      <div className="rounded-md border bg-white">
         {loading ? (
           <p className="p-6 text-center text-sm text-muted-foreground">Loading waiters...</p>
         ) : waiters.length === 0 ? (
@@ -418,7 +419,7 @@ function WaiterOrders() {
   return (
     <div className="max-w-3xl">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Waiter Orders</h2>
+        <h2 className="cond text-[30px] font-bold leading-none text-n-deep">Waiter Orders</h2>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Auto-refreshes every 10s</span>
           <button onClick={loadOrders} className="flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:bg-muted">
@@ -428,15 +429,15 @@ function WaiterOrders() {
       </div>
 
       {fetchError && (
-        <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <strong>Error:</strong> {fetchError}
         </div>
       )}
 
       {loading ? (
-        <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">Loading...</div>
+        <div className="rounded-md border bg-white p-8 text-center text-sm text-muted-foreground">Loading...</div>
       ) : orders.length === 0 && !fetchError ? (
-        <div className="rounded-xl border bg-white p-8 text-center">
+        <div className="rounded-md border bg-white p-8 text-center">
           <ClipboardList className="mx-auto mb-3 h-12 w-12 text-gray-200" />
           <p className="text-sm text-muted-foreground">No pending waiter orders</p>
           <p className="text-xs text-muted-foreground">Orders from the waiter app will appear here</p>
@@ -444,7 +445,7 @@ function WaiterOrders() {
       ) : (
         <div className="space-y-3">
           {orders.map((wo: any) => (
-            <div key={wo.name} className="rounded-xl border-2 border-orange-200 bg-white overflow-hidden">
+            <div key={wo.name} className="rounded-md border-2 border-orange-200 bg-white overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between bg-orange-50 px-5 py-3">
                 <div className="flex items-center gap-3">
@@ -529,7 +530,7 @@ function ModifierManagement() {
   return (
     <div className="max-w-2xl">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Modifier Groups</h2>
+        <h2 className="cond text-[30px] font-bold leading-none text-n-deep">Modifier Groups</h2>
         <span className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700">Managed in ERPNext</span>
       </div>
 
@@ -538,13 +539,13 @@ function ModifierManagement() {
       </p>
 
       {groups.length === 0 ? (
-        <div className="rounded-xl border bg-white p-8 text-center text-sm text-muted-foreground">
+        <div className="rounded-md border bg-white p-8 text-center text-sm text-muted-foreground">
           No modifier groups synced yet. Create modifier groups in ERPNext and sync.
         </div>
       ) : (
         <div className="space-y-3">
           {groups.map((g) => (
-            <div key={g.id} className="rounded-xl border bg-white">
+            <div key={g.id} className="rounded-md border bg-white">
               <div className="flex items-center justify-between border-b px-5 py-3">
                 <div>
                   <span className="font-semibold">{g.group_name}</span>
@@ -619,10 +620,10 @@ function ItemVisibility() {
 
   return (
     <div className="max-w-3xl">
-      <h2 className="mb-4 text-xl font-bold">Items & Modifiers</h2>
+      <h2 className="cond mb-4 text-[30px] font-bold leading-none text-n-deep">Items & Modifiers</h2>
 
       {/* Group filter */}
-      <div className="mb-4 rounded-xl border bg-white p-4">
+      <div className="mb-4 rounded-md border bg-white p-4">
         <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Item Groups</h3>
         <div className="flex flex-wrap gap-2">
           {groups.map((g) => (
@@ -646,7 +647,7 @@ function ItemVisibility() {
       </div>
 
       {/* Items list */}
-      <div className="rounded-xl border bg-white">
+      <div className="rounded-md border bg-white">
         <div className="border-b px-5 py-3">
           <span className="text-sm font-semibold">{selectedGroup || 'All Items'}</span>
           <span className="ml-2 text-xs text-muted-foreground">{filteredItems.length} items</span>
@@ -688,7 +689,7 @@ function ItemVisibility() {
       {/* Modifier assignment modal (read-only — synced from ERPNext) */}
       {assigningItem && assigningItemData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-[450px] rounded-2xl bg-white shadow-2xl">
+          <div className="w-[450px] rounded-md bg-white shadow-2xl">
             <div className="border-b px-6 py-4">
               <h3 className="text-lg font-bold">Modifiers for {assigningItemData.item_name}</h3>
               <p className="text-sm text-muted-foreground">Modifier assignments are managed in ERPNext</p>
@@ -796,14 +797,14 @@ function PrinterManagement() {
   return (
     <div className="max-w-2xl">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Printers & Routing</h2>
+        <h2 className="cond text-[30px] font-bold leading-none text-n-deep">Printers & Routing</h2>
         <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
           <Plus className="h-4 w-4" /> Add Printer
         </button>
       </div>
 
       {showForm && (
-        <div className="mb-4 rounded-xl border bg-white p-5">
+        <div className="mb-4 rounded-md border bg-white p-5">
           <h3 className="mb-3 font-semibold">New Printer</h3>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -866,7 +867,7 @@ function PrinterManagement() {
         </div>
       )}
 
-      <div className="mb-6 rounded-xl border bg-white">
+      <div className="mb-6 rounded-md border bg-white">
         {printers.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">No printers configured.</p>
         ) : (
@@ -902,7 +903,7 @@ function PrinterManagement() {
       </div>
 
       {showRouteForm && (
-        <div className="mb-4 rounded-xl border bg-white p-4">
+        <div className="mb-4 rounded-md border bg-white p-4">
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="mb-1 block text-xs font-medium">Print Type</label>
@@ -985,7 +986,7 @@ function PrinterManagement() {
         </div>
       )}
 
-      <div className="rounded-xl border bg-white">
+      <div className="rounded-md border bg-white">
         {routes.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">
             {printers.length === 0 ? 'Add a printer first, then set up routing.' : 'No routes configured. Add a route for Receipt and KOT printing.'}
@@ -1041,7 +1042,7 @@ function OrderHistory() {
 
   return (
     <div className="max-w-3xl">
-      <h2 className="mb-4 text-xl font-bold">Today's Orders</h2>
+      <h2 className="cond mb-4 text-[30px] font-bold leading-none text-n-deep">Today's Orders</h2>
 
       <div className="mb-4 flex gap-2">
         {['all', 'Completed', 'Hold', 'Void'].map((f) => (
@@ -1051,7 +1052,7 @@ function OrderHistory() {
         ))}
       </div>
 
-      <div className="rounded-xl border bg-white">
+      <div className="rounded-md border bg-white">
         {orders.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">No orders found.</p>
         ) : (
@@ -1124,7 +1125,7 @@ function SyncDashboard() {
   return (
     <div className="max-w-2xl">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Sync Status</h2>
+        <h2 className="cond text-[30px] font-bold leading-none text-n-deep">Sync Status</h2>
         <button onClick={handleSync} disabled={syncing} className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
           <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
           {syncing ? 'Syncing...' : 'Sync Now'}
@@ -1132,7 +1133,7 @@ function SyncDashboard() {
       </div>
 
       <div className="space-y-4">
-        <div className="rounded-xl border bg-white p-5">
+        <div className="rounded-md border bg-white p-5">
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">Last sync:</span>
@@ -1149,7 +1150,7 @@ function SyncDashboard() {
 
         {status?.lastResult && (
           <>
-            <div className="rounded-xl border bg-white p-5">
+            <div className="rounded-md border bg-white p-5">
               <h3 className="mb-2 font-semibold">Sync Down (ERPNext → Desktop)</h3>
               {status.lastResult.down?.success ? (
                 <div className="flex items-center gap-2 text-sm text-green-600">
@@ -1166,7 +1167,7 @@ function SyncDashboard() {
               )}
             </div>
 
-            <div className="rounded-xl border bg-white p-5">
+            <div className="rounded-md border bg-white p-5">
               <h3 className="mb-2 font-semibold">Sync Up (Desktop → ERPNext)</h3>
               <div className="text-sm">
                 <span className="text-green-600">Synced: {status.lastResult.up?.synced || 0}</span>
@@ -1204,11 +1205,11 @@ function ShiftHistory() {
 
   return (
     <div className="max-w-3xl">
-      <h2 className="mb-4 text-xl font-bold">Shift History</h2>
+      <h2 className="cond mb-4 text-[30px] font-bold leading-none text-n-deep">Shift History</h2>
 
       <div className="flex gap-4">
         {/* Shift list */}
-        <div className="flex-1 rounded-xl border bg-white">
+        <div className="flex-1 rounded-md border bg-white">
           {sessions.length === 0 ? (
             <p className="p-6 text-center text-sm text-muted-foreground">No shifts yet.</p>
           ) : (
@@ -1244,7 +1245,7 @@ function ShiftHistory() {
 
         {/* Shift detail */}
         {selected && (
-          <div className="w-[320px] rounded-xl border bg-white p-5">
+          <div className="w-[320px] rounded-md border bg-white p-5">
             <h3 className="mb-3 font-bold">Shift Detail</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-gray-500">Cashier</span><span className="font-medium">{selected.user_name}</span></div>
@@ -1343,7 +1344,7 @@ function ReportsDashboard() {
     <div className="w-full">
       {/* Header */}
       <div className="mb-5 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Reports Dashboard</h2>
+        <h2 className="cond text-[30px] font-bold leading-none text-n-deep">Reports Dashboard</h2>
         <div className="flex items-center gap-3">
           <input
             type="date"
@@ -1364,19 +1365,19 @@ function ReportsDashboard() {
 
       {/* Summary Cards */}
       <div className="mb-5 grid grid-cols-4 gap-3">
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="rounded-md border bg-white p-5 shadow-sm">
           <p className="text-xs font-bold uppercase text-gray-400 mb-1">Total Sales</p>
           <p className="text-2xl font-bold text-primary">{fmt(summary.totalSales)}</p>
         </div>
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="rounded-md border bg-white p-5 shadow-sm">
           <p className="text-xs font-bold uppercase text-gray-400 mb-1">Orders</p>
           <p className="text-2xl font-bold text-gray-800">{summary.orderCount || 0}</p>
         </div>
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="rounded-md border bg-white p-5 shadow-sm">
           <p className="text-xs font-bold uppercase text-gray-400 mb-1">Avg Order Value</p>
           <p className="text-2xl font-bold text-gray-800">{fmt(summary.avgOrderValue)}</p>
         </div>
-        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="rounded-md border bg-white p-5 shadow-sm">
           <p className="text-xs font-bold uppercase text-gray-400 mb-1">Voids</p>
           <p className="text-2xl font-bold text-red-500">{summary.voidCount || 0}</p>
           {summary.voidAmount > 0 && <p className="text-xs text-red-400 mt-0.5">{fmt(summary.voidAmount)} lost</p>}
@@ -1388,7 +1389,7 @@ function ReportsDashboard() {
         {/* Left column */}
         <div className="space-y-4">
           {/* Best Selling Items */}
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="rounded-md border bg-white p-5 shadow-sm">
             <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Best Selling Items</h3>
             {bestItems.length === 0 ? (
               <p className="text-sm text-gray-400">No data</p>
@@ -1417,7 +1418,7 @@ function ReportsDashboard() {
           </div>
 
           {/* Void Report */}
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="rounded-md border bg-white p-5 shadow-sm">
             <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Void Report</h3>
             {voids.length === 0 ? (
               <p className="text-sm text-gray-400">No voided orders</p>
@@ -1453,7 +1454,7 @@ function ReportsDashboard() {
         {/* Right column */}
         <div className="space-y-4">
           {/* Payment Breakdown */}
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="rounded-md border bg-white p-5 shadow-sm">
             <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Payment Breakdown</h3>
             {payments.length === 0 ? (
               <p className="text-sm text-gray-400">No data</p>
@@ -1482,7 +1483,7 @@ function ReportsDashboard() {
           </div>
 
           {/* Category Sales */}
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="rounded-md border bg-white p-5 shadow-sm">
             <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Category Sales</h3>
             {categories.length === 0 ? (
               <p className="text-sm text-gray-400">No data</p>
@@ -1507,7 +1508,7 @@ function ReportsDashboard() {
           </div>
 
           {/* Waiter Performance */}
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="rounded-md border bg-white p-5 shadow-sm">
             <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Waiter Performance</h3>
             {waiters.length === 0 ? (
               <p className="text-sm text-gray-400">No data</p>
@@ -1538,7 +1539,7 @@ function ReportsDashboard() {
       </div>
 
       {/* All Items Sales — full width scrollable */}
-      <div className="rounded-2xl border bg-white p-5 shadow-sm mb-5">
+      <div className="rounded-md border bg-white p-5 shadow-sm mb-5">
         <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">All Items Sales</h3>
         {allItems.length === 0 ? (
           <p className="text-sm text-gray-400">No data</p>
@@ -1577,7 +1578,7 @@ function ReportsDashboard() {
 
       {/* Removed Items Report — full width */}
       {removedItems.length > 0 && (
-        <div className="rounded-2xl border bg-white p-5 shadow-sm mb-5">
+        <div className="rounded-md border bg-white p-5 shadow-sm mb-5">
           <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Removed Items</h3>
           <div className="max-h-[250px] overflow-y-auto">
             <table className="w-full text-sm">
@@ -1620,7 +1621,7 @@ function ReportsDashboard() {
       )}
 
       {/* Hourly Sales — full width bar chart */}
-      <div className="rounded-2xl border bg-white p-5 shadow-sm">
+      <div className="rounded-md border bg-white p-5 shadow-sm">
         <h3 className="text-xs font-bold uppercase text-gray-400 mb-3">Hourly Sales</h3>
         {hourEntries.every(([, v]) => v.revenue === 0) ? (
           <p className="text-sm text-gray-400">No data</p>
@@ -1713,7 +1714,7 @@ function BackupRestore() {
         </div>
       )}
 
-      <div className="rounded-xl border bg-white p-6">
+      <div className="rounded-md border bg-white p-6">
         <h3 className="font-medium">Full Database Backup</h3>
         <p className="my-3 text-sm text-muted-foreground">Includes orders, payments, shifts, and settings. Keep a copy on another device. Contact support to restore a full backup.</p>
         <button onClick={() => handleExport(true)} disabled={isExporting || isImporting}
@@ -1723,7 +1724,7 @@ function BackupRestore() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-xl border bg-white p-6">
+        <div className="rounded-md border bg-white p-6">
           <div className="mb-4 flex items-center gap-3">
             <div className="rounded-lg bg-blue-50 p-2.5">
               <Download className="h-5 w-5 text-blue-600" />
@@ -1748,7 +1749,7 @@ function BackupRestore() {
           </button>
         </div>
 
-        <div className="rounded-xl border bg-white p-6">
+        <div className="rounded-md border bg-white p-6">
           <div className="mb-4 flex items-center gap-3">
             <div className="rounded-lg bg-amber-50 p-2.5">
               <Upload className="h-5 w-5 text-amber-600" />

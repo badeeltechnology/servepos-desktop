@@ -1,5 +1,13 @@
 import { useState, useEffect } from 'react'
-import { X, Clock, CheckCircle, AlertTriangle, Banknote, UserCheck } from 'lucide-react'
+import { useAuthStore } from '../stores/auth'
+import { useStatus } from '../stores/status'
+import { askConfirm, toast } from '../stores/ui'
+import StatusBand from './StatusBand'
+import CashCount, { Counts, countTotal } from './CashCount'
+import VoidDialog from './VoidDialog'
+import { SubBar, BackButton, Btn, Cap, Field, money } from '../ui'
+import { timeOf } from '../ui/hosts'
+import { cn } from '../lib/utils'
 
 interface Props {
   sessionId: string
@@ -7,29 +15,34 @@ interface Props {
   onCancel: () => void
 }
 
+// Close shift, blind: count the drawer first; the expected cash appears only after
+// "Finished counting, compare". Open orders and unsynced sales still block closing.
+
 export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
+  const user = useAuthStore((s) => s.user)
+  const cur = useStatus((s) => s.currency)
   const [session, setSession] = useState<any>(null)
   const [paymentMethods, setPaymentMethods] = useState<any[]>([])
-  const [closingBalances, setClosingBalances] = useState<Record<string, number>>({})
   const [expected, setExpected] = useState<Record<string, number>>({})
+  const [opening, setOpening] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState('')
   const [remarks, setRemarks] = useState('')
   const [orderCount, setOrderCount] = useState(0)
   const [totalSales, setTotalSales] = useState(0)
-  const [openOrderCount, setOpenOrderCount] = useState(0)
   const [allOpenOrders, setAllOpenOrders] = useState<any[]>([])
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [waiterSummary, setWaiterSummary] = useState<any[]>([])
-
-  const [singleVoid, setSingleVoid] = useState<{ orderId: string; orderNumber: string; reason: string; remarks: string; disposition: string } | null>(null)
-  const [voidReasons, setVoidReasons] = useState<{ name: string; reason_name: string }[]>([])
+  const [counts, setCounts] = useState<Counts>({})
+  const [manual, setManual] = useState<string | null>(null)
+  const [revealed, setRevealed] = useState(false)
+  const [voidOrder, setVoidOrder] = useState<any>(null)
 
   useEffect(() => { loadData() }, [sessionId])
 
   async function loadData() {
-    const [s, methods, orders, openOrders, pendingSync, allOpen] = await Promise.all([
+    const [s, methods, orders, , pendingSync, allOpen] = await Promise.all([
       window.api.sessions.getActive(),
       window.api.paymentMethods.get(),
       window.api.sessions.getOrders(sessionId),
@@ -40,17 +53,19 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
     setSession(s)
     setPaymentMethods(methods)
     setAllOpenOrders(allOpen || [])
-    setOpenOrderCount(allOpen.length)
-    setPendingSyncCount(pendingSync.length)
+    setOrderCount(0)
+    setPendingSyncCount((pendingSync || []).length)
 
     // Calculate expected amounts
-    const opening = JSON.parse(s?.opening_balance || '[]')
+    const openingBal = JSON.parse(s?.opening_balance || '[]')
     const expectedAmounts: Record<string, number> = {}
-    for (const ob of opening) {
+    const openingAmounts: Record<string, number> = {}
+    for (const ob of openingBal) {
       expectedAmounts[ob.mode] = ob.amount
+      openingAmounts[ob.mode] = ob.amount
     }
 
-    const completedOrders = orders.filter((o: any) => o.status === 'Completed')
+    const completedOrders = (orders || []).filter((o: any) => o.status === 'Completed')
     setOrderCount(completedOrders.length)
     setTotalSales(completedOrders.reduce((sum: number, o: any) => sum + (o.grand_total || 0), 0))
 
@@ -62,33 +77,37 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
     }
 
     setExpected(expectedAmounts)
-
-    // Load void reasons
-    try {
-      const reasons = await window.api.voidReasons.list()
-      setVoidReasons(reasons || [])
-    } catch { /* ignore */ }
+    setOpening(openingAmounts)
 
     // Load waiter summary
     try {
       const ws = await window.api.sessions.getWaiterSummary(sessionId)
       setWaiterSummary(ws || [])
     } catch { /* ignore */ }
-
-    // Pre-fill closing with expected
-    const defaults: Record<string, number> = {}
-    for (const m of methods) {
-      defaults[m.mode_of_payment] = expectedAmounts[m.mode_of_payment] || 0
-    }
-    setClosingBalances(defaults)
   }
 
-  const [showConfirm, setShowConfirm] = useState(false)
+  const counted = manual !== null ? parseFloat(manual || '0') || 0 : countTotal(counts)
+  const cashExp = expected['Cash'] || 0
+  const cashDiff = Math.round((counted - cashExp) * 100) / 100
+  const openCount = allOpenOrders.length
+  const blocked = openCount > 0 || pendingSyncCount > 0
+  const canClose = revealed && !blocked && !loading
 
   async function handleClose() {
+    if (!canClose) return
+    const ok = await askConfirm({
+      title: 'Close this shift?',
+      body: `Counted ${cur} ${money(counted)}${cashDiff === 0 ? ', drawer matches.' : `, ${cashDiff > 0 ? 'over' : 'short'} by ${money(Math.abs(cashDiff))}.`} This can’t be undone.`,
+      ok: 'Close shift', cancel: 'Not yet'
+    })
+    if (!ok) return
     setError('')
     setLoading(true)
     try {
+      // Every method closes at its expected amount except Cash, which is what was counted (as before)
+      const closingBalances: Record<string, number> = {}
+      for (const m of paymentMethods) closingBalances[m.mode_of_payment] = expected[m.mode_of_payment] || 0
+      closingBalances['Cash'] = Math.round(counted * 100) / 100
       const closingBalance = Object.entries(closingBalances).map(([mode, amount]) => ({ mode, amount }))
       await window.api.sessions.close(sessionId, closingBalance, remarks)
       // Print closing voucher
@@ -96,348 +115,131 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
       onClose()
     } catch (err: any) {
       setError(err.message || 'Failed to close shift')
-      setShowConfirm(false)
     } finally {
       setLoading(false)
     }
   }
 
-  if (!session) return null
-
-  const openedAt = new Date(session.opened_at + 'Z')
+  const openedAt = session?.opened_at
+  const nonCash = paymentMethods.filter((m) => m.mode_of_payment !== 'Cash')
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[550px] max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <div>
-            <h2 className="text-xl font-bold">Close Shift</h2>
-            <p className="text-sm text-gray-500">
-              Opened {openedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} by {session.user_name}
-            </p>
-          </div>
-          <button onClick={onCancel} className="rounded-xl p-2 text-gray-400 hover:bg-gray-100">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <div className="flex h-screen flex-col overflow-hidden bg-n-cream text-n-ink">
+      <StatusBand userName={user?.name} showWaiter={false} />
+      <SubBar>
+        <BackButton onClick={onCancel} />
+        <span className="cond ml-1.5 whitespace-nowrap text-2xl font-bold">Close shift</span>
+        <span className="truncate text-[13px] text-n-mist">{openedAt ? `Opened ${timeOf(openedAt)} by ${session?.user_name}` : ''}</span>
+        <span className="flex-1" />
+        {openCount > 0 && <span className="whitespace-nowrap text-[13px] font-semibold text-n-gold">{openCount} order{openCount === 1 ? '' : 's'} still open</span>}
+      </SubBar>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {/* Summary */}
-          <div className="mb-5 grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-emerald-50 p-4 text-center">
-              <p className="text-xs text-emerald-600 font-semibold">Total Sales</p>
-              <p className="text-2xl font-bold text-emerald-700">{totalSales.toFixed(2)}</p>
-            </div>
-            <div className="rounded-xl bg-blue-50 p-4 text-center">
-              <p className="text-xs text-blue-600 font-semibold">Orders</p>
-              <p className="text-2xl font-bold text-blue-700">{orderCount}</p>
-            </div>
-          </div>
+      <div className="flex min-h-0 flex-1 gap-3 p-3">
+        <CashCount title="Count the cash in the drawer" hint="The expected amount shows only after you finish counting" rowHeight={62}
+          counts={counts} onCounts={(c) => { setCounts(c) }} manual={manual} onManual={setManual} />
 
-          {/* Payment Reconciliation */}
-          {/* Cash Reconciliation */}
-          <h3 className="mb-3 text-sm font-bold text-gray-500 uppercase">Cash Reconciliation</h3>
-          <div className="rounded-xl border-2 border-gray-100 overflow-hidden">
-            <div className="grid grid-cols-4 gap-2 bg-gray-50 px-4 py-2 text-[11px] font-bold text-gray-500 uppercase">
-              <span></span>
-              <span className="text-right">Expected</span>
-              <span className="text-right">Actual (count)</span>
-              <span className="text-right">Difference</span>
-            </div>
-            {(() => {
-              const cashExp = expected['Cash'] || 0
-              const cashActual = closingBalances['Cash'] || 0
-              const cashDiff = cashActual - cashExp
-              return (
-                <div className="grid grid-cols-4 gap-2 items-center border-t px-4 py-4">
-                  <div className="flex items-center gap-2">
-                    <Banknote className="h-5 w-5 text-gray-400" />
-                    <span className="text-sm font-bold">Cash</span>
-                  </div>
-                  <span className="text-right font-mono text-sm font-semibold text-gray-700">{cashExp.toFixed(2)}</span>
-                  <input
-                    type="number"
-                    data-keyboard="numpad"
-                    value={closingBalances['Cash'] || ''}
-                    onChange={(e) => setClosingBalances({ ...closingBalances, Cash: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-lg border-2 border-gray-200 px-3 py-2 text-right font-mono text-sm font-bold focus:border-primary focus:outline-none"
-                    min={0} step={0.01} autoFocus
-                  />
-                  <div className="text-right">
-                    <span className={`font-mono text-sm font-bold ${
-                      cashDiff === 0 ? 'text-emerald-600' : cashDiff > 0 ? 'text-blue-600' : 'text-red-600'
-                    }`}>
-                      {cashDiff > 0 ? '+' : ''}{cashDiff.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              )
-            })()}
-          </div>
-
-          {/* Cash difference message */}
-          {(() => {
-            const cashExp = expected['Cash'] || 0
-            const cashActual = closingBalances['Cash'] || 0
-            const cashDiff = cashActual - cashExp
-            if (cashDiff !== 0) {
-              return (
-                <div className={`mt-3 flex items-center gap-2 rounded-xl p-3 text-sm ${
-                  cashDiff > 0 ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'
-                }`}>
-                  <AlertTriangle className="h-4 w-4" />
-                  <span>{cashDiff > 0 ? `Cash overage: +${cashDiff.toFixed(2)}` : `Cash shortage: ${cashDiff.toFixed(2)}`}</span>
-                </div>
-              )
-            }
-            return (
-              <div className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">
-                <CheckCircle className="h-4 w-4" />
-                <span>Cash balance matches. No discrepancy.</span>
-              </div>
-            )
-          })()}
-
-          {/* Other payment methods — read-only summary */}
-          {paymentMethods.filter(m => m.mode_of_payment !== 'Cash').length > 0 && (
-            <>
-              <h3 className="mb-2 mt-5 text-sm font-bold text-gray-500 uppercase">Other Payments</h3>
-              <div className="rounded-xl border bg-gray-50 divide-y">
-                {paymentMethods.filter(m => m.mode_of_payment !== 'Cash').map((m) => {
-                  const exp = expected[m.mode_of_payment] || 0
-                  return (
-                    <div key={m.name} className="flex items-center justify-between px-4 py-3">
-                      <span className="text-sm font-semibold text-gray-600">{m.mode_of_payment}</span>
-                      <span className="font-mono text-sm font-bold text-gray-700">{exp.toFixed(2)}</span>
-                    </div>
-                  )
-                })}
-              </div>
-              <p className="mt-1 text-xs text-gray-400">Electronic payments are tracked automatically from transactions.</p>
-            </>
-          )}
-
-          {/* Waiter Accountability */}
-          {waiterSummary.length > 0 && (
-            <div className="mt-5">
-              <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-gray-500 uppercase">
-                <UserCheck className="h-4 w-4" />
-                Waiter Accountability
-              </h3>
-              <div className="rounded-xl border-2 border-gray-100 overflow-hidden">
-                <div className="grid grid-cols-4 gap-2 bg-gray-50 px-4 py-2 text-[11px] font-bold text-gray-500 uppercase">
-                  <span>Waiter</span>
-                  <span className="text-right">Paid</span>
-                  <span className="text-right">Open</span>
-                  <span className="text-right">Collected</span>
-                </div>
-                {waiterSummary.map((w: any) => (
-                  <div key={w.waiter_name} className={`grid grid-cols-4 gap-2 items-center border-t px-4 py-2.5 ${w.open_orders > 0 ? 'bg-amber-50' : ''}`}>
-                    <span className="text-sm font-semibold">{w.waiter_name}</span>
-                    <span className="text-right text-sm text-gray-600">{w.paid_orders}</span>
-                    <span className={`text-right text-sm font-bold ${w.open_orders > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                      {w.open_orders > 0 ? w.open_orders : '-'}
-                    </span>
-                    <span className="text-right font-mono text-sm font-semibold">{(w.total_collected || 0).toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
-              {waiterSummary.some((w: any) => w.open_orders > 0) && (
-                <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700">
-                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                  <span>
-                    <strong>Uncleared orders: </strong>
-                    {waiterSummary.filter((w: any) => w.open_orders > 0).map((w: any) =>
-                      `${w.waiter_name} (${w.open_order_numbers})`
-                    ).join('; ')}
+        <aside className="flex w-[340px] flex-shrink-0 flex-col gap-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+            <div className="flex flex-shrink-0 flex-col gap-1 rounded-md bg-n-deep p-4 text-white">
+              <Cap className="text-n-mist">Counted cash</Cap>
+              <span className="cond num text-5xl font-bold leading-none">{cur} {money(counted)}</span>
+              {revealed ? (
+                <div className="mt-2.5 flex flex-col gap-1 border-t border-n-steel pt-2.5 text-[13px]">
+                  <span className="flex justify-between"><span>Opening float</span><span className="num">{money(opening['Cash'] || 0)}</span></span>
+                  <span className="flex justify-between"><span>Cash sales</span><span className="num">+ {money(cashExp - (opening['Cash'] || 0))}</span></span>
+                  <span className="flex justify-between font-semibold"><span>Expected in drawer</span><span className="num">{money(cashExp)}</span></span>
+                  <span className={cn('mt-1.5 text-sm font-bold', cashDiff === 0 ? 'text-n-lamp' : Math.abs(cashDiff) <= 20 ? 'text-n-gold' : 'text-n-coral')}>
+                    {cashDiff === 0 ? 'Drawer matches' : `${cashDiff > 0 ? 'Over' : 'Short'} by ${money(Math.abs(cashDiff))}, goes on the closing entry`}
                   </span>
+                  <button type="button" onClick={() => setRevealed(false)} className="mt-1 self-start text-xs font-semibold text-n-mist underline">Recount</button>
                 </div>
+              ) : (
+                <button type="button" onClick={() => setRevealed(true)} className="press mt-2.5 h-12 rounded-md border-[1.5px] border-n-steel bg-transparent text-sm font-semibold text-white">Finished counting, compare</button>
               )}
             </div>
-          )}
 
-          {/* Remarks */}
-          <div className="mt-5">
-            <h3 className="mb-2 text-sm font-bold text-gray-500 uppercase">Remarks (optional)</h3>
-            <textarea
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              data-keyboard="full"
-              placeholder="Any notes about this shift — discrepancies, incidents, etc."
-              className="w-full resize-none rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none"
-              rows={3}
-            />
-          </div>
-        </div>
-
-        {/* Blockers & Footer */}
-        <div className="border-t px-6 py-4">
-          {/* Blockers */}
-          {openOrderCount > 0 && (
-            <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200 p-3">
-              <div className="flex items-center gap-2 text-sm text-amber-700 mb-2">
-                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                <span><strong>{openOrderCount} order(s)</strong> still open. Void them to close shift.</span>
-              </div>
-              <div className="max-h-32 overflow-y-auto space-y-1">
-                {allOpenOrders.map((order: any) => {
-                  const isOldSession = order.session_id !== sessionId
-                  const createdDate = new Date(order.created_at + 'Z')
-                  return (
-                    <div key={order.id} className="flex items-center justify-between rounded-lg bg-white/70 px-3 py-1.5 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">#{order.order_number?.split('-').pop()}</span>
-                        <span className="text-gray-500">{order.table_name || order.order_type}</span>
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                          order.status === 'Hold' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'
-                        }`}>{order.status}</span>
-                        {isOldSession && (
-                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">Previous shift</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400 text-[10px]">
-                          {createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}{' '}
-                          {createdDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        <button
-                          onClick={() => setSingleVoid({ orderId: order.id, orderNumber: order.order_number?.split('-').pop() || '', reason: '', remarks: '', disposition: '' })}
-                          className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600 hover:bg-red-200"
-                        >Void</button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+            <div className="flex flex-shrink-0 flex-col gap-1.5 rounded-md bg-white px-4 py-3 text-[13px] shadow-tile">
+              <span className="mb-0.5 font-semibold">Shift totals</span>
+              {nonCash.map((m) => (
+                <span key={m.name} className="flex justify-between"><span>{m.mode_of_payment}</span><span className="num">{money(expected[m.mode_of_payment] || 0)}</span></span>
+              ))}
+              {revealed && <span className="flex justify-between"><span>Cash</span><span className="num">{money(cashExp - (opening['Cash'] || 0))}</span></span>}
+              <span className="mt-0.5 flex justify-between border-t border-n-line pt-1.5 font-semibold"><span>Sales, {orderCount} invoice{orderCount === 1 ? '' : 's'}</span><span className="num">{money(totalSales)}</span></span>
             </div>
-          )}
-          {pendingSyncCount > 0 && (
-            <div className="mb-3 flex items-center justify-between rounded-xl bg-blue-50 border border-blue-200 p-3 text-sm text-blue-700">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                <span><strong>{pendingSyncCount} order(s)</strong> pending sync to ERPNext.</span>
-              </div>
-              <button onClick={async () => { setSyncing(true); await window.api.sync.run(); await loadData(); setSyncing(false) }}
-                disabled={syncing}
-                className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50">
-                {syncing ? 'Syncing...' : 'Sync Now'}
-              </button>
-            </div>
-          )}
 
-          {error && <p className="mb-2 text-sm text-red-500">{error}</p>}
-          <div className="flex gap-3">
-            <button onClick={onCancel}
-              className="flex-1 rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-500 hover:bg-gray-50">
-              Cancel
-            </button>
-            <button onClick={() => setShowConfirm(true)} disabled={loading || openOrderCount > 0 || pendingSyncCount > 0}
-              className="flex-1 rounded-xl bg-red-600 py-3 text-sm font-bold text-white shadow-lg shadow-red-600/25 hover:bg-red-700 active:scale-[0.98] disabled:opacity-50">
-              {loading ? 'Closing...' : 'Close Shift'}
-            </button>
+            {waiterSummary.length > 0 && (
+              <div className="flex flex-shrink-0 flex-col gap-1 rounded-md bg-white px-4 py-3 text-[13px] shadow-tile">
+                <span className="mb-0.5 font-semibold">Waiters</span>
+                <span className="grid grid-cols-[1fr_36px_40px_76px] gap-x-1 text-[11px] font-bold uppercase tracking-[.06em] text-n-muted"><span>Name</span><span className="text-right">Paid</span><span className="text-right">Open</span><span className="text-right">Collected</span></span>
+                {waiterSummary.map((w: any) => (
+                  <span key={w.waiter_name} className={cn('grid grid-cols-[1fr_36px_40px_76px] gap-x-1', w.open_orders > 0 && 'font-semibold text-n-red')}>
+                    <span className="truncate">{w.waiter_name}</span><span className="num text-right">{w.paid_orders}</span><span className="num text-right">{w.open_orders > 0 ? w.open_orders : '–'}</span><span className="num text-right">{money(w.total_collected || 0)}</span>
+                  </span>
+                ))}
+                {waiterSummary.some((w: any) => w.open_orders > 0) && (
+                  <span className="mt-1 text-xs text-[#8A5A00]">Uncleared: {waiterSummary.filter((w: any) => w.open_orders > 0).map((w: any) => `${w.waiter_name} (${w.open_order_numbers})`).join('; ')}</span>
+                )}
+              </div>
+            )}
+
+            {openCount > 0 && (
+              <div className="flex flex-shrink-0 flex-col gap-1.5 rounded-md bg-white px-4 py-3 text-[13px] shadow-[inset_4px_0_0_#F4A52A,0_1px_2px_rgba(60,45,20,.12)]">
+                <span className="font-semibold">{openCount} order{openCount === 1 ? '' : 's'} still open. Pay or void {openCount === 1 ? 'it' : 'them'} to close.</span>
+                {allOpenOrders.map((o: any) => (
+                  <span key={o.id} className="flex items-center gap-2">
+                    <span className="cond num text-[15px] font-bold">#{o.order_number?.split('-').pop()}</span>
+                    <span className="min-w-0 flex-1 truncate text-n-muted">{o.table_name || o.order_type} · {o.status}{o.session_id !== sessionId ? ' · previous shift' : ''}</span>
+                    <Btn size="sm" variant="dangerOutline" onClick={() => setVoidOrder(o)}>Void</Btn>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {pendingSyncCount > 0 && (
+              <div className="flex flex-shrink-0 items-center gap-2 rounded-md bg-white px-4 py-3 text-[13px] shadow-tile">
+                <span className="flex-1"><b>{pendingSyncCount} sale{pendingSyncCount === 1 ? '' : 's'}</b> not in ERPNext yet.</span>
+                <Btn size="sm" variant="deep" disabled={syncing} onClick={async () => { setSyncing(true); try { await window.api.sync.run() } catch {} await loadData(); setSyncing(false) }}>{syncing ? 'Syncing…' : 'Sync now'}</Btn>
+              </div>
+            )}
+
+            <Field data-keyboard="full" value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Remarks for this shift (optional)" className="flex-shrink-0" />
           </div>
 
-          {/* Confirmation dialog */}
-          {/* Single order void modal */}
-          {singleVoid && (
-            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
-              <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
-                <h3 className="mb-1 text-center text-lg font-bold">Void Order #{singleVoid.orderNumber}</h3>
-                <p className="mb-4 text-center text-xs text-gray-500">Select reason, disposition, and add remarks</p>
-
-                {voidReasons.length > 0 && (
-                  <select
-                    value={singleVoid.reason}
-                    onChange={(e) => setSingleVoid({ ...singleVoid, reason: e.target.value })}
-                    className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-3"
-                  >
-                    <option value="">-- Select reason --</option>
-                    {voidReasons.map((r) => (
-                      <option key={r.name} value={r.reason_name}>{r.reason_name}</option>
-                    ))}
-                    <option value="__custom__">Other (type reason)...</option>
-                  </select>
-                )}
-
-                {(singleVoid.reason === '__custom__' || voidReasons.length === 0) && (
-                  <input type="text" data-keyboard="full"
-                    value={singleVoid.reason === '__custom__' ? '' : singleVoid.reason}
-                    onChange={(e) => setSingleVoid({ ...singleVoid, reason: e.target.value })}
-                    placeholder="Enter void reason..."
-                    className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-3" autoFocus />
-                )}
-
-                <div className="flex gap-2 mb-3">
-                  <button onClick={() => setSingleVoid({ ...singleVoid, disposition: 'Return to Inventory' })}
-                    className={`flex-1 rounded-xl border-2 py-3 text-center text-xs font-bold transition-colors ${singleVoid.disposition === 'Return to Inventory' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:bg-blue-50 hover:border-blue-200'}`}>
-                    Return to Inventory
-                  </button>
-                  <button onClick={() => setSingleVoid({ ...singleVoid, disposition: 'Waste' })}
-                    className={`flex-1 rounded-xl border-2 py-3 text-center text-xs font-bold transition-colors ${singleVoid.disposition === 'Waste' ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-red-50 hover:border-red-200'}`}>
-                    Waste
-                  </button>
-                </div>
-
-                <textarea data-keyboard="full" value={singleVoid.remarks}
-                  onChange={(e) => setSingleVoid({ ...singleVoid, remarks: e.target.value })}
-                  placeholder="Add remarks (optional)..."
-                  className="w-full resize-none rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-primary focus:outline-none mb-4" rows={2} />
-
-                <div className="flex gap-3">
-                  <button onClick={() => setSingleVoid(null)}
-                    className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
-                  <button
-                    onClick={async () => {
-                      const reason = singleVoid.reason.trim()
-                      if (!reason || reason === '__custom__' || !singleVoid.disposition) return
-                      try {
-                        await window.api.orders.update(singleVoid.orderId, {
-                          status: 'Void', voidReason: reason,
-                          voidRemarks: singleVoid.remarks.trim() || undefined,
-                          voidedBy: 'Supervisor',
-                          voidDisposition: singleVoid.disposition
-                        })
-                        const order = allOpenOrders.find(o => o.id === singleVoid.orderId)
-                        if (order?.table_name) {
-                          try { await window.api.tables.updateStatus(order.table_name, 'Available') } catch {}
-                        }
-                        try { await window.api.print.voidSlip(singleVoid.orderId, reason, 'Supervisor', undefined, singleVoid.remarks.trim(), singleVoid.disposition) } catch {}
-                        setSingleVoid(null)
-                        await loadData()
-                      } catch (err: any) {
-                        setError(err.message || 'Failed to void order')
-                      }
-                    }}
-                    disabled={!singleVoid.reason.trim() || singleVoid.reason === '__custom__' || !singleVoid.disposition}
-                    className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
-                    Void
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {showConfirm && (
-            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
-              <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
-                <h3 className="mb-2 text-center text-lg font-bold">Confirm Close Shift</h3>
-                <p className="mb-5 text-center text-sm text-gray-500">Are you sure you want to close this shift? This action cannot be undone.</p>
-                <div className="flex gap-3">
-                  <button onClick={() => setShowConfirm(false)}
-                    className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">
-                    Cancel
-                  </button>
-                  <button onClick={handleClose} disabled={loading}
-                    className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
-                    {loading ? 'Closing...' : 'Yes, Close Shift'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+          {error && <span className="text-sm font-semibold text-n-red">{error}</span>}
+          <button type="button" onClick={handleClose} disabled={!canClose}
+            className={cn('press flex h-16 flex-shrink-0 items-center justify-between whitespace-nowrap rounded-lg px-[18px] text-lg font-bold', canClose ? 'bg-n-amber text-n-ink' : 'bg-n-sand text-n-stone')}>
+            <span>{loading ? 'Closing…' : !revealed ? 'Count first' : blocked ? 'Clear the blockers' : 'Close shift'}</span>
+            <span className="text-[13px] font-medium">{canClose ? 'Prints the closing voucher' : ''}</span>
+          </button>
+        </aside>
       </div>
+
+      {voidOrder && (
+        <VoidDialog
+          requirePin={false}
+          target={{ kind: 'order', title: `Void #${voidOrder.order_number?.split('-').pop()}`, subtitle: `${voidOrder.table_name || voidOrder.order_type} · ${voidOrder.status}. The whole order is cancelled and a void slip prints.`, amount: voidOrder.grand_total }}
+          onCancel={() => setVoidOrder(null)}
+          onConfirm={async (r) => {
+            try {
+              await window.api.orders.update(voidOrder.id, {
+                status: 'Void', voidReason: r.reason,
+                voidRemarks: r.remarks || undefined,
+                voidedBy: 'Supervisor',
+                voidDisposition: r.disposition
+              })
+              if (voidOrder.table_name) {
+                try { await window.api.tables.updateStatus(voidOrder.table_name, 'Available') } catch {}
+              }
+              try { await window.api.print.voidSlip(voidOrder.id, r.reason, 'Supervisor', undefined, r.remarks, r.disposition) } catch {}
+              toast.success('Order voided')
+              setVoidOrder(null)
+              await loadData()
+            } catch (err: any) {
+              setError(err.message || 'Failed to void order')
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

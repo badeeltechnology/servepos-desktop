@@ -72,19 +72,19 @@ export default function FullKeyboard({ onKey, onDone, className = '' }: FullKeyb
   }
 
   function getKeyClass(key: string): string {
-    const base = 'flex h-9 items-center justify-center rounded-lg text-sm font-medium transition-colors select-none'
-    if (key === ' ') return `${base} flex-1 bg-gray-100 text-gray-600 hover:bg-gray-200 active:bg-gray-300`
-    if (key === 'done') return `${base} min-w-[80px] bg-primary text-white hover:bg-primary/90 active:bg-primary/80`
-    if (key === 'shift') return `${base} min-w-[60px] ${shifted ? 'bg-gray-300 text-gray-800' : 'bg-gray-100 text-gray-600'} hover:bg-gray-200 active:bg-gray-300`
-    if (key === 'backspace') return `${base} min-w-[60px] bg-gray-100 text-gray-600 hover:bg-gray-200 active:bg-gray-300`
-    if (key === 'symbols' || key === 'abc') return `${base} min-w-[60px] bg-gray-100 text-gray-600 hover:bg-gray-200 active:bg-gray-300`
-    return `${base} flex-1 bg-gray-50 text-gray-800 hover:bg-gray-100 active:bg-gray-200`
+    const base = 'press flex h-12 min-w-0 items-center justify-center rounded-md text-[17px] text-n-ink shadow-key select-none'
+    if (key === ' ') return `${base} flex-[5] bg-white text-sm text-n-muted`
+    if (key === 'done') return `${base} flex-[2] bg-n-deep text-[15px] font-semibold text-white`
+    if (key === 'shift') return `${base} flex-[1.3] ${shifted ? 'bg-n-deep text-white' : 'bg-[#CFC7B8]'}`
+    if (key === 'backspace') return `${base} flex-[1.3] bg-[#CFC7B8]`
+    if (key === 'symbols' || key === 'abc') return `${base} flex-[1.3] bg-[#CFC7B8] text-sm`
+    return `${base} flex-1 bg-white`
   }
 
   return (
-    <div className={`space-y-1 ${className}`}>
+    <div className={`flex flex-col gap-1.5 ${className}`}>
       {rows.map((row, ri) => (
-        <div key={ri} className="flex justify-center gap-1">
+        <div key={ri} className="flex justify-center gap-1.5">
           {row.map((key, ki) => (
             <button
               key={ki}

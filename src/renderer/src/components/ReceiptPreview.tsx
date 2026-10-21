@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Printer } from 'lucide-react'
+import { toast } from '../stores/ui'
+import { Btn } from '../ui'
 
 interface Props {
   orderId: string
@@ -42,7 +43,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
     if (result?.success) {
       onClose()
     } else {
-      alert('Print failed: ' + (result?.error || 'Check printer configuration'))
+      toast.error('Print failed: ' + (result?.error || 'Check printer configuration'))
     }
   }
 
@@ -68,27 +69,18 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
   const change = Math.max(0, totalPaid - (order.grand_total || 0))
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="flex flex-col items-center">
-        {/* Receipt card */}
-        <div className="w-[320px] rounded-2xl bg-white shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(11,59,73,.6)] p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="flex max-h-full animate-rise flex-col">
+        <div className="flex max-h-full w-[340px] flex-col overflow-hidden bg-white shadow-pop">
           {/* Action bar */}
-          <div className="flex items-center justify-between bg-gray-50 px-4 py-3 border-b">
-            <h3 className="text-sm font-bold text-gray-700">Receipt Preview</h3>
-            <div className="flex items-center gap-2">
-              <button onClick={handlePrint}
-                className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90">
-                <Printer className="h-3.5 w-3.5" />
-                Print
-              </button>
-              <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-200">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+          <div className="flex h-14 flex-shrink-0 items-center gap-2 bg-n-deep px-3 text-white">
+            <span className="cond flex-1 text-xl font-bold">Receipt</span>
+            <Btn variant="ghostDark" onClick={onClose}>Close</Btn>
+            <Btn variant="amber" onClick={handlePrint}>Print</Btn>
           </div>
 
           {/* Receipt content */}
-          <div ref={receiptRef} className="px-6 py-5 font-mono text-[11px] leading-relaxed">
+          <div ref={receiptRef} className="overflow-y-auto px-6 py-5 font-mono text-[11.5px] leading-relaxed text-n-ink">
             {/* Header */}
             <div className="text-center">
               {showArabic && config.restaurant_name_ar && (
@@ -97,7 +89,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
               {config.restaurant_name && (
                 <p className="text-sm font-bold">{config.restaurant_name}</p>
               )}
-              <div className="my-2 border-t border-dashed border-gray-300" />
+              <div className="my-2 border-t border-dashed border-[#B9B2A4]" />
               {config.address_line_1 && <p>{config.address_line_1}</p>}
               {showArabic && config.address_line_1_ar && <p dir="rtl">{config.address_line_1_ar}</p>}
               {config.address_line_2 && <p>{config.address_line_2}</p>}
@@ -106,7 +98,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
               {showVat && <p>VAT: {config.vat_number}</p>}
             </div>
 
-            <div className="my-2 border-t-2 border-gray-800" />
+            <div className="my-2 border-t-2 border-n-ink" />
 
             {/* Order info */}
             <div>
@@ -120,17 +112,17 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
               )}
               {showCashier && <p>Cashier: {order.cashier_name}</p>}
               <p>Type: {order.order_type}</p>
-              {order.order_notes && <p className="text-gray-600">Notes: {order.order_notes}</p>}
+              {order.order_notes && <p className="text-n-muted">Notes: {order.order_notes}</p>}
             </div>
 
-            <div className="my-2 border-t border-dashed border-gray-300" />
+            <div className="my-2 border-t border-dashed border-[#B9B2A4]" />
 
             {/* Column header */}
             <div className="flex justify-between font-bold">
               <span>Qty  Item</span>
               <span>Amount</span>
             </div>
-            <div className="my-1 border-t border-dashed border-gray-300" />
+            <div className="my-1 border-t border-dashed border-[#B9B2A4]" />
 
             {/* Items */}
             {items.map((item) => {
@@ -142,27 +134,27 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
                   <span>{item.amount.toFixed(decimals)}</span>
                 </div>
                 {showArabicItems && itemInfo.item_name_ar && (
-                  <p className="pl-6 text-gray-500" dir="rtl">{itemInfo.item_name_ar}</p>
+                  <p className="pl-6 text-n-muted" dir="rtl">{itemInfo.item_name_ar}</p>
                 )}
                 {config.show_description_on_receipt === '1' && itemInfo.description && (
-                  <p className="pl-6 text-gray-400" style={{ fontSize: '9px' }}>{itemInfo.description}</p>
+                  <p className="pl-6 text-n-muted" style={{ fontSize: '9px' }}>{itemInfo.description}</p>
                 )}
                 {config.show_description_ar_on_receipt === '1' && itemInfo.description_ar && (
-                  <p className="pl-6 text-gray-400" dir="rtl" style={{ fontSize: '9px' }}>{itemInfo.description_ar}</p>
+                  <p className="pl-6 text-n-muted" dir="rtl" style={{ fontSize: '9px' }}>{itemInfo.description_ar}</p>
                 )}
                 {item.modifiers && JSON.parse(item.modifiers).map((m: any, i: number) => (
-                  <div key={i} className="flex justify-between text-gray-500 pl-4">
+                  <div key={i} className="flex justify-between text-n-muted pl-4">
                     <span>+ {m.name}</span>
                     {m.price > 0 && <span>{m.price.toFixed(decimals)}</span>}
                   </div>
                 ))}
                 {item.special_instructions && (
-                  <p className="text-gray-500 pl-4">"{item.special_instructions}"</p>
+                  <p className="text-n-muted pl-4">"{item.special_instructions}"</p>
                 )}
               </div>
             )})}
 
-            <div className="my-2 border-t border-dashed border-gray-300" />
+            <div className="my-2 border-t border-dashed border-[#B9B2A4]" />
 
             {/* Totals */}
             <div className="space-y-0.5">
@@ -182,7 +174,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
                   <span>{fmt(order.tax_total)}</span>
                 </div>
               )}
-              <div className="my-1 border-t border-dashed border-gray-300" />
+              <div className="my-1 border-t border-dashed border-[#B9B2A4]" />
               <div className="flex justify-between text-sm font-bold">
                 <span>TOTAL:</span>
                 <span>{fmt(order.grand_total || 0)}</span>
@@ -207,7 +199,7 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
               </div>
             )}
 
-            <div className="my-2 border-t-2 border-gray-800" />
+            <div className="my-2 border-t-2 border-n-ink" />
 
             {/* Footer */}
             <div className="text-center">

@@ -172,31 +172,31 @@ export default function Setup({ onComplete }: SetupProps) {
   }
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="flex h-screen bg-n-cream">
       {/* Sidebar - Steps */}
-      <div className="flex w-72 flex-col border-r border-white/50 bg-white/30 p-8 backdrop-blur-sm">
-        <h1 className="mb-2 text-2xl font-bold text-primary">ServePOS</h1>
-        <p className="mb-8 text-sm text-muted-foreground">Initial Setup</p>
+      <div className="flex w-72 flex-shrink-0 flex-col bg-n-deep p-8 text-white max-[1100px]:w-60 max-[1100px]:p-6">
+        <h1 className="cond mb-1 text-5xl font-bold leading-none tracking-[.02em]">ServePOS</h1>
+        <p className="mb-8 text-sm text-n-mist">First-time setup for this till</p>
 
         <nav className="space-y-2">
           {steps.map((s, i) => (
             <div
               key={s.key}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${
+              className={`flex h-12 items-center gap-3 rounded-md px-3 text-sm ${
                 i === currentStepIndex
-                  ? 'bg-primary/10 font-medium text-primary'
+                  ? 'bg-white font-semibold text-n-deep'
                   : i < currentStepIndex
-                    ? 'text-muted-foreground'
-                    : 'text-muted-foreground/50'
+                    ? 'text-n-frost'
+                    : 'text-n-steel'
               }`}
             >
               <div
                 className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${
                   i < currentStepIndex
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-n-lamp text-n-deep'
                     : i === currentStepIndex
-                      ? 'border-2 border-primary text-primary'
-                      : 'border border-muted-foreground/30 text-muted-foreground/50'
+                      ? 'border-2 border-n-deep text-n-deep'
+                      : 'border border-n-steel text-n-steel'
                 }`}
               >
                 {i < currentStepIndex ? <Check className="h-3 w-3" /> : i + 1}
@@ -212,8 +212,8 @@ export default function Setup({ onComplete }: SetupProps) {
         <div className="w-full max-w-lg">
           {/* Step 1: Admin Account */}
           {step === 'admin' && (
-            <div className="rounded-2xl bg-white p-8 shadow-lg">
-              <h2 className="mb-1 text-2xl font-bold">Create Admin Account</h2>
+            <div className="rounded-md bg-white p-8 shadow-lg">
+              <h2 className="cond mb-1 text-[32px] font-bold leading-none text-n-deep">Create Admin Account</h2>
               <p className="mb-6 text-sm text-muted-foreground">
                 This account is used for system configuration only.
               </p>
@@ -268,8 +268,8 @@ export default function Setup({ onComplete }: SetupProps) {
 
           {/* Step 2: ERPNext Connection */}
           {step === 'connection' && (
-            <div className="rounded-2xl bg-white p-8 shadow-lg">
-              <h2 className="mb-1 text-2xl font-bold">ERPNext Connection</h2>
+            <div className="rounded-md bg-white p-8 shadow-lg">
+              <h2 className="cond mb-1 text-[32px] font-bold leading-none text-n-deep">ERPNext Connection</h2>
               <p className="mb-6 text-sm text-muted-foreground">
                 Connect to your ERPNext server, then select company and POS profile.
               </p>
@@ -307,7 +307,7 @@ export default function Setup({ onComplete }: SetupProps) {
 
                 {/* Connection verified — show company & profile */}
                 {connectionVerified && companies.length > 0 && (
-                  <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
+                  <div className="rounded-md border-2 border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-emerald-700">
                       <Wifi className="h-4 w-4" />
                       Connected to ERPNext
@@ -372,8 +372,8 @@ export default function Setup({ onComplete }: SetupProps) {
           {/* Step 3: Settings */}
           {/* Step 3: Settings */}
           {step === 'settings' && (
-            <div className="rounded-2xl bg-white p-8 shadow-lg">
-              <h2 className="mb-1 text-2xl font-bold">Terminal Settings</h2>
+            <div className="rounded-md bg-white p-8 shadow-lg">
+              <h2 className="cond mb-1 text-[32px] font-bold leading-none text-n-deep">Terminal Settings</h2>
               <p className="mb-6 text-sm text-muted-foreground">
                 Configure order numbering and sync preferences.
               </p>
@@ -471,8 +471,8 @@ export default function Setup({ onComplete }: SetupProps) {
 
           {/* Step 5: Create Supervisor */}
           {step === 'supervisor' && (
-            <div className="rounded-2xl bg-white p-8 shadow-lg">
-              <h2 className="mb-1 text-2xl font-bold">Create Supervisor</h2>
+            <div className="rounded-md bg-white p-8 shadow-lg">
+              <h2 className="cond mb-1 text-[32px] font-bold leading-none text-n-deep">Create Supervisor</h2>
               <p className="mb-6 text-sm text-muted-foreground">
                 The supervisor manages daily operations — printers, modifiers, cashiers, and orders.
               </p>
@@ -544,11 +544,11 @@ export default function Setup({ onComplete }: SetupProps) {
 
           {/* Step 6: Done */}
           {step === 'done' && (
-            <div className="rounded-2xl bg-white p-8 text-center shadow-lg">
+            <div className="rounded-md bg-white p-8 text-center shadow-lg">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
                 <Check className="h-8 w-8 text-green-600" />
               </div>
-              <h2 className="mb-2 text-2xl font-bold">Setup Complete!</h2>
+              <h2 className="cond mb-2 text-[32px] font-bold leading-none text-n-deep">Setup Complete!</h2>
               <p className="mb-6 text-muted-foreground">
                 ServePOS is ready. The supervisor can now log in to configure printers, modifiers,
                 and create cashier accounts.

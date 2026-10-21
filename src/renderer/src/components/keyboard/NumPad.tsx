@@ -25,7 +25,7 @@ export default function NumPad({ onKey, showDecimal = true, className = '' }: Nu
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => onKey(key)}
-              className="flex h-14 items-center justify-center rounded-xl bg-gray-50 text-lg font-semibold text-gray-800 transition-colors hover:bg-gray-100 active:bg-gray-200 select-none"
+              className="press cond num flex h-14 items-center justify-center rounded-md bg-white text-[26px] font-semibold text-n-ink shadow-keydeep select-none"
             >
               {key === 'backspace' ? '\u232B' : key}
             </button>
@@ -36,7 +36,7 @@ export default function NumPad({ onKey, showDecimal = true, className = '' }: Nu
         type="button"
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => onKey('done')}
-        className="mt-2 flex h-12 w-full items-center justify-center rounded-xl bg-primary text-base font-semibold text-white transition-colors hover:bg-primary/90 active:bg-primary/80 select-none"
+        className="press mt-2 flex h-12 w-full items-center justify-center rounded-md bg-n-deep text-base font-semibold text-white select-none"
       >
         Done
       </button>

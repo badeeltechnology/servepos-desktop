@@ -1,23 +1,41 @@
-import { useState, useEffect } from 'react'
-import { Minus, Plus, Trash2, MessageSquare, Percent, MapPin, Users, ChevronDown, UserCheck, Tag, X, Printer } from 'lucide-react'
+import { useState, useEffect, useMemo, ReactNode } from 'react'
 import { useCartStore, CartItem } from '../stores/cart'
 import { useAuthStore } from '../stores/auth'
+import { useStatus } from '../stores/status'
+import { itemColor } from '../stores/menu'
+import { toast } from '../stores/ui'
 import TablePicker from './TablePicker'
+import VoidDialog, { VoidResult } from './VoidDialog'
+import { Btn, Dialog, Sheet, Option, Stepper, Cap, Field, Keypad, PinDots, Chevron, money, amountKey, pinKey, staffColor, initial } from '../ui'
+import { timeOf } from '../ui/hosts'
+import { cn } from '../lib/utils'
+
+// The ticket: who/where at the top, what went to the kitchen (Sent) apart from what hasn't (New),
+// a tray of actions on the tapped line, and Send / Hold / Pay at the bottom.
+
+type RemovedItem = { dbId?: string; itemName: string; qty: number; rate: number; amount: number }
 
 interface CartProps {
   onPlaceOrder: () => void
   onUpdateOnly?: () => void
   onPay: () => void
+  onHold: () => void
+  onNewOrder: () => void
   taxRate: number
   taxLabel?: string
   isOrderPlaced?: boolean
   activeOrderId?: string | null
+  orderNumber?: string | null
+  orderCreatedAt?: string | null
+  sentAt?: string | null
   processing?: boolean
   onAutoVoid?: (reason: string) => void
-  onItemRemoved?: (orderId: string, item: { dbId?: string; itemName: string; qty: number; rate: number; amount: number }, reason: string, remarks?: string, disposition?: string) => void
+  onItemRemoved?: (orderId: string, item: RemovedItem, reason: string, remarks?: string, disposition?: string) => void
+  /** Void part of a sent line (qty < line qty). */
+  onPartialVoid?: (orderId: string, item: RemovedItem, voidQty: number, reason: string, remarks?: string, disposition?: string) => Promise<void> | void
 }
 
-export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, processing, onAutoVoid, onItemRemoved }: CartProps) {
+export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewOrder, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, orderNumber, orderCreatedAt, sentAt, processing, onAutoVoid, onItemRemoved, onPartialVoid }: CartProps) {
   const [discountEnabled, setDiscountEnabled] = useState(false)
   const [discountPermission, setDiscountPermission] = useState<'supervisor_only' | 'all_users'>('supervisor_only')
 
@@ -29,650 +47,563 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, taxRate, taxLa
     setDiscountPermission((config.discount_permission as 'supervisor_only' | 'all_users') || 'supervisor_only')
   }
 
+  const cart = useCartStore()
   const {
-    items, orderType, setOrderType, tableName, setTable, guests, setGuests,
-    waiterId, waiterName, setWaiter,
+    items, orderType, setOrderType, tableName, room, guests, waiterName,
     updateItemQty, removeItem, updateItemInstructions, updateItemDiscount,
-    orderDiscountPercent, orderDiscountAmount, orderDiscountReason,
-    setOrderDiscount, promoName, setPromo, voucherCode, setVoucher,
-    orderNotes, setOrderNotes,
+    orderDiscountPercent, orderDiscountAmount, promoName, voucherCode,
     getSubtotal, getOrderDiscountValue, getTaxTotal, getGrandTotal
-  } = useCartStore()
+  } = cart
+  const cur = useStatus((s) => s.currency)
 
   const user = useAuthStore((s) => s.user)
   const canDiscount = discountEnabled && (user?.role === 'supervisor' || (discountPermission === 'all_users' && user?.role === 'cashier'))
 
-  const [editingInstructions, setEditingInstructions] = useState<string | null>(null)
-  const [tempInstructions, setTempInstructions] = useState('')
-  const [showOrderDiscount, setShowOrderDiscount] = useState(false)
-  const [discPct, setDiscPct] = useState(0)
-  const [discAmt, setDiscAmt] = useState(0)
-  const [discReason, setDiscReason] = useState('')
-  const [showItemDiscount, setShowItemDiscount] = useState<string | null>(null)
-  const [itemDiscPct, setItemDiscPct] = useState(0)
-  const [itemDiscAmt, setItemDiscAmt] = useState(0)
-  const [discountError, setDiscountError] = useState('')
+  const [selected, setSelected] = useState<string | null>(null)
+  const [sentOpen, setSentOpen] = useState(true)
+  const [typeMenu, setTypeMenu] = useState(false)
+  const [sheet, setSheet] = useState<null | 'order' | 'offers'>(null)
   const [showTablePicker, setShowTablePicker] = useState(false)
-  const [showPrintMenu, setShowPrintMenu] = useState(false)
-  const [removeRequest, setRemoveRequest] = useState<{ cartId: string; dbId?: string; step: 'reason' | 'disposition' | 'remarks' | 'pin'; reason: string; remarks: string; disposition: string } | null>(null)
-  const [removePin, setRemovePin] = useState('')
-  const [removeError, setRemoveError] = useState('')
-  const [removeReasons, setRemoveReasons] = useState<{ name: string; reason_name: string }[]>([])
-  const [removeCustomReason, setRemoveCustomReason] = useState(false)
-  const [waitersList, setWaitersList] = useState<{ name: string; waiter_name: string }[]>([])
-  const [showWaiterPicker, setShowWaiterPicker] = useState(false)
-  const [promosList, setPromosList] = useState<{ name: string; promo_name: string; discount_type: string; discount_value: number }[]>([])
-  const [showPromoPicker, setShowPromoPicker] = useState(false)
-  const [showVoucherInput, setShowVoucherInput] = useState(false)
-  const [voucherInput, setVoucherInput] = useState('')
-  const [voucherError, setVoucherError] = useState('')
-  const [voucherLoading, setVoucherLoading] = useState(false)
-
-  useEffect(() => { loadWaiters(); loadPromos(); loadRemoveReasons() }, [])
-
-  async function loadWaiters() {
-    try {
-      const list = await window.api.waiters.list()
-      setWaitersList(list || [])
-    } catch { /* waiters table may not exist yet */ }
-  }
-
-  async function loadRemoveReasons() {
-    try {
-      const list = await window.api.voidReasons.list()
-      setRemoveReasons(list || [])
-    } catch {}
-  }
-
-  async function loadPromos() {
-    try {
-      const list = await window.api.promos.list()
-      setPromosList(list || [])
-    } catch { /* promos table may not exist yet */ }
-  }
+  const [noteFor, setNoteFor] = useState<CartItem | null>(null)
+  const [discFor, setDiscFor] = useState<CartItem | null>(null)
+  const [voidFor, setVoidFor] = useState<CartItem | null>(null)
 
   const subtotal = getSubtotal()
   const orderDiscVal = getOrderDiscountValue()
   const tax = getTaxTotal(taxRate)
   const grandTotal = getGrandTotal(taxRate)
 
-  function openInstructions(item: CartItem) { setEditingInstructions(item.id); setTempInstructions(item.specialInstructions) }
-  function saveInstructions() { if (editingInstructions) updateItemInstructions(editingInstructions, tempInstructions); setEditingInstructions(null) }
-  function openItemDiscount(item: CartItem) { setShowItemDiscount(item.id); setItemDiscPct(item.discountPercent); setItemDiscAmt(item.discountAmount); setDiscountError('') }
+  const sentLines = items.filter((i) => i.kotPrinted)
+  const newLines = items.filter((i) => !i.kotPrinted)
+  const sum = (ls: CartItem[]) => ({ qty: ls.reduce((s, l) => s + l.qty, 0), amt: ls.reduce((s, l) => s + l.amount, 0) })
+  const sentSum = sum(sentLines)
+  const newSum = sum(newLines)
+  const itemCount = items.reduce((s, l) => s + l.qty, 0)
 
-  function saveItemDiscount() {
-    if (showItemDiscount) {
-      const maxPct = user?.max_discount_pct ?? 0
-      if (user?.role === 'cashier' && maxPct > 0 && itemDiscPct > maxPct) { setDiscountError(`Max discount: ${maxPct}%`); return }
-      updateItemDiscount(showItemDiscount, itemDiscPct, itemDiscAmt)
+  // Deselect when the line disappears
+  useEffect(() => { if (selected && !items.find((i) => i.id === selected)) setSelected(null) }, [items, selected])
+
+  const shortNo = orderNumber ? orderNumber.split('-').pop() : null
+  const label = tableName || (shortNo ? `${orderType === 'Takeaway' ? 'TA' : orderType === 'Delivery' ? 'D' : '#'} ${shortNo}` : 'New')
+  const subParts = [room, orderType === 'Dine In' ? `${guests} guest${guests === 1 ? '' : 's'}` : null, waiterName, orderCreatedAt ? `since ${timeOf(orderCreatedAt)}` : null].filter(Boolean)
+
+  // Persist edits on lines already saved to the order (so payment, which reads order_items, sees them)
+  function persist(line: CartItem, patch: Record<string, any>) {
+    if (!line.dbId) return
+    window.api.orderItems.update(line.dbId, patch).catch(() => {})
+  }
+  function changeQty(line: CartItem, qty: number) {
+    if (qty <= 0) { removeLine(line); return }
+    updateItemQty(line.id, qty)
+    const after = useCartStore.getState().items.find((i) => i.id === line.id)
+    if (after) persist(after, { qty: after.qty, amount: after.amount })
+  }
+  function removeLine(line: CartItem) {
+    if (line.dbId) { setVoidFor(line); return } // on the order already: needs a reason (and a PIN for cashiers)
+    removeItem(line.id)
+  }
+
+  async function confirmVoid(line: CartItem, r: VoidResult) {
+    const orderId = activeOrderId
+    const partial = r.qty < line.qty
+    const removed: RemovedItem = { dbId: line.dbId, itemName: line.itemName, qty: partial ? r.qty : line.qty, rate: line.rate, amount: partial ? (line.amount / line.qty) * r.qty : line.amount }
+    if (partial) {
+      updateItemQty(line.id, line.qty - r.qty)
+      if (orderId && onPartialVoid) await onPartialVoid(orderId, removed, r.qty, r.reason, r.remarks, r.disposition)
+    } else {
+      const wasLast = items.length === 1
+      removeItem(line.id)
+      if (orderId && onItemRemoved) onItemRemoved(orderId, removed, r.reason, r.remarks, r.disposition)
+      if (wasLast && orderId && onAutoVoid) onAutoVoid(r.reason)
     }
-    setShowItemDiscount(null); setDiscountError('')
+    setVoidFor(null)
+    setSelected(null)
+    toast.success(`Voided ${removed.qty} × ${line.itemName}`)
   }
 
-  function openOrderDiscount() { setDiscPct(orderDiscountPercent); setDiscAmt(orderDiscountAmount); setDiscReason(orderDiscountReason); setDiscountError(''); setShowOrderDiscount(true) }
-
-  function saveOrderDiscount() {
-    const maxPct = user?.max_discount_pct ?? 0
-    if (user?.role === 'cashier' && maxPct > 0 && discPct > maxPct) { setDiscountError(`Max discount: ${maxPct}%`); return }
-    setOrderDiscount(discPct, discAmt, discReason); setShowOrderDiscount(false); setDiscountError('')
+  async function reprintKot() {
+    if (!activeOrderId) return
+    const r = await window.api.print.kots(activeOrderId, user?.name, true)
+    if (r?.success === false) toast.error(`KOT reprint failed: ${r?.errors?.join(', ') || 'check printer'}`)
+    else toast.success('KOT reprinted')
   }
 
-  function handleTableSelect(name: string, room: string | null) {
-    setTable(name, room)
-    setShowTablePicker(false)
+  const trayBtn = 'press flex h-11 min-w-0 flex-1 items-center justify-center whitespace-nowrap rounded-md border border-n-edge bg-white text-[13px] font-semibold text-n-ink'
+  const trayVoid = 'press flex h-11 min-w-0 flex-1 items-center justify-center whitespace-nowrap rounded-md border border-n-red bg-white text-[13px] font-semibold text-n-red'
+
+  function lineRow(l: CartItem) {
+    const sel = selected === l.id
+    const mods = [...l.modifiers.map((m) => m.name), l.specialInstructions ? `“${l.specialInstructions}”` : ''].filter(Boolean).join(', ')
+    const disc = l.discountPercent > 0 ? `−${l.discountPercent}%` : l.discountAmount > 0 ? `−${money(l.discountAmount)}` : ''
+    return (
+      <div key={l.id} className={cn(sel && 'bg-n-ice shadow-[inset_3px_0_0_#0E6E86]')}>
+        <button type="button" onClick={() => setSelected(sel ? null : l.id)} aria-expanded={sel}
+          className="flex min-h-[36px] w-full items-center gap-2.5 px-3 py-1 text-left text-n-ink">
+          <span className="cond num inline-flex h-[22px] min-w-[22px] flex-shrink-0 items-center justify-center rounded px-[5px] text-[15px] font-bold text-white" style={{ background: itemColor(l.itemCode, l.itemName) }}>{l.qty}</span>
+          <span className={cn('min-w-0 flex-1 text-sm', sel ? 'whitespace-normal' : 'truncate')}>
+            {l.itemName}
+            {mods && <span className="text-n-muted"> · {mods}</span>}
+            {disc && <span className="font-semibold text-n-green"> {disc}</span>}
+            {l.dbId && !l.kotPrinted && <span className="text-[11px] font-semibold text-n-muted"> · saved</span>}
+          </span>
+          <span className="num text-sm font-medium">{money(l.amount)}</span>
+        </button>
+        {sel && (
+          l.kotPrinted ? (
+            <div className="flex gap-1.5 px-3 pb-2.5 pt-0.5">
+              <button type="button" className={trayBtn} onClick={reprintKot}>Reprint KOT</button>
+              <button type="button" className={trayBtn} onClick={() => setNoteFor(l)}>Kitchen note</button>
+              <button type="button" className={trayVoid} onClick={() => setVoidFor(l)}>Void</button>
+            </div>
+          ) : (
+            <div className="flex gap-1.5 px-3 pb-2.5 pt-0.5">
+              <button type="button" aria-label="One less" onClick={() => changeQty(l, l.qty - 1)} className="press flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md border border-n-edge bg-white text-xl">−</button>
+              <button type="button" aria-label="One more" onClick={() => changeQty(l, l.qty + 1)} className="press flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md border border-n-edge bg-white text-xl">+</button>
+              <button type="button" className={trayBtn} onClick={() => setNoteFor(l)}>Note</button>
+              {canDiscount && <button type="button" className={trayBtn} onClick={() => setDiscFor(l)}>Discount</button>}
+              <button type="button" className={trayVoid} onClick={() => removeLine(l)}>Remove</button>
+            </div>
+          )
+        )}
+      </div>
+    )
   }
 
   return (
-    <div className="flex h-full flex-col bg-white">
-      {/* Order type selector — compact layout */}
-      <div className="border-b px-3 py-2">
-        <div className="flex rounded-lg bg-gray-100 p-0.5">
-          {(['Dine In', 'Takeaway', 'Delivery'] as const).map((type) => (
-            <button
-              key={type}
-              onClick={() => { setOrderType(type); if (type !== 'Dine In') setTable(null) }}
-              className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
-                orderType === type
-                  ? 'bg-white text-primary shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {type}
+    <aside aria-label="Current order" className="relative flex h-full flex-col bg-white shadow-[-1px_0_0_#D8D1C3]">
+      {/* Who and where */}
+      <div className="flex flex-shrink-0 items-center gap-2.5 border-b border-n-line px-3 pb-[5px] pt-1.5">
+        <button type="button" onClick={() => (orderType === 'Dine In' ? setShowTablePicker(true) : setSheet('order'))}
+          className="cond max-w-[45%] truncate text-[34px] font-bold leading-none text-n-deep" title={orderType === 'Dine In' ? 'Choose table' : 'Order details'}>
+          {label}
+        </button>
+        <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+          <span className="relative self-start">
+            <button type="button" onClick={() => setTypeMenu(!typeMenu)} aria-haspopup="menu"
+              className="flex h-[26px] items-center gap-[5px] rounded-[5px] border-[1.5px] border-n-teal px-2 text-xs font-semibold text-n-teal">
+              {orderType === 'Dine In' ? 'Dine in' : orderType}<Chevron size={10} strokeWidth={3.5} />
             </button>
-          ))}
-        </div>
-
-        {/* Table & Guests + Waiter — single row for Dine In */}
-        {orderType === 'Dine In' && (
-          <div className="mt-2 flex items-center gap-2">
-            <button
-              onClick={() => setShowTablePicker(true)}
-              className={`flex flex-1 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all ${
-                tableName
-                  ? 'border-primary/20 bg-primary/5 text-primary'
-                  : 'border-dashed border-gray-300 text-gray-400 hover:border-gray-400'
-              }`}
-            >
-              <MapPin className="h-3.5 w-3.5" />
-              {tableName || 'Table'}
-              <ChevronDown className="ml-auto h-3 w-3 opacity-50" />
-            </button>
-            <div className="flex items-center gap-1 rounded-lg border border-gray-200 px-1.5 py-1">
-              <Users className="h-3 w-3 text-gray-400" />
-              <button onClick={() => setGuests(Math.max(1, guests - 1))} className="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100">-</button>
-              <span className="min-w-[20px] text-center text-xs font-bold">{guests}</span>
-              <button onClick={() => setGuests(guests + 1)} className="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100">+</button>
-            </div>
-          </div>
-        )}
-
-        {/* Waiter + Order notes — compact row */}
-        <div className="mt-2 flex items-center gap-2">
-          {waitersList.length > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => setShowWaiterPicker(!showWaiterPicker)}
-                className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all ${
-                  waiterName
-                    ? 'border-green-200 bg-green-50 text-green-700'
-                    : 'border-dashed border-gray-300 text-gray-400 hover:border-gray-400'
-                }`}
-              >
-                <UserCheck className="h-3.5 w-3.5" />
-                {waiterName || 'Waiter'}
-                {waiterName && (
-                  <span
-                    onClick={(e) => { e.stopPropagation(); setWaiter(null, null) }}
-                    className="ml-1 rounded-full p-0.5 text-green-400 hover:bg-green-100 hover:text-green-600"
-                  >
-                    <X className="h-2.5 w-2.5" />
-                  </span>
-                )}
-                {!waiterName && <ChevronDown className="ml-1 h-3 w-3 opacity-50" />}
-              </button>
-              {showWaiterPicker && (
-                <div className="absolute left-0 top-full z-30 mt-1 max-h-48 min-w-[180px] overflow-y-auto rounded-xl border bg-white shadow-lg">
-                  {waitersList.map((w) => (
-                    <button
-                      key={w.name}
-                      onClick={() => { setWaiter(w.name, w.waiter_name); setShowWaiterPicker(false) }}
-                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-50 ${
-                        waiterId === w.name ? 'bg-green-50 font-semibold text-green-700' : 'text-gray-700'
-                      }`}
-                    >
-                      <UserCheck className="h-3 w-3" />
-                      {w.waiter_name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <input
-            type="text"
-            data-keyboard="full"
-            value={orderNotes}
-            onChange={(e) => setOrderNotes(e.target.value)}
-            placeholder="Order notes..."
-            className="min-w-0 flex-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs focus:border-primary focus:outline-none"
-          />
-        </div>
+            {typeMenu && (
+              <span role="menu" className="absolute left-0 top-full z-30 mt-1 flex w-40 flex-col overflow-hidden rounded-md bg-white shadow-pop">
+                {(['Dine In', 'Takeaway', 'Delivery'] as const).map((t) => (
+                  <button key={t} role="menuitem" type="button" onClick={() => { setOrderType(t); if (t !== 'Dine In') cart.setTable(null); setTypeMenu(false) }}
+                    className={cn('h-12 px-3 text-left text-sm', orderType === t ? 'bg-n-ice font-semibold text-n-deep' : 'text-n-ink')}>
+                    {t === 'Dine In' ? 'Dine in' : t}
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
+          <button type="button" onClick={() => setSheet('order')} className="truncate text-left text-xs text-n-muted">
+            {subParts.length ? subParts.join(' · ') : orderType === 'Dine In' ? 'Tap to pick a table, guests and waiter' : 'Tap for waiter and notes'}
+          </button>
+        </span>
+        <button type="button" aria-label="More actions" onClick={() => setSheet('order')}
+          className="press flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md border border-n-line bg-white">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#1B1F24" aria-hidden="true"><circle cx="5" cy="12" r="2.2" /><circle cx="12" cy="12" r="2.2" /><circle cx="19" cy="12" r="2.2" /></svg>
+        </button>
       </div>
 
-      {/* Cart items */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Lines */}
+      <div className="scroll-none min-h-0 flex-1 overflow-y-auto pb-0.5 pt-1" onClick={() => typeMenu && setTypeMenu(false)}>
         {items.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-            <div className="mb-3 rounded-full bg-gray-100 p-4">
-              <svg className="h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
-              </svg>
-            </div>
-            <p className="text-sm font-medium text-gray-400">No items in cart</p>
-            <p className="mt-1 text-xs text-gray-300">Tap menu items to add them</p>
+          <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+            <span className="cond text-2xl font-bold text-n-ink">Nothing on the ticket</span>
+            <span className="text-sm text-n-muted">Tap the menu to add items, or open an order from the rail.</span>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {items.map((item) => (
-              <div key={item.id} className="group px-3 py-2 hover:bg-gray-50/50">
-                {/* Row 1: Name + Amount + Delete */}
-                <div className="flex items-center gap-1.5">
-                  <div className="flex-1 min-w-0">
-                    <span className="text-[13px] font-semibold text-gray-800 truncate block">{item.itemName}</span>
-                  </div>
-                  <span className="text-[13px] font-bold text-gray-800 whitespace-nowrap">{item.amount.toFixed(2)}</span>
-                  <button onClick={() => {
-                    if (isOrderPlaced) {
-                      setRemoveRequest({ cartId: item.id, dbId: (item as any).dbId, step: 'reason', reason: '', remarks: '', disposition: '' }); setRemoveCustomReason(false)
-                      setRemovePin(''); setRemoveError('')
-                    } else {
-                      removeItem(item.id)
-                    }
-                  }} className="rounded p-1 text-red-300 hover:text-red-500" title="Remove">
-                    <Trash2 className="h-3 w-3" />
-                  </button>
+          <>
+            {sentLines.length > 0 && (
+              <>
+                <button type="button" onClick={() => setSentOpen(!sentOpen)} aria-expanded={sentOpen}
+                  className="flex h-[30px] w-full items-center gap-2 px-3 text-left">
+                  <Cap className="text-n-muted">{sentAt ? `Sent ${sentAt}` : 'Sent'}</Cap>
+                  <span className="h-px flex-1 bg-n-line" />
+                  <span className="num text-xs text-n-muted">{sentSum.qty} item{sentSum.qty === 1 ? '' : 's'} · {money(sentSum.amt)}</span>
+                  <Chevron dir={sentOpen ? 'down' : 'right'} size={14} strokeWidth={2.5} className="text-n-muted" />
+                </button>
+                {sentOpen && sentLines.map(lineRow)}
+              </>
+            )}
+            {newLines.length > 0 && (
+              <>
+                <div className="flex h-[30px] items-center gap-2 px-3">
+                  <Cap className="text-n-teal">New</Cap>
+                  <span className="h-px flex-1 bg-[#CFE0E5]" />
+                  <span className="num text-xs text-n-teal">{newSum.qty} item{newSum.qty === 1 ? '' : 's'} · {money(newSum.amt)}</span>
                 </div>
-                {/* Row 2: Modifiers/instructions (compact) */}
-                {item.modifiers.length > 0 && (
-                  <p className="text-[11px] text-gray-500 truncate">
-                    {item.modifiers.map((m) => `+ ${m.name}${m.price > 0 ? ` +${m.price.toFixed(2)}` : ''}`).join(', ')}
-                  </p>
-                )}
-                {item.specialInstructions && (
-                  <p className="text-[11px] text-amber-600 truncate">* {item.specialInstructions}</p>
-                )}
-                {(item.discountPercent > 0 || item.discountAmount > 0) && (
-                  <p className="text-[11px] font-medium text-emerald-600">
-                    -{item.discountPercent > 0 ? `${item.discountPercent}%` : `${item.discountAmount.toFixed(2)}`}
-                  </p>
-                )}
-                {/* Row 3: Qty controls + actions */}
-                <div className="mt-1 flex items-center justify-between">
-                  <div className="flex items-center">
-                    <button onClick={() => updateItemQty(item.id, item.qty - 1)}
-                      className="flex h-7 w-7 items-center justify-center rounded-l-md border border-gray-200 text-gray-500 hover:bg-gray-100 active:bg-gray-200">
-                      <Minus className="h-3 w-3" />
-                    </button>
-                    <span className="flex h-7 w-8 items-center justify-center border-y border-gray-200 text-xs font-bold">{item.qty}</span>
-                    <button onClick={() => updateItemQty(item.id, item.qty + 1)}
-                      className="flex h-7 w-7 items-center justify-center rounded-r-md border border-gray-200 text-gray-500 hover:bg-gray-100 active:bg-gray-200">
-                      <Plus className="h-3 w-3" />
-                    </button>
-                    <span className="ml-2 text-[11px] text-gray-400">@ {item.rate.toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <button onClick={() => openInstructions(item)} className="rounded p-1 text-gray-400 hover:text-gray-600" title="Notes">
-                      <MessageSquare className="h-3 w-3" />
-                    </button>
-                    {canDiscount && (
-                      <button onClick={() => openItemDiscount(item)} className="rounded p-1 text-gray-400 hover:text-gray-600" title="Discount">
-                        <Percent className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
+                {newLines.map(lineRow)}
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Offers and totals */}
+      {(orderDiscVal > 0 || taxRate > 0) && items.length > 0 && (
+        <div className="flex flex-shrink-0 flex-col gap-0.5 border-t border-n-line px-3 py-1.5 text-[13px]">
+          {orderDiscVal > 0 && (
+            <span className="flex justify-between text-n-green">
+              <span className="truncate">{promoName ? `Promo · ${promoName}` : voucherCode ? 'Voucher' : 'Discount'}{orderDiscountPercent > 0 ? ` ${orderDiscountPercent}%` : ''}</span>
+              <span className="num font-semibold">−{money(orderDiscVal)}</span>
+            </span>
+          )}
+          {taxRate > 0 && (
+            <span className="flex justify-between text-n-muted"><span>{taxLabel} {taxRate}%</span><span className="num text-n-ink">{money(tax)}</span></span>
+          )}
+        </div>
+      )}
+      <div className="flex h-9 flex-shrink-0 items-center gap-2.5 border-t border-n-line px-3 text-[13px] text-n-muted">
+        <span className="num">{itemCount} item{itemCount === 1 ? '' : 's'}</span>
+        <button type="button" onClick={() => setSheet('offers')} disabled={items.length === 0}
+          className="-ml-2 h-[30px] px-2 text-[13px] font-semibold text-n-teal disabled:text-n-stone">
+          {orderDiscVal > 0 ? 'Change discount' : 'Add discount'}
+        </button>
+        <span className="flex-1" />
+        <span>Subtotal</span><span className="num font-semibold text-n-ink">{money(subtotal)}</span>
+      </div>
+
+      {/* Send / Hold / Pay */}
+      <div className="flex flex-shrink-0 gap-2 bg-white px-2.5 pb-2.5 pt-2">
+        <button type="button" onClick={onPlaceOrder} disabled={processing || newLines.length === 0}
+          className={cn('press h-16 flex-1 whitespace-nowrap rounded-lg text-base font-bold', newLines.length ? 'bg-n-teal text-white' : 'border-[1.5px] border-n-edge bg-white text-n-muted')}>
+          {processing ? 'Sending…' : newLines.length ? `Send ${newSum.qty}` : items.length ? 'Sent' : 'Send'}
+        </button>
+        <button type="button" onClick={onHold} disabled={processing || items.length === 0}
+          className="press h-16 w-16 flex-shrink-0 rounded-lg border-[1.5px] border-n-edge bg-white text-[15px] font-semibold text-n-ink disabled:text-n-stone">
+          Hold
+        </button>
+        <button type="button" onClick={onPay} disabled={processing || items.length === 0}
+          className="press flex h-16 flex-[1.7] items-center justify-between gap-2 whitespace-nowrap rounded-lg bg-n-amber px-3.5 leading-none text-n-ink disabled:bg-n-sand disabled:text-n-stone">
+          <span className="text-base font-bold">Pay</span>
+          <span className="cond num text-2xl font-bold">{cur} {money(grandTotal)}</span>
+        </button>
+      </div>
+
+      {/* Sheets and dialogs */}
+      {sheet === 'order' && (
+        <OrderSheet onClose={() => setSheet(null)} activeOrderId={activeOrderId || null} canUpdateOnly={!!onUpdateOnly && newLines.length > 0}
+          onUpdateOnly={() => { setSheet(null); onUpdateOnly?.() }} onNewOrder={() => { setSheet(null); onNewOrder() }}
+          onPickTable={() => setShowTablePicker(true)} grandTotal={grandTotal} />
+      )}
+      {sheet === 'offers' && <OffersSheet onClose={() => setSheet(null)} canDiscount={canDiscount} />}
+
+      {showTablePicker && (
+        <TablePicker onSelect={(name, rm) => { cart.setTable(name, rm); if (orderType !== 'Dine In') setOrderType('Dine In'); setShowTablePicker(false) }}
+          onCancel={() => setShowTablePicker(false)} currentTable={tableName} />
+      )}
+
+      {noteFor && (
+        <NoteDialog line={noteFor} sent={!!noteFor.kotPrinted} onCancel={() => setNoteFor(null)}
+          onSave={(text) => { updateItemInstructions(noteFor.id, text); persist(noteFor, { specialInstructions: text || null }); setNoteFor(null) }} />
+      )}
+
+      {discFor && (
+        <LineDiscountDialog line={discFor} maxPct={user?.role === 'cashier' ? user?.max_discount_pct ?? 0 : 0} onCancel={() => setDiscFor(null)}
+          onApply={(pct, amt) => {
+            updateItemDiscount(discFor.id, pct, amt)
+            const after = useCartStore.getState().items.find((i) => i.id === discFor.id)
+            if (after) persist(after, { discountPercent: pct, discountAmount: amt, amount: after.amount })
+            setDiscFor(null)
+          }} />
+      )}
+
+      {voidFor && (
+        <VoidDialog
+          requirePin={user?.role !== 'supervisor'}
+          target={{
+            kind: 'line',
+            title: `${voidFor.kotPrinted ? 'Void' : 'Remove'} from ${label}`,
+            subtitle: voidFor.kotPrinted
+              ? `Already in the kitchen. A cancel slip prints there and this is logged under ${user?.name || 'you'}.`
+              : `Saved on the order but not sent to the kitchen. Logged under ${user?.name || 'you'}.`,
+            itemName: voidFor.itemName,
+            itemColor: itemColor(voidFor.itemCode, voidFor.itemName),
+            detail: `${voidFor.kotPrinted ? (sentAt ? `Sent ${sentAt} · ` : 'Sent · ') : ''}${voidFor.qty} on the order · ${money(voidFor.amount / voidFor.qty)} each`,
+            maxQty: voidFor.qty,
+            unitPrice: voidFor.amount / voidFor.qty
+          }}
+          onCancel={() => setVoidFor(null)}
+          onConfirm={(r) => confirmVoid(voidFor, r)}
+        />
+      )}
+    </aside>
+  )
+}
+
+// ------------------------------------------------------------------ order options
+function SheetHeader({ title, onClose }: { title: string; onClose: () => void }) {
+  return (
+    <div className="flex h-14 flex-shrink-0 items-center gap-3 bg-n-deep px-4 text-white">
+      <span className="cond flex-1 text-2xl font-bold">{title}</span>
+      <Btn variant="ghostDark" onClick={onClose}>Done</Btn>
+    </div>
+  )
+}
+function Section({ title, children, hint }: { title: string; children: ReactNode; hint?: string }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="flex items-baseline gap-2"><span className="text-sm font-semibold">{title}</span>{hint && <span className="text-xs text-n-muted">{hint}</span>}</span>
+      {children}
+    </div>
+  )
+}
+
+function OrderSheet({ onClose, activeOrderId, canUpdateOnly, onUpdateOnly, onNewOrder, onPickTable, grandTotal }: {
+  onClose: () => void; activeOrderId: string | null; canUpdateOnly: boolean; onUpdateOnly: () => void; onNewOrder: () => void; onPickTable: () => void; grandTotal: number
+}) {
+  const { orderType, setOrderType, tableName, setTable, guests, setGuests, waiterId, setWaiter, orderNotes, setOrderNotes, orderDiscountPercent, orderDiscountAmount, promoName } = useCartStore()
+  const user = useAuthStore((s) => s.user)
+  const [waiters, setWaiters] = useState<{ name: string; waiter_name: string }[]>([])
+  useEffect(() => { window.api.waiters.list().then((l: any) => setWaiters(l || [])).catch(() => {}) }, [])
+
+  const cd = { percent: orderDiscountPercent, amount: orderDiscountAmount, promoName: promoName || undefined }
+  async function print(kind: 'both' | 'kot' | 'waiter' | 'invoice') {
+    if (!activeOrderId) return
+    try {
+      if (kind === 'both') {
+        const r = await window.api.print.kots(activeOrderId, user?.name, true)
+        const w = await window.api.print.waiterCopy(activeOrderId, cd)
+        r?.success && w?.success ? toast.success('KOT and waiter copy printed') : toast.error('Print error, check the printers')
+      } else if (kind === 'kot') {
+        const r = await window.api.print.kots(activeOrderId, user?.name, true)
+        r?.success ? toast.success('KOT reprinted') : toast.error('KOT reprint failed')
+      } else if (kind === 'waiter') {
+        const r = await window.api.print.waiterCopy(activeOrderId, cd)
+        r?.success ? toast.success('Waiter copy printed') : toast.error('Waiter copy failed')
+      } else {
+        const r = await window.api.print.invoice(activeOrderId, { ...cd, grandTotal })
+        r?.success ? toast.success('Invoice printed') : toast.error('Invoice print failed')
+      }
+    } catch (e: any) { toast.error(`Print failed: ${e?.message || e}`) }
+  }
+
+  return (
+    <Sheet onClose={onClose} className="w-[420px] max-w-[92vw]" label="Order details">
+      <SheetHeader title="Order details" onClose={onClose} />
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+        <Section title="Order type">
+          <div className="grid grid-cols-3 gap-1.5">
+            {(['Dine In', 'Takeaway', 'Delivery'] as const).map((t) => (
+              <Option key={t} active={orderType === t} onClick={() => { setOrderType(t); if (t !== 'Dine In') setTable(null) }} className="justify-center">{t === 'Dine In' ? 'Dine in' : t}</Option>
+            ))}
+          </div>
+        </Section>
+        {orderType === 'Dine In' && (
+          <Section title="Table and guests">
+            <div className="flex items-center gap-2">
+              <Option onClick={onPickTable} className="flex-1">
+                <span>{tableName ? `Table ${tableName}` : 'Choose a table'}</span>
+                <Chevron dir="right" className="text-n-muted" />
+              </Option>
+              <Stepper value={guests} onDec={() => setGuests(Math.max(1, guests - 1))} onInc={() => setGuests(guests + 1)} decLabel="One guest less" incLabel="One guest more" />
+            </div>
+          </Section>
+        )}
+        {waiters.length > 0 && (
+          <Section title="Waiter">
+            <div className="grid grid-cols-3 gap-1.5">
+              <Option active={!waiterId} onClick={() => setWaiter(null, null)} className="justify-center text-n-muted">None</Option>
+              {waiters.map((w) => (
+                <Option key={w.name} active={waiterId === w.name} onClick={() => setWaiter(w.name, w.waiter_name)} className="justify-start">
+                  <span className="cond flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white" style={{ background: staffColor(w.waiter_name) }}>{initial(w.waiter_name)}</span>
+                  <span className="min-w-0 flex-1 truncate">{w.waiter_name}</span>
+                </Option>
+              ))}
+            </div>
+          </Section>
+        )}
+        <Section title="Order note" hint="prints on the KOT">
+          <Field data-keyboard="full" value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} placeholder="Allergies, timing, name for takeaway…" />
+        </Section>
+        {activeOrderId && (
+          <Section title="Print">
+            <div className="grid grid-cols-2 gap-1.5">
+              <Option onClick={() => print('both')}>KOT + waiter copy</Option>
+              <Option onClick={() => print('kot')}>Reprint KOT</Option>
+              <Option onClick={() => print('waiter')}>Waiter copy</Option>
+              <Option onClick={() => print('invoice')}>Invoice</Option>
+            </div>
+          </Section>
+        )}
+        <Section title="Order">
+          <div className="grid grid-cols-2 gap-1.5">
+            {canUpdateOnly && <Option onClick={onUpdateOnly}>Save without KOT</Option>}
+            <Option onClick={onNewOrder}>New order</Option>
+          </div>
+        </Section>
+      </div>
+    </Sheet>
+  )
+}
+
+// ------------------------------------------------------------------ discount, promo, voucher
+function OffersSheet({ onClose, canDiscount }: { onClose: () => void; canDiscount: boolean }) {
+  const { orderDiscountPercent, orderDiscountAmount, orderDiscountReason, setOrderDiscount, promoName, setPromo, voucherCode, setVoucher, getOrderDiscountValue } = useCartStore()
+  const user = useAuthStore((s) => s.user)
+  const cur = useStatus((s) => s.currency)
+  const [promos, setPromos] = useState<{ name: string; promo_name: string; discount_type: string; discount_value: number }[]>([])
+  const [tab, setTab] = useState<'discount' | 'promo' | 'voucher'>(canDiscount ? 'discount' : 'promo')
+  const [mode, setMode] = useState<'pct' | 'amt'>(orderDiscountAmount > 0 && !orderDiscountPercent ? 'amt' : 'pct')
+  const [entry, setEntry] = useState(() => String((orderDiscountAmount > 0 && !orderDiscountPercent ? orderDiscountAmount : orderDiscountPercent) || ''))
+  const [reason, setReason] = useState(promoName || voucherCode ? '' : orderDiscountReason)
+  const [error, setError] = useState('')
+  const [code, setCode] = useState('')
+  const [checking, setChecking] = useState(false)
+
+  useEffect(() => { window.api.promos.list().then((l: any) => setPromos(l || [])).catch(() => {}) }, [])
+  const applied = getOrderDiscountValue()
+
+  function applyDiscount() {
+    const v = parseFloat(entry || '0') || 0
+    const pct = mode === 'pct' ? v : 0
+    const amt = mode === 'amt' ? v : 0
+    const maxPct = user?.max_discount_pct ?? 0
+    if (user?.role === 'cashier' && maxPct > 0 && pct > maxPct) { setError(`Max discount: ${maxPct}%`); return }
+    if (pct > 100) { setError('Can’t be more than 100%'); return }
+    setOrderDiscount(pct, amt, reason)
+    onClose()
+  }
+  async function checkVoucher(c: string) {
+    setChecking(true); setError('')
+    const res = await window.api.vouchers.validate(c)
+    setChecking(false)
+    if (res?.valid) { setVoucher(c, res.discount_percent); toast.success(`Voucher applied, ${res.discount_percent}% off`); onClose() }
+    else { setError(res?.reason || 'Invalid code'); setCode('') }
+  }
+
+  const tabs = [...(canDiscount ? [['discount', 'Discount']] : []), ...(promos.length ? [['promo', 'Promo']] : []), ['voucher', 'Voucher']] as [typeof tab, string][]
+
+  return (
+    <Sheet onClose={onClose} className="w-[440px] max-w-[92vw]" label="Discounts">
+      <SheetHeader title="Discount" onClose={onClose} />
+      {applied > 0 && (
+        <div className="flex items-center gap-2 border-b border-n-line bg-white px-4 py-3 text-sm">
+          <span className="flex-1"><b>{promoName ? `Promo ${promoName}` : voucherCode ? 'Voucher' : orderDiscountReason || 'Discount'}</b><span className="text-n-muted"> · {orderDiscountPercent > 0 ? `${orderDiscountPercent}%` : `${cur} ${money(orderDiscountAmount)}`}</span></span>
+          <span className="num font-semibold text-n-green">−{money(applied)}</span>
+          <Btn size="sm" variant="dangerOutline" onClick={() => { if (promoName) setPromo(null); else if (voucherCode) setVoucher(null); else setOrderDiscount(0, 0, '') }}>Remove</Btn>
+        </div>
+      )}
+      <div className="flex gap-1.5 px-4 pt-3">
+        {tabs.map(([k, l]) => (
+          <button key={k} type="button" onClick={() => { setTab(k); setError('') }} aria-pressed={tab === k}
+            className={cn('press h-11 flex-1 rounded-md text-sm font-semibold', tab === k ? 'bg-n-deep text-white' : 'border border-n-edge bg-white')}>{l}</button>
+        ))}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {tab === 'discount' && canDiscount && (
+          <>
+            <div className="grid grid-cols-2 gap-1.5">
+              <Option active={mode === 'pct'} onClick={() => setMode('pct')} className="justify-center">Percent</Option>
+              <Option active={mode === 'amt'} onClick={() => setMode('amt')} className="justify-center">Amount</Option>
+            </div>
+            <div className="cond num flex h-16 items-center justify-between rounded-md bg-white px-3.5 text-[34px] font-bold shadow-[inset_0_0_0_2px_#0E6E86]">
+              <span className="font-sans text-[13px] font-medium text-n-muted">{mode === 'pct' ? 'Percent off' : `${cur} off`}</span>
+              {entry || '0'}{mode === 'pct' ? '%' : ''}
+            </div>
+            {user?.role === 'cashier' && (user?.max_discount_pct ?? 0) > 0 && <span className="text-xs text-n-muted">You can give up to {user?.max_discount_pct}%.</span>}
+            <Keypad mode="decimal" tone="light" className="h-[232px]" onKey={(k) => { setError(''); setEntry(amountKey(entry, k)) }} />
+            <Field data-keyboard="full" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason, e.g. manager discount" />
+            {error && <span className="text-sm font-semibold text-n-red">{error}</span>}
+            <Btn size="lg" variant="deep" onClick={applyDiscount}>Apply discount</Btn>
+          </>
+        )}
+        {tab === 'promo' && (
+          promos.length === 0 ? <span className="text-sm text-n-muted">No promotions are set up.</span> :
+          <div className="flex flex-col gap-1.5">
+            {promos.map((p) => (
+              <Option key={p.name} active={promoName === p.promo_name} onClick={() => { setPromo(p.promo_name, p.discount_type, p.discount_value); onClose() }} className="h-14">
+                <span className="font-semibold">{p.promo_name}</span>
+                <span className="num font-semibold text-n-green">{p.discount_type === 'Percentage' ? `${p.discount_value}%` : `${cur} ${money(p.discount_value)}`}</span>
+              </Option>
             ))}
           </div>
         )}
+        {tab === 'voucher' && (
+          <>
+            <span className="text-sm text-n-muted">Enter the 6-digit voucher code.</span>
+            <PinDots count={6} filled={code.length} tone="light" />
+            <Keypad tone="light" className="h-[264px]" onKey={(k) => {
+              setError('')
+              const next = pinKey(code, k, 6)
+              setCode(next)
+              if (next.length === 6 && !checking) checkVoucher(next)
+            }} />
+            {checking && <span className="text-sm text-n-muted">Checking…</span>}
+            {error && <span className="text-sm font-semibold text-n-red">{error}</span>}
+          </>
+        )}
       </div>
+    </Sheet>
+  )
+}
 
-      {/* Totals & Pay */}
-      {items.length > 0 && (
-        <div className="border-t bg-gray-50 px-3 py-2">
-          <div className="space-y-0.5 text-[13px]">
-            <div className="flex justify-between text-gray-500">
-              <span>Subtotal ({items.length})</span>
-              <span className="font-medium text-gray-700">{subtotal.toFixed(2)}</span>
-            </div>
-            {orderDiscVal > 0 && (
-              <div className="flex justify-between text-emerald-600">
-                <span className="truncate mr-2">Disc{promoName ? ` (${promoName})` : ''}</span>
-                <span className="font-medium">-{orderDiscVal.toFixed(2)}</span>
-              </div>
-            )}
-            {taxRate > 0 && (
-              <div className="flex justify-between text-gray-500">
-                <span>{taxLabel} ({taxRate}%)</span>
-                <span className="font-medium text-gray-700">{tax.toFixed(2)}</span>
-              </div>
-            )}
-            <div className="flex justify-between pt-1 text-base font-bold">
-              <span>Total</span>
-              <span className="text-primary">{grandTotal.toFixed(2)}</span>
-            </div>
-          </div>
-
-          <div className="mt-2 space-y-1.5">
-            {/* Active promo/voucher badge */}
-            {promoName && (
-              <div className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1">
-                <Tag className="h-3 w-3 text-emerald-600" />
-                <span className="flex-1 text-[11px] font-semibold text-emerald-700 truncate">{promoName} {orderDiscountPercent > 0 ? `${orderDiscountPercent}%` : ''}</span>
-                <button onClick={() => setPromo(null)} className="rounded p-0.5 text-emerald-400 hover:text-emerald-600"><X className="h-3 w-3" /></button>
-              </div>
-            )}
-            {voucherCode && (
-              <div className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1">
-                <Tag className="h-3 w-3 text-purple-600" />
-                <span className="flex-1 text-[11px] font-semibold text-purple-700">Voucher ({orderDiscountPercent}% off)</span>
-                <button onClick={() => setVoucher(null)} className="rounded p-0.5 text-purple-400 hover:text-purple-600"><X className="h-3 w-3" /></button>
-              </div>
-            )}
-            {/* Promo + Voucher + Discount — single row */}
-            {!promoName && !voucherCode && (
-              <div className="flex gap-1.5">
-                {promosList.length > 0 && (
-                  <div className="relative flex-1">
-                    <button onClick={() => setShowPromoPicker(!showPromoPicker)}
-                      className="w-full rounded-lg border border-dashed border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-500 hover:bg-white">
-                      <Tag className="inline h-3 w-3 mr-0.5" />Promo
-                    </button>
-                    {showPromoPicker && (
-                      <div className="absolute bottom-full left-0 right-0 z-30 mb-1 max-h-48 overflow-y-auto rounded-xl border bg-white shadow-lg">
-                        {promosList.map((p) => (
-                          <button key={p.name}
-                            onClick={() => { setPromo(p.promo_name, p.discount_type, p.discount_value); setShowPromoPicker(false) }}
-                            className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-gray-50">
-                            <span className="font-semibold text-gray-700">{p.promo_name}</span>
-                            <span className="text-emerald-600 font-medium">{p.discount_type === 'Percentage' ? `${p.discount_value}%` : p.discount_value}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {showVoucherInput ? (
-                  <div className="flex flex-1 items-center gap-1">
-                    <input type="password" inputMode="numeric" data-keyboard="numpad" value={voucherInput}
-                      onChange={(e) => { setVoucherInput(e.target.value.replace(/\D/g, '').slice(0, 6)); setVoucherError('') }}
-                      placeholder="••••••" maxLength={6} autoFocus
-                      onKeyDown={async (e) => {
-                        if (e.key === 'Enter' && voucherInput.length === 6) {
-                          setVoucherLoading(true); setVoucherError('')
-                          const res = await window.api.vouchers.validate(voucherInput)
-                          setVoucherLoading(false)
-                          if (res?.valid) { setVoucher(voucherInput, res.discount_percent); setShowVoucherInput(false); setVoucherInput('') }
-                          else { setVoucherError(res?.reason || 'Invalid code') }
-                        }
-                        if (e.key === 'Escape') { setShowVoucherInput(false); setVoucherInput(''); setVoucherError('') }
-                      }}
-                      className={`w-20 rounded-lg border px-2 py-1 text-center text-xs font-mono tracking-wider focus:outline-none focus:ring-1 focus:ring-primary ${voucherError ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}
-                    />
-                    <button disabled={voucherInput.length !== 6 || voucherLoading}
-                      onClick={async () => {
-                        setVoucherLoading(true); setVoucherError('')
-                        const res = await window.api.vouchers.validate(voucherInput)
-                        setVoucherLoading(false)
-                        if (res?.valid) { setVoucher(voucherInput, res.discount_percent); setShowVoucherInput(false); setVoucherInput('') }
-                        else { setVoucherError(res?.reason || 'Invalid code') }
-                      }}
-                      className="rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
-                      {voucherLoading ? '..' : 'OK'}
-                    </button>
-                    <button onClick={() => { setShowVoucherInput(false); setVoucherInput(''); setVoucherError('') }}
-                      className="rounded p-0.5 text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
-                  </div>
-                ) : (
-                  <button onClick={() => setShowVoucherInput(true)}
-                    className="flex-1 rounded-lg border border-dashed border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-500 hover:bg-white">
-                    <Tag className="inline h-3 w-3 mr-0.5" />Voucher
-                  </button>
-                )}
-                {canDiscount && (
-                  <button onClick={openOrderDiscount}
-                    className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-500 hover:bg-white">
-                    <Percent className="inline h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            )}
-            {voucherError && <p className="text-[11px] text-red-500 text-center">{voucherError}</p>}
-            {!isOrderPlaced && activeOrderId ? (
-              <>
-                <button onClick={onPlaceOrder} disabled={processing}
-                  className="w-full rounded-xl bg-orange-500 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:bg-orange-600 active:scale-[0.98] disabled:opacity-50">
-                  {processing ? 'Processing...' : 'Update Order & Print KOT'}
-                </button>
-                {onUpdateOnly && (
-                  <button onClick={onUpdateOnly} disabled={processing}
-                    className="w-full rounded-xl border-2 border-orange-300 py-2 text-xs font-bold text-orange-600 transition-all hover:bg-orange-50 active:scale-[0.98] disabled:opacity-50">
-                    Update Without KOT
-                  </button>
-                )}
-              </>
-            ) : !isOrderPlaced ? (
-              <>
-                <button onClick={onPlaceOrder} disabled={processing}
-                  className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50">
-                  {processing ? 'Processing...' : 'Place Order & Print KOT'}
-                </button>
-                <button onClick={onPay} disabled={processing}
-                  className="w-full rounded-xl bg-primary py-2.5 text-sm font-bold text-white shadow-md transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50">
-                  Quick Pay — {grandTotal.toFixed(2)}
-                </button>
-              </>
-            ) : (
-              <div className="flex gap-2">
-                <button onClick={onPay} disabled={processing}
-                  className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-bold text-white shadow-md transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50">
-                  Payment — {grandTotal.toFixed(2)}
-                </button>
-                {activeOrderId && (
-                  <div className="relative">
-                    <button onClick={() => setShowPrintMenu(!showPrintMenu)}
-                      className="flex h-full items-center rounded-xl border-2 border-gray-200 px-3 text-gray-500 hover:bg-white hover:border-gray-300">
-                      <Printer className="h-4 w-4" />
-                    </button>
-                    {showPrintMenu && (
-                      <div className="absolute bottom-full right-0 z-30 mb-1 w-48 rounded-xl border bg-white shadow-lg overflow-hidden">
-                        <button onClick={async () => { setShowPrintMenu(false); const cd = { percent: orderDiscountPercent, amount: orderDiscountAmount, promoName: promoName || undefined }; const r = await window.api.print.kots(activeOrderId, user?.name, true); const w = await window.api.print.waiterCopy(activeOrderId, cd); alert(r?.success && w?.success ? 'KOT + Waiter copy printed' : 'Print error') }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> KOT + Waiter
-                        </button>
-                        <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.kots(activeOrderId, user?.name, true); alert(r?.success ? 'KOT reprinted' : 'Failed') }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
-                          <span className="h-1.5 w-1.5 rounded-full bg-orange-500" /> Reprint KOT
-                        </button>
-                        <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.waiterCopy(activeOrderId, { percent: orderDiscountPercent, amount: orderDiscountAmount, promoName: promoName || undefined }); alert(r?.success ? 'Printed' : 'Failed') }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 border-b">
-                          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" /> Waiter Copy
-                        </button>
-                        <button onClick={async () => { setShowPrintMenu(false); const r = await window.api.print.invoice(activeOrderId, { percent: orderDiscountPercent, amount: orderDiscountAmount, promoName: promoName || undefined, grandTotal: grandTotal }); alert(r?.success ? 'Printed' : 'Failed') }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                          <span className="h-1.5 w-1.5 rounded-full bg-purple-500" /> Invoice
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+// ------------------------------------------------------------------ line dialogs
+function NoteDialog({ line, sent, onSave, onCancel }: { line: CartItem; sent: boolean; onSave: (t: string) => void; onCancel: () => void }) {
+  const [text, setText] = useState(line.specialInstructions)
+  const quick = ['No onions', 'Extra hot', 'Less sugar', 'No ice', 'Allergy: nuts', 'Take away']
+  return (
+    <Dialog onClose={onCancel} className="w-[480px]" label="Note">
+      <div className="flex flex-col gap-3 p-5">
+        <span className="flex flex-col">
+          <span className="cond text-[26px] font-bold leading-none text-n-deep">{sent ? 'Kitchen note' : 'Note'}</span>
+          <span className="text-sm text-n-muted">{line.qty} × {line.itemName}{sent ? ' · already sent, reprint the KOT so the kitchen sees it' : ''}</span>
+        </span>
+        <textarea data-keyboard="full" autoFocus value={text} onChange={(e) => setText(e.target.value)} rows={3}
+          placeholder="e.g. no onions, allergic to nuts"
+          className="w-full resize-none rounded-md border border-n-edge bg-white px-3 py-2.5 text-[15px] focus:border-2 focus:border-n-teal focus:outline-none" />
+        <div className="flex flex-wrap gap-1.5">
+          {quick.map((q) => <button key={q} type="button" onClick={() => setText(text ? `${text}, ${q.toLowerCase()}` : q)} className="press h-10 rounded-full border border-n-edge bg-white px-3 text-[13px]">{q}</button>)}
         </div>
-      )}
+      </div>
+      <div className="flex gap-2 bg-white px-4 py-3">
+        <Btn size="lg" variant="outline" onClick={onCancel}>Cancel</Btn>
+        {line.specialInstructions && <Btn size="lg" variant="outline" onClick={() => onSave('')}>Clear</Btn>}
+        <span className="flex-1" />
+        <Btn size="lg" variant="deep" onClick={() => onSave(text.trim())}>Save note</Btn>
+      </div>
+    </Dialog>
+  )
+}
 
-      {/* Table picker */}
-      {showTablePicker && (
-        <TablePicker onSelect={handleTableSelect} onCancel={() => setShowTablePicker(false)} currentTable={tableName} />
-      )}
-
-      {/* Supervisor PIN modal for removing items from placed orders */}
-      {removeRequest && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
-            {removeRequest.step === 'reason' ? (
-              <>
-                <h3 className="mb-1 text-center text-lg font-bold">Remove Item</h3>
-                <p className="mb-4 text-center text-xs text-gray-500">Select or type a reason (required)</p>
-                {removeReasons.length > 0 && (
-                  <select value={removeRequest.reason}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      if (v && v !== '__custom__') { setRemoveRequest({ ...removeRequest, reason: v, step: 'disposition' }) }
-                      else { setRemoveRequest({ ...removeRequest, reason: v }) }
-                    }}
-                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none mb-2">
-                    <option value="">-- Select reason --</option>
-                    {removeReasons.map((r) => (
-                      <option key={r.name} value={r.reason_name}>{r.reason_name}</option>
-                    ))}
-                    <option value="__custom__">Other (type reason)...</option>
-                  </select>
-                )}
-                {(removeRequest.reason === '__custom__' || removeReasons.length === 0) && (
-                  <input type="text" data-keyboard="full" value={removeRequest.reason === '__custom__' ? '' : removeRequest.reason} autoFocus
-                    onChange={(e) => setRemoveRequest({ ...removeRequest, reason: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && removeRequest.reason.trim() && removeRequest.reason !== '__custom__') {
-                        setRemoveRequest({ ...removeRequest, step: 'disposition', reason: removeRequest.reason.trim() })
-                      }
-                    }}
-                    placeholder="Enter reason..."
-                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" />
-                )}
-                <div className="mt-4 flex gap-3">
-                  <button onClick={() => { setRemoveRequest(null); setRemoveCustomReason(false) }}
-                    className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
-                  {(removeRequest.reason === '__custom__' || removeReasons.length === 0) && (
-                    <button onClick={() => {
-                      if (removeRequest.reason.trim() && removeRequest.reason !== '__custom__') {
-                        setRemoveRequest({ ...removeRequest, step: 'disposition', reason: removeRequest.reason.trim() })
-                      }
-                    }} disabled={!removeRequest.reason.trim() || removeRequest.reason === '__custom__'}
-                      className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50">Next</button>
-                  )}
-                </div>
-              </>
-            ) : removeRequest.step === 'disposition' ? (
-              <>
-                <h3 className="mb-1 text-center text-lg font-bold">What happens to this item?</h3>
-                <p className="mb-4 text-center text-xs text-gray-500">Reason: <strong>{removeRequest.reason}</strong></p>
-                <div className="flex gap-3">
-                  <button onClick={() => setRemoveRequest({ ...removeRequest, disposition: 'Return to Inventory', step: 'remarks' })}
-                    className="flex-1 rounded-xl border-2 border-gray-200 py-4 text-center text-sm font-bold hover:bg-blue-50 hover:border-blue-200 transition-colors">
-                    Return to Inventory
-                  </button>
-                  <button onClick={() => setRemoveRequest({ ...removeRequest, disposition: 'Waste', step: 'remarks' })}
-                    className="flex-1 rounded-xl border-2 border-gray-200 py-4 text-center text-sm font-bold hover:bg-red-50 hover:border-red-200 transition-colors">
-                    Waste
-                  </button>
-                </div>
-                <button onClick={() => setRemoveRequest({ ...removeRequest, step: 'reason' })}
-                  className="mt-3 w-full rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50">Back</button>
-              </>
-            ) : removeRequest.step === 'remarks' ? (
-              <>
-                <h3 className="mb-1 text-center text-lg font-bold">Remarks</h3>
-                <p className="mb-1 text-center text-xs text-gray-500">Reason: <strong>{removeRequest.reason}</strong></p>
-                <p className="mb-3 text-center text-xs text-gray-500">Action: <strong>{removeRequest.disposition}</strong></p>
-                <textarea data-keyboard="full" value={removeRequest.remarks}
-                  onChange={(e) => setRemoveRequest({ ...removeRequest, remarks: e.target.value })}
-                  placeholder="Add remarks (optional)..."
-                  className="w-full resize-none rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" rows={3} autoFocus />
-                <div className="mt-4 flex gap-3">
-                  <button onClick={() => setRemoveRequest({ ...removeRequest, step: 'disposition' })}
-                    className="rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm font-semibold hover:bg-gray-50">Back</button>
-                  <button onClick={() => {
-                    if (user?.role === 'supervisor') {
-                      const removedItem = items.find((i) => i.id === removeRequest.cartId)
-                      removeItem(removeRequest.cartId)
-                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason, removeRequest.remarks.trim(), removeRequest.disposition)
-                      if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
-                      setRemoveRequest(null); setRemoveCustomReason(false)
-                    } else {
-                      setRemoveRequest({ ...removeRequest, step: 'pin' })
-                    }
-                  }} className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
-                    {user?.role === 'supervisor' ? 'Remove' : 'Next'}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h3 className="mb-1 text-center text-lg font-bold">Supervisor PIN</h3>
-                <p className="mb-2 text-center text-xs text-gray-500">Enter PIN to remove this item</p>
-                <p className="mb-4 text-center text-xs font-medium text-red-500">Reason: {removeRequest.reason} | {removeRequest.disposition}</p>
-                <input type="password" data-keyboard="numpad" value={removePin}
-                  onChange={(e) => { setRemovePin(e.target.value); setRemoveError('') }}
-                  onKeyDown={async (e) => {
-                    if (e.key === 'Enter' && removePin.length >= 4) {
-                      const u = await window.api.users.verifyPin(removePin)
-                      if (u && u.role === 'supervisor') {
-                        const removedItem = items.find((i) => i.id === removeRequest.cartId)
-                        removeItem(removeRequest.cartId)
-                        if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason, removeRequest.remarks.trim(), removeRequest.disposition)
-                        if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
-                        setRemoveRequest(null); setRemovePin(''); setRemoveCustomReason(false)
-                      } else { setRemoveError('Invalid PIN or not a supervisor') }
-                    }
-                  }}
-                  autoFocus placeholder="Supervisor PIN"
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-center text-lg tracking-widest focus:border-primary focus:outline-none" />
-                {removeError && <p className="mt-2 text-xs text-red-500">{removeError}</p>}
-                <div className="mt-4 flex gap-3">
-                  <button onClick={() => setRemoveRequest({ ...removeRequest, step: 'remarks' })}
-                    className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Back</button>
-                  <button onClick={async () => {
-                    const u = await window.api.users.verifyPin(removePin)
-                    if (u && u.role === 'supervisor') {
-                      const removedItem = items.find((i) => i.id === removeRequest.cartId)
-                      removeItem(removeRequest.cartId)
-                      if (isOrderPlaced && activeOrderId && removedItem && onItemRemoved) onItemRemoved(activeOrderId, { dbId: (removedItem as any).dbId, itemName: removedItem.itemName, qty: removedItem.qty, rate: removedItem.rate, amount: removedItem.amount }, removeRequest.reason, removeRequest.remarks.trim(), removeRequest.disposition)
-                      if (isOrderPlaced && items.length === 1 && onAutoVoid) onAutoVoid(removeRequest.reason)
-                      setRemoveRequest(null); setRemovePin(''); setRemoveCustomReason(false)
-                    } else { setRemoveError('Invalid PIN or not a supervisor') }
-                  }} className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600" disabled={!removePin}>Remove</button>
-                </div>
-              </>
-            )}
-          </div>
+function LineDiscountDialog({ line, maxPct, onApply, onCancel }: { line: CartItem; maxPct: number; onApply: (pct: number, amt: number) => void; onCancel: () => void }) {
+  const [mode, setMode] = useState<'pct' | 'amt'>(line.discountAmount > 0 && !line.discountPercent ? 'amt' : 'pct')
+  const [entry, setEntry] = useState(String((mode === 'amt' ? line.discountAmount : line.discountPercent) || ''))
+  const [error, setError] = useState('')
+  const cur = useStatus((s) => s.currency)
+  const gross = useMemo(() => (line.rate + line.modifiers.reduce((s, m) => s + m.price, 0)) * line.qty, [line])
+  function apply() {
+    const v = parseFloat(entry || '0') || 0
+    const pct = mode === 'pct' ? v : 0
+    const amt = mode === 'amt' ? v : 0
+    if (maxPct > 0 && pct > maxPct) { setError(`Max discount: ${maxPct}%`); return }
+    if (pct > 100) { setError('Can’t be more than 100%'); return }
+    onApply(pct, amt)
+  }
+  return (
+    <Dialog onClose={onCancel} className="w-[420px]" label="Item discount">
+      <div className="flex flex-col gap-3 p-5">
+        <span className="flex flex-col">
+          <span className="cond text-[26px] font-bold leading-none text-n-deep">Item discount</span>
+          <span className="text-sm text-n-muted">{line.qty} × {line.itemName} · {cur} {money(gross)}</span>
+        </span>
+        <div className="grid grid-cols-2 gap-1.5">
+          <Option active={mode === 'pct'} onClick={() => setMode('pct')} className="justify-center">Percent</Option>
+          <Option active={mode === 'amt'} onClick={() => setMode('amt')} className="justify-center">Amount</Option>
         </div>
-      )}
-
-      {/* Instructions modal */}
-      {editingInstructions && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-96 rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="mb-3 text-lg font-bold">Special Instructions</h3>
-            <textarea value={tempInstructions} onChange={(e) => setTempInstructions(e.target.value)}
-              data-keyboard="full"
-              placeholder="e.g., No onions, allergic to nuts..."
-              className="w-full resize-none rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-primary focus:outline-none" rows={3} autoFocus />
-            <div className="mt-4 flex gap-3">
-              <button onClick={() => setEditingInstructions(null)} className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
-              <button onClick={saveInstructions} className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white hover:bg-primary/90">Save</button>
-            </div>
-          </div>
+        <div className="cond num flex h-14 items-center justify-between rounded-md bg-white px-3.5 text-[30px] font-bold shadow-[inset_0_0_0_2px_#0E6E86]">
+          <span className="font-sans text-[13px] font-medium text-n-muted">{mode === 'pct' ? 'Percent off' : `${cur} off`}</span>
+          {entry || '0'}{mode === 'pct' ? '%' : ''}
         </div>
-      )}
-
-      {/* Item discount modal */}
-      {showItemDiscount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="mb-4 text-lg font-bold">Item Discount</h3>
-            <div className="space-y-3">
-              <div><label className="mb-1 block text-xs font-semibold text-gray-500">Discount %</label>
-                <input type="number" data-keyboard="numpad" value={itemDiscPct || ''} onChange={(e) => setItemDiscPct(parseFloat(e.target.value) || 0)}
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none" min={0} max={100} /></div>
-              <div><label className="mb-1 block text-xs font-semibold text-gray-500">Fixed Amount</label>
-                <input type="number" data-keyboard="numpad" value={itemDiscAmt || ''} onChange={(e) => setItemDiscAmt(parseFloat(e.target.value) || 0)}
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none" min={0} /></div>
-            </div>
-            {discountError && <p className="mt-2 text-sm text-red-500">{discountError}</p>}
-            <div className="mt-4 flex gap-3">
-              <button onClick={() => { setShowItemDiscount(null); setDiscountError('') }} className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
-              <button onClick={saveItemDiscount} className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white hover:bg-primary/90">Apply</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Order discount modal */}
-      {showOrderDiscount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-80 rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="mb-4 text-lg font-bold">Order Discount</h3>
-            <div className="space-y-3">
-              <div><label className="mb-1 block text-xs font-semibold text-gray-500">Discount %</label>
-                <input type="number" data-keyboard="numpad" value={discPct || ''} onChange={(e) => setDiscPct(parseFloat(e.target.value) || 0)}
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none" min={0} max={100} /></div>
-              <div><label className="mb-1 block text-xs font-semibold text-gray-500">Fixed Amount</label>
-                <input type="number" data-keyboard="numpad" value={discAmt || ''} onChange={(e) => setDiscAmt(parseFloat(e.target.value) || 0)}
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none" min={0} /></div>
-              <div><label className="mb-1 block text-xs font-semibold text-gray-500">Reason</label>
-                <input type="text" data-keyboard="full" value={discReason} onChange={(e) => setDiscReason(e.target.value)}
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-2.5 text-sm focus:border-primary focus:outline-none" placeholder="Manager discount" /></div>
-            </div>
-            {discountError && <p className="mt-2 text-sm text-red-500">{discountError}</p>}
-            <div className="mt-4 flex gap-3">
-              <button onClick={() => { setShowOrderDiscount(false); setDiscountError('') }} className="flex-1 rounded-xl border-2 border-gray-200 py-2.5 text-sm font-semibold hover:bg-gray-50">Cancel</button>
-              <button onClick={saveOrderDiscount} className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white hover:bg-primary/90">Apply</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+        <Keypad mode="decimal" tone="light" className="h-[220px]" onKey={(k) => { setError(''); setEntry(amountKey(entry, k)) }} />
+        {error && <span className="text-sm font-semibold text-n-red">{error}</span>}
+      </div>
+      <div className="flex gap-2 bg-white px-4 py-3">
+        <Btn size="lg" variant="outline" onClick={onCancel}>Cancel</Btn>
+        {(line.discountPercent > 0 || line.discountAmount > 0) && <Btn size="lg" variant="outline" onClick={() => onApply(0, 0)}>No discount</Btn>}
+        <span className="flex-1" />
+        <Btn size="lg" variant="deep" onClick={apply}>Apply</Btn>
+      </div>
+    </Dialog>
   )
 }

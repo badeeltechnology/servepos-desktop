@@ -41,18 +41,19 @@ export default function AdminPanel() {
   ]
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-n-cream">
       {/* Sidebar */}
-      <div className="flex w-64 flex-col border-r bg-white">
-        <div className="border-b p-4">
+      <div className="flex w-64 flex-shrink-0 flex-col bg-n-deep text-white max-[1100px]:w-56">
+        <div className="border-b border-n-dim p-4">
           <button
             onClick={() => setAdminMode(false)}
-            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+            className="press flex h-11 items-center gap-2 rounded-md bg-n-rail pl-2 pr-3 text-sm font-semibold text-white"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Login
+            Back to sign in
           </button>
-          <h1 className="mt-3 text-lg font-bold">Admin Panel</h1>
+          <h1 className="cond mt-4 text-[28px] font-bold leading-none">Admin panel</h1>
+          <p className="mt-1 text-xs text-n-mist">Supervisor tools</p>
         </div>
 
         <nav className="flex-1 p-3">
@@ -60,10 +61,10 @@ export default function AdminPanel() {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
+              className={`mb-1 flex h-12 w-full items-center gap-3 rounded-md px-3 text-sm ${
                 activeTab === tab.key
-                  ? 'bg-primary/10 font-medium text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  ? 'bg-white font-semibold text-n-deep'
+                  : 'text-n-frost hover:bg-n-rail'
               }`}
             >
               {tab.icon}
@@ -74,13 +75,13 @@ export default function AdminPanel() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 overflow-y-auto p-8 max-[1100px]:p-5">
         {activeTab === 'print-format' && (
           <div className="mx-auto max-w-2xl">
-            <h2 className="mb-6 text-2xl font-bold">Print Format Configuration</h2>
+            <h2 className="cond mb-6 text-[32px] font-bold leading-none text-n-deep">Print Format Configuration</h2>
 
             {/* Restaurant Identity */}
-            <div className="mb-6 rounded-xl border bg-white p-6">
+            <div className="mb-6 rounded-md border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Restaurant Identity
               </h3>
@@ -177,7 +178,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Legal / Tax */}
-            <div className="mb-6 rounded-xl border bg-white p-6">
+            <div className="mb-6 rounded-md border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Legal / Tax
               </h3>
@@ -226,7 +227,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Tax */}
-            <div className="mb-6 rounded-xl border bg-white p-6">
+            <div className="mb-6 rounded-md border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Tax
               </h3>
@@ -276,7 +277,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Discount */}
-            <div className="mb-6 rounded-xl border bg-white p-6">
+            <div className="mb-6 rounded-md border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Discount
               </h3>
@@ -341,7 +342,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Currency */}
-            <div className="mb-6 rounded-xl border bg-white p-6">
+            <div className="mb-6 rounded-md border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Currency
               </h3>
@@ -382,7 +383,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Receipt Design Selector */}
-            <div className="mb-6 rounded-xl border bg-white p-6">
+            <div className="mb-6 rounded-md border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Receipt Design
               </h3>
@@ -390,7 +391,7 @@ export default function AdminPanel() {
                 {/* Classic Design Preview */}
                 <button
                   onClick={() => updateField('receipt_design', 'classic')}
-                  className={`rounded-xl border-2 p-3 text-left transition-all ${(receiptConfig.receipt_design || 'classic') === 'classic' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-200 hover:border-gray-300'}`}
+                  className={`rounded-md border-2 p-3 text-left transition-all ${(receiptConfig.receipt_design || 'classic') === 'classic' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-200 hover:border-gray-300'}`}
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-sm font-bold">Classic</span>
@@ -422,7 +423,7 @@ export default function AdminPanel() {
                 {/* Modern Design Preview */}
                 <button
                   onClick={() => updateField('receipt_design', 'modern')}
-                  className={`rounded-xl border-2 p-3 text-left transition-all ${receiptConfig.receipt_design === 'modern' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-200 hover:border-gray-300'}`}
+                  className={`rounded-md border-2 p-3 text-left transition-all ${receiptConfig.receipt_design === 'modern' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-200 hover:border-gray-300'}`}
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-sm font-bold">Modern</span>
@@ -455,7 +456,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Paper Width */}
-            <div className="mb-6 rounded-xl border bg-white p-6">
+            <div className="mb-6 rounded-md border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Paper Size
               </h3>
@@ -478,7 +479,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Receipt & KOT Options */}
-            <div className="mb-6 rounded-xl border bg-white p-6">
+            <div className="mb-6 rounded-md border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Receipt Options
               </h3>
@@ -530,7 +531,7 @@ export default function AdminPanel() {
             </div>
 
             {/* KOT Options */}
-            <div className="mb-6 rounded-xl border bg-white p-6">
+            <div className="mb-6 rounded-md border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 KOT Options
               </h3>
@@ -578,7 +579,7 @@ export default function AdminPanel() {
             </div>
 
             {/* Print Document Settings */}
-            <div className="mb-6 rounded-xl border bg-white p-6">
+            <div className="mb-6 rounded-md border bg-white p-6">
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Print Document Settings
               </h3>
@@ -722,14 +723,14 @@ function SupervisorManagement() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h2 className="mb-6 text-2xl font-bold">Supervisor Management</h2>
+      <h2 className="cond mb-6 text-[32px] font-bold leading-none text-n-deep">Supervisor Management</h2>
 
       {error && <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       {success && <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">{success}</div>}
 
       {/* Existing supervisors */}
       {supervisors.length > 0 && (
-        <div className="mb-6 rounded-xl border bg-white p-6">
+        <div className="mb-6 rounded-md border bg-white p-6">
           <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Current Supervisors
           </h3>
@@ -777,7 +778,7 @@ function SupervisorManagement() {
       )}
 
       {/* Create new supervisor */}
-      <div className="rounded-xl border bg-white p-6">
+      <div className="rounded-md border bg-white p-6">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Create New Supervisor
         </h3>
@@ -866,10 +867,10 @@ function SystemSettings() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h2 className="mb-6 text-2xl font-bold">System Settings</h2>
+      <h2 className="cond mb-6 text-[32px] font-bold leading-none text-n-deep">System Settings</h2>
 
       {/* Version & Update */}
-      <div className="mb-6 rounded-xl border bg-white p-6">
+      <div className="mb-6 rounded-md border bg-white p-6">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Version
         </h3>
@@ -912,7 +913,7 @@ function SystemSettings() {
       <SyncNowCard />
 
       {/* Sync & Timeout */}
-      <div className="mb-6 rounded-xl border bg-white p-6">
+      <div className="mb-6 rounded-md border bg-white p-6">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Preferences
         </h3>
@@ -993,7 +994,7 @@ function SystemSettings() {
       </div>
 
       {/* Clear Transactions */}
-      <div className="mb-6 rounded-xl border-2 border-orange-200 bg-white p-6">
+      <div className="mb-6 rounded-md border-2 border-orange-200 bg-white p-6">
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-orange-600">
           Clear Transactions
         </h3>
@@ -1013,7 +1014,7 @@ function SystemSettings() {
       </div>
 
       {/* Danger Zone — Delete Database */}
-      <div className="mb-6 rounded-xl border-2 border-red-200 bg-white p-6">
+      <div className="mb-6 rounded-md border-2 border-red-200 bg-white p-6">
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-red-600">
           Danger Zone
         </h3>
@@ -1209,7 +1210,7 @@ function ErpnextConnectionSettings({ config, onSave }: { config: Record<string, 
   }
 
   return (
-    <div className="mb-6 rounded-xl border bg-white p-6">
+    <div className="mb-6 rounded-md border bg-white p-6">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           ERPNext Connection
@@ -1351,7 +1352,7 @@ function SyncNowCard() {
   }
 
   return (
-    <div className="mb-6 rounded-xl border bg-white p-6">
+    <div className="mb-6 rounded-md border bg-white p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Sync Data</h3>

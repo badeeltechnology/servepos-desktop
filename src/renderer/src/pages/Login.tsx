@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuthStore } from '../stores/auth'
-import { Settings, ArrowUpCircle } from 'lucide-react'
+import { useStatus } from '../stores/status'
+import { Btn, Dialog, Cap, Field, Keypad, PinDots, Dot, staffColor, initial, KeypadKey, C } from '../ui'
+import { Clock } from '../ui/hosts'
+import { cn } from '../lib/utils'
+
+// Sign in: who is on the till (optional, a hint) + a 6–8 digit PIN that verifies itself.
+// "Supervisor tools" opens the admin login (same credentials as before).
 
 export default function Login() {
   const [pin, setPin] = useState('')
@@ -8,24 +14,45 @@ export default function Login() {
   const [showAdminLogin, setShowAdminLogin] = useState(false)
   const [adminUsername, setAdminUsername] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
+  const [adminError, setAdminError] = useState('')
   const [appVersion, setAppVersion] = useState('')
   const [updateInfo, setUpdateInfo] = useState<any>(null)
+  const [staff, setStaff] = useState<any[]>([])
+  const [who, setWho] = useState<any>(null)
+  const [shiftOpen, setShiftOpen] = useState<boolean | null>(null)
+  const [checking, setChecking] = useState(false)
+  const { brand, printers, erpConfigured } = useStatus()
+  const [rc, setRc] = useState<Record<string, string>>({})
+  const verifySeq = useRef(0)
+
+  const { setUser, setAdminMode } = useAuthStore()
+  const maxPinLength = 8
 
   useEffect(() => {
     loadVersionInfo()
+    window.api.users.getAll().then((u: any[]) => setStaff((u || []).filter((x) => x.is_active !== 0))).catch(() => {})
+    window.api.sessions.getActive().then((s: any) => setShiftOpen(!!s)).catch(() => setShiftOpen(null))
+    window.api.receiptConfig.getAll().then((c: any) => setRc(c || {})).catch(() => {})
   }, [])
 
   async function loadVersionInfo() {
-    const version = await window.api.app.getVersion()
-    setAppVersion(version)
-    const update = await window.api.app.checkForUpdate()
-    if (update.hasUpdate) setUpdateInfo(update)
+    try {
+      const version = await window.api.app.getVersion()
+      setAppVersion(version)
+      const update = await window.api.app.checkForUpdate()
+      if (update?.hasUpdate) setUpdateInfo(update)
+    } catch { /* offline */ }
   }
-  const [adminError, setAdminError] = useState('')
 
-  const { setUser, setAdminMode } = useAuthStore()
-
-  const maxPinLength = 8
+  function signIn(user: any) {
+    if (who && user.id !== who.id) {
+      setError(`That PIN isn’t ${who.name}’s`)
+      setPin('')
+      return
+    }
+    setPin('')
+    setUser(user)
+  }
 
   const handlePinInput = useCallback(
     async (digit: string) => {
@@ -36,18 +63,21 @@ export default function Login() {
 
       // Auto-submit when 6+ digits and try verification
       if (newPin.length >= 6) {
+        const mySeq = ++verifySeq.current
         try {
+          setChecking(true)
           const user = await window.api.users.verifyPin(newPin)
-          if (user) {
-            setPin('')
-            setUser(user)
-          }
+          if (mySeq !== verifySeq.current) return
+          if (user) signIn(user)
+          else if (newPin.length >= maxPinLength) { setError('Invalid PIN'); setPin('') }
         } catch {
           // continue, might be 7 or 8 digit pin
+        } finally {
+          setChecking(false)
         }
       }
     },
-    [pin, setUser]
+    [pin, setUser, who]
   )
 
   const handleBackspace = useCallback(() => {
@@ -63,8 +93,7 @@ export default function Login() {
     try {
       const user = await window.api.users.verifyPin(pin)
       if (user) {
-        setPin('')
-        setUser(user)
+        signIn(user)
       } else {
         setError('Invalid PIN')
         setPin('')
@@ -73,7 +102,26 @@ export default function Login() {
       setError('Error verifying PIN')
       setPin('')
     }
-  }, [pin, setUser])
+  }, [pin, setUser, who])
+
+  // Physical keyboard / USB keypad
+  useEffect(() => {
+    if (showAdminLogin) return
+    const h = (e: KeyboardEvent) => {
+      if (/^[0-9]$/.test(e.key)) handlePinInput(e.key)
+      else if (e.key === 'Backspace') handleBackspace()
+      else if (e.key === 'Enter') handleSubmit()
+      else if (e.key === 'Escape') { setPin(''); setError('') }
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [handlePinInput, handleBackspace, handleSubmit, showAdminLogin])
+
+  function onKey(k: KeypadKey) {
+    if (k === 'back') handleBackspace()
+    else if (k === 'C') { setPin(''); setError('') }
+    else if (k !== '.') handlePinInput(k)
+  }
 
   const handleAdminLogin = async () => {
     setAdminError('')
@@ -96,153 +144,90 @@ export default function Login() {
     }
   }
 
-  const numpadKeys = [
-    ['1', '2', '3'],
-    ['4', '5', '6'],
-    ['7', '8', '9'],
-    ['backspace', '0', 'enter']
-  ]
+  const words = brand.name.split(/\s+/)
+  const ok = pin.length >= 6
+  const now = new Date()
 
   return (
-    <div className="flex h-screen flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Admin gear icon */}
-      <button
-        onClick={() => setShowAdminLogin(true)}
-        className="absolute right-6 top-6 rounded-full p-2 text-muted-foreground transition-colors hover:bg-white/50 hover:text-foreground"
-        title="Admin Login"
-      >
-        <Settings className="h-5 w-5" />
-      </button>
-
-      {/* Version & update banner */}
-      <div className="absolute bottom-4 left-0 right-0 text-center">
-        <span className="text-xs text-muted-foreground/50">v{appVersion}</span>
+    <div className="flex h-screen overflow-hidden bg-n-deep text-white">
+      <section className="flex w-[380px] flex-shrink-0 flex-col px-9 pb-7 pt-9 max-[1100px]:w-[330px] max-[1100px]:px-7">
+        <span className="cond break-words text-[64px] font-bold uppercase leading-[.9] tracking-[.02em] max-[1100px]:text-[54px]">
+          {words.length > 1 ? <>{words[0]}<br />{words.slice(1).join(' ')}</> : brand.name}
+        </span>
+        <span className="mt-2.5 text-[15px] text-n-mist">{[rc.address_line_1, brand.sub].filter(Boolean).join(' · ')}</span>
+        <Clock className="cond num mt-10 text-[56px] font-semibold leading-none" />
+        <span className="text-sm text-n-mist">{now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+        <span className="flex-1" />
+        <div className="flex flex-col gap-2.5 text-[13px] text-n-frost">
+          <span className="flex items-center gap-2"><Dot color={erpConfigured ? '#5FD38D' : C.mist} />{erpConfigured ? 'ERPNext set up' : 'ERPNext not set up'}</span>
+          <span className="flex items-center gap-2"><Dot color={printers > 0 ? '#5FD38D' : C.amber} />{printers > 0 ? `${printers} printer${printers === 1 ? '' : 's'} set up` : 'No printer set up'}</span>
+          <span className="flex items-center gap-2"><Dot color={shiftOpen ? '#5FD38D' : C.mist} />{shiftOpen === null ? 'Checking the shift…' : shiftOpen ? 'A shift is open on this till' : 'No shift open on this till'}</span>
+        </div>
+        <div className="mt-[22px] flex items-center gap-3">
+          <Btn variant="ghostDark" onClick={() => setShowAdminLogin(true)}>Supervisor tools</Btn>
+          <span className="text-xs text-n-steel">v{appVersion}</span>
+        </div>
         {updateInfo && (
-          <button
-            onClick={() => window.open(updateInfo.releaseUrl, '_blank')}
-            className="ml-2 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20"
-          >
-            <ArrowUpCircle className="h-3 w-3" />
+          <button type="button" onClick={() => window.open(updateInfo.releaseUrl, '_blank')} className="mt-2 self-start text-xs font-semibold text-n-gold">
             Update available: v{updateInfo.latestVersion}
           </button>
         )}
-      </div>
+      </section>
 
-      <div className="mb-8 text-center">
-        <h1 className="text-4xl font-bold text-primary">ServePOS</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Enter your PIN to continue</p>
-      </div>
-
-      {/* PIN dots */}
-      <div className="mb-6 flex gap-3">
-        {Array.from({ length: maxPinLength }).map((_, i) => (
-          <div
-            key={i}
-            className={`h-4 w-4 rounded-full border-2 transition-all ${
-              i < pin.length
-                ? 'scale-110 border-primary bg-primary'
-                : 'border-muted-foreground/30 bg-transparent'
-            }`}
-          />
-        ))}
-      </div>
-
-      {error && <p className="mb-4 text-sm font-medium text-destructive">{error}</p>}
-
-      {/* Numpad */}
-      <div className="grid grid-cols-3 gap-3">
-        {numpadKeys.flat().map((key) => {
-          if (key === 'backspace') {
-            return (
-              <button
-                key={key}
-                onClick={handleBackspace}
-                className="flex h-16 w-20 items-center justify-center rounded-xl bg-white text-lg font-medium shadow-sm transition-all hover:bg-gray-50 active:scale-95 active:bg-gray-100"
-              >
-                ←
-              </button>
-            )
-          }
-          if (key === 'enter') {
-            return (
-              <button
-                key={key}
-                onClick={handleSubmit}
-                className="flex h-16 w-20 items-center justify-center rounded-xl bg-primary text-lg font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 active:scale-95"
-              >
-                ↵
-              </button>
-            )
-          }
-          return (
-            <button
-              key={key}
-              onClick={() => handlePinInput(key)}
-              className="flex h-16 w-20 items-center justify-center rounded-xl bg-white text-2xl font-semibold shadow-sm transition-all hover:bg-gray-50 active:scale-95 active:bg-gray-100"
-            >
-              {key}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Admin login modal */}
-      {showAdminLogin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-96 rounded-2xl bg-white p-6 shadow-2xl">
-            <h2 className="mb-4 text-xl font-bold">Admin Login</h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-muted-foreground">
-                  Username
-                </label>
-                <input
-                  type="text"
-                  value={adminUsername}
-                  onChange={(e) => setAdminUsername(e.target.value)}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  autoFocus
-                  onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-muted-foreground">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
-                />
-              </div>
-
-              {adminError && <p className="text-sm text-destructive">{adminError}</p>}
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    setShowAdminLogin(false)
-                    setAdminUsername('')
-                    setAdminPassword('')
-                    setAdminError('')
-                  }}
-                  className="flex-1 rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-muted"
-                >
-                  Cancel
+      <section className="flex min-w-0 flex-1 gap-5 py-9 pr-9 max-[1100px]:pr-6">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <Cap className="mb-1.5 text-n-mist">Who is on the till</Cap>
+          <div className="scroll-none flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
+            {staff.map((s) => {
+              const on = who?.id === s.id
+              return (
+                <button key={s.id} type="button" aria-pressed={on} onClick={() => { setWho(on ? null : s); setPin(''); setError('') }}
+                  className={cn('press flex h-14 flex-shrink-0 items-center gap-3 rounded-md px-2.5 text-left', on ? 'bg-white text-n-deep' : 'bg-n-rail text-white')}>
+                  <span className="cond flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xl font-bold text-white" style={{ background: staffColor(s.name) }}>{initial(s.name)}</span>
+                  <span className="flex min-w-0 flex-col leading-tight">
+                    <span className="truncate text-base font-semibold">{s.full_name || s.name}</span>
+                    <span className="text-xs capitalize opacity-70">{s.role}</span>
+                  </span>
                 </button>
-                <button
-                  onClick={handleAdminLogin}
-                  className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  Login
-                </button>
-              </div>
-            </div>
+              )
+            })}
+            {staff.length === 0 && <span className="text-sm text-n-mist">Staff appear here once they are added in Supervisor tools.</span>}
           </div>
         </div>
+        <div className="flex w-[262px] flex-shrink-0 flex-col gap-2.5">
+          <Cap className="mb-0.5 text-n-mist">{who ? `${who.name}, enter your PIN` : 'Enter your PIN'}</Cap>
+          <PinDots count={Math.max(6, pin.length)} filled={pin.length} />
+          <Keypad className="flex-1" onKey={onKey} />
+          <button type="button" onClick={handleSubmit} disabled={!ok}
+            className={cn('press flex h-14 items-center justify-center rounded-md text-base font-bold', ok ? 'bg-n-amber text-n-ink' : 'pointer-events-none bg-n-rail text-n-steel')}>
+            {checking ? 'Checking…' : ok ? 'Sign in' : 'Enter 6 to 8 digits'}
+          </button>
+          <span className={cn('min-h-[18px] text-center text-xs', error ? 'font-semibold text-n-coral' : 'text-n-mist')}>{error || 'Signs in by itself once the PIN is right'}</span>
+        </div>
+      </section>
+
+      {/* Admin login */}
+      {showAdminLogin && (
+        <Dialog onClose={() => { setShowAdminLogin(false); setAdminUsername(''); setAdminPassword(''); setAdminError('') }} className="w-[420px] text-n-ink" label="Supervisor tools">
+          <div className="flex flex-col gap-3 p-5">
+            <span className="flex flex-col">
+              <span className="cond text-[28px] font-bold leading-none text-n-deep">Supervisor tools</span>
+              <span className="text-sm text-n-muted">Admin sign-in for setup, staff, printers and sync.</span>
+            </span>
+            <label className="flex flex-col gap-1 text-sm font-medium text-n-muted">Username
+              <Field type="text" autoFocus value={adminUsername} onChange={(e) => setAdminUsername(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()} />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium text-n-muted">Password
+              <Field type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()} />
+            </label>
+            {adminError && <p className="text-sm font-semibold text-n-red">{adminError}</p>}
+          </div>
+          <div className="flex gap-2 bg-white px-4 py-3">
+            <Btn size="lg" variant="outline" onClick={() => { setShowAdminLogin(false); setAdminUsername(''); setAdminPassword(''); setAdminError('') }}>Cancel</Btn>
+            <span className="flex-1" />
+            <Btn size="lg" variant="deep" onClick={handleAdminLogin}>Sign in</Btn>
+          </div>
+        </Dialog>
       )}
     </div>
   )

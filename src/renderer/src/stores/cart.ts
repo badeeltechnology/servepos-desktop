@@ -20,7 +20,10 @@ export interface CartItem {
   modifierTotal: number
   specialInstructions: string
   amount: number // computed: (rate * qty) - discounts + modifierTotal
+  kotPrinted?: boolean // line already went to the kitchen (order_items.kot_printed)
 }
+
+type NewItem = Omit<CartItem, 'id' | 'amount' | 'discountAmount' | 'discountPercent' | 'modifierTotal' | 'specialInstructions' | 'modifiers'> & { modifiers?: CartModifier[]; specialInstructions?: string }
 
 interface CartState {
   items: CartItem[]
@@ -38,7 +41,13 @@ interface CartState {
   orderNotes: string
 
   // Actions
-  addItem: (item: Omit<CartItem, 'id' | 'amount' | 'discountAmount' | 'discountPercent' | 'modifierTotal' | 'specialInstructions' | 'modifiers'> & { modifiers?: CartModifier[]; specialInstructions?: string }) => void
+  addItem: (item: NewItem) => string
+  /** Tap-to-add: bumps qty on an identical, unsaved, plain line instead of adding a new one. Returns the line id. */
+  addOrMerge: (item: NewItem) => string
+  /** Record DB row ids for lines just saved (cart id → order_items id). */
+  setDbIds: (map: Record<string, string>) => void
+  /** Mark lines as sent to the kitchen by their DB row id. */
+  setKotPrinted: (dbIds: string[]) => void
   updateItemQty: (id: string, qty: number) => void
   removeItem: (id: string) => void
   updateItemModifiers: (id: string, modifiers: CartModifier[]) => void
@@ -101,9 +110,32 @@ export const useCartStore = create<CartState>((set, get) => ({
       modifiers,
       modifierTotal,
       specialInstructions: item.specialInstructions || '',
-      amount: calcItemAmount({ rate: item.rate, qty: item.qty, discountPercent: 0, discountAmount: 0, modifiers })
+      amount: calcItemAmount({ rate: item.rate, qty: item.qty, discountPercent: 0, discountAmount: 0, modifiers }),
+      kotPrinted: !!item.kotPrinted
     }
     set((state) => ({ items: [...state.items, newItem] }))
+    return id
+  },
+
+  addOrMerge: (item) => {
+    const plain = (!item.modifiers || item.modifiers.length === 0) && !item.specialInstructions
+    if (plain) {
+      const hit = get().items.find((l) => l.itemCode === item.itemCode && !l.dbId && !l.kotPrinted && l.modifiers.length === 0 && !l.specialInstructions && l.discountPercent === 0 && l.discountAmount === 0 && l.rate === item.rate)
+      if (hit) {
+        get().updateItemQty(hit.id, hit.qty + item.qty)
+        return hit.id
+      }
+    }
+    return get().addItem(item)
+  },
+
+  setDbIds: (map) => {
+    set((state) => ({ items: state.items.map((i) => (map[i.id] ? { ...i, dbId: map[i.id] } : i)) }))
+  },
+
+  setKotPrinted: (dbIds) => {
+    const ids = new Set(dbIds)
+    set((state) => ({ items: state.items.map((i) => (i.dbId && ids.has(i.dbId) ? { ...i, kotPrinted: true } : i)) }))
   },
 
   updateItemQty: (id, qty) => {
