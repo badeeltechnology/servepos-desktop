@@ -5,7 +5,8 @@ import { useStatus, isCashMethod } from '../stores/status'
 import { useSessionGuard } from '../stores/ui'
 import { useT } from '../stores/i18n'
 import StatusBand from './StatusBand'
-import { Btn, SubBar, BackButton, Cap, Keypad, Field, Dot, money, amountKey, C } from '../ui'
+import { Btn, SubBar, BackButton, Cap, Keypad, Field, Dot, money, amountKey, roundMoney, C } from '../ui'
+import { quickCash } from '../ui/currency'
 import { cn } from '../lib/utils'
 
 // Payment: the receipt as it will print on the left, tender on the right, and the change as the
@@ -37,11 +38,16 @@ interface Props {
 
 type Method = { name: string; mode_of_payment: string; is_default: number }
 
+/** Whole notes without decimals (500, 5), fractions in full (1.500 OMR). */
+function chipLabel(v: number) {
+  return Number.isInteger(v) ? money(v, 0) : money(v)
+}
+
 export default function PaymentDialog(props: Props) {
   const { orderWaiterName, processing, onComplete, onCancel, onDone } = props
   // Snapshot the order: the cart is cleared the moment the sale completes, but we keep showing it.
   const [snap] = useState(() => ({
-    due: Math.round(props.grandTotal * 100) / 100,
+    due: roundMoney(props.grandTotal),
     subtotal: props.subtotal ?? props.grandTotal,
     discount: props.discount || 0,
     tax: props.tax || 0,
@@ -111,24 +117,18 @@ export default function PaymentDialog(props: Props) {
     return [{ method, amount: due, reference }]
   }, [split, parts, method, isCash, fresh, cashEntry, received, due, reference])
   const tipLine = lines.findIndex((p) => !cashy(p.method) && p.amount > 0)
-  const tipAmount = tipLine >= 0 ? Math.round(tipVal * 100) / 100 : 0
-  const covered = lines.reduce((s, p) => s + p.amount, 0)
-  const remaining = Math.round((due - covered) * 100) / 100
-  const change = covered > due && lines.some((p) => cashy(p.method)) ? Math.round((covered - due) * 100) / 100 : 0
-  const short = remaining > 0.004
+  const tipAmount = tipLine >= 0 ? roundMoney(tipVal) : 0
+  const covered = roundMoney(lines.reduce((s, p) => s + p.amount, 0))
+  const remaining = roundMoney((due - covered))
+  const change = covered > due && lines.some((p) => cashy(p.method)) ? roundMoney((covered - due)) : 0
+  const short = remaining > 0
   const ok = !short && lines.length > 0 && !processing && !finishing
   // What goes to onComplete: same shape as before (a card line carrying a tip is due + tip)
-  const payments: PaymentEntry[] = lines.map((p, i) => (i === tipLine && tipAmount > 0 ? { ...p, amount: Math.round((p.amount + tipAmount) * 100) / 100 } : p))
+  const payments: PaymentEntry[] = lines.map((p, i) => (i === tipLine && tipAmount > 0 ? { ...p, amount: roundMoney((p.amount + tipAmount)) } : p))
 
-  // Quick cash: exact + the notes a guest is likely to hand over
-  const chips = useMemo(() => {
-    const out: number[] = [due]
-    for (const step of [10, 50, 100, 500, 1000]) {
-      const v = Math.ceil(due / step) * step
-      if (v > due && !out.includes(v)) out.push(v)
-    }
-    return out.slice(0, 4)
-  }, [due])
+  // Quick cash: exact + the notes a guest is likely to hand over (per currency, see ui/currency)
+  const code = useStatus((s) => s.currencyCode)
+  const chips = useMemo(() => quickCash(due, code), [due, code])
 
   function onKey(k: Parameters<typeof amountKey>[1]) {
     setError('')
@@ -140,7 +140,7 @@ export default function PaymentDialog(props: Props) {
         let amt = parseFloat(amountKey(partFresh || !p.amount ? '' : String(p.amount), k)) || 0
         if (!cashy(p.method)) {
           const others = ps.reduce((s, x, j) => (j === i ? s : s + x.amount), 0)
-          amt = Math.min(amt, Math.max(0, Math.round((due - others) * 100) / 100))
+          amt = Math.min(amt, Math.max(0, roundMoney((due - others))))
         }
         return { ...p, amount: amt }
       }))
@@ -162,7 +162,7 @@ export default function PaymentDialog(props: Props) {
   function addPart() {
     const unused = methods.find((m) => !parts.some((p) => p.method === m.mode_of_payment))
     if (!unused) return
-    setParts([...parts, { method: unused.mode_of_payment, amount: Math.max(0, Math.round(remaining * 100) / 100), reference: '' }])
+    setParts([...parts, { method: unused.mode_of_payment, amount: Math.max(0, roundMoney(remaining)), reference: '' }])
     setActivePart(parts.length)
   }
 
@@ -177,7 +177,7 @@ export default function PaymentDialog(props: Props) {
       const base = i === tipLine ? p.amount - tipAmount : p.amount
       const amt = Math.min(base, left)
       left = Math.max(0, left - amt)
-      return { ...p, amount: Math.round((amt + (i === tipLine ? tipAmount : 0)) * 100) / 100 }
+      return { ...p, amount: roundMoney((amt + (i === tipLine ? tipAmount : 0))) }
     }).filter((p) => p.amount > 0)
     setFinishing(true)
     try {
@@ -306,10 +306,10 @@ export default function PaymentDialog(props: Props) {
                   )}
                 </div>
               ) : isCash ? (
-                <div className="grid flex-shrink-0 grid-cols-4 gap-2">
+                <div className={cn('grid flex-shrink-0 gap-2', chips.length > 4 ? 'grid-cols-3' : 'grid-cols-4')}>
                   {chips.map((v, i) => (
-                    <button key={v} type="button" aria-label={i === 0 ? 'Exact amount' : `Received ${money(v, 0)}`} disabled={!!done} onClick={() => { setCashEntry(String(v)); setFresh(false); setError('') }}
-                      className="press cond num h-[52px] rounded-md border border-n-edge bg-white text-xl font-semibold">{i === 0 ? t('Exact') : money(v, 0)}</button>
+                    <button key={v} type="button" aria-label={i === 0 ? 'Exact amount' : `Received ${chipLabel(v)}`} disabled={!!done} onClick={() => { setCashEntry(String(v)); setFresh(false); setError('') }}
+                      className="press cond num h-[52px] rounded-md border border-n-edge bg-white text-xl font-semibold">{i === 0 ? t('Exact') : chipLabel(v)}</button>
                   ))}
                 </div>
               ) : (

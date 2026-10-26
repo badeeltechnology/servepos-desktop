@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useStatus, isCashMethod } from '../stores/status'
 import StatusBand from './StatusBand'
 import CashCount, { Counts, countTotal } from './CashCount'
-import { SubBar, Btn, Cap, Dot, money, C } from '../ui'
+import { SubBar, Btn, Cap, Dot, money, roundMoney, C } from '../ui'
 import { timeOf } from '../ui/hosts'
 
 interface Props {
@@ -58,7 +58,7 @@ export default function OpenShift({ userName, userId, onOpen, onSignOut }: Props
       // Opening balance: counted cash, 0 for every other method (same shape as before)
       const balances: Record<string, number> = {}
       for (const m of paymentMethods) balances[m.mode_of_payment] = 0
-      balances[cashName] = Math.round(total * 100) / 100
+      balances[cashName] = roundMoney(total)
       const openingBalance = Object.entries(balances).map(([mode, amount]) => ({ mode, amount }))
       const sessionId = await window.api.sessions.open({
         userId,

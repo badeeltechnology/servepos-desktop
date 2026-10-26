@@ -3,6 +3,7 @@
 import { ReactNode, useEffect, useState, ButtonHTMLAttributes, forwardRef } from 'react'
 import { cn } from '../lib/utils'
 import { useT } from '../stores/i18n'
+import { roundMoney, getMoneyDecimals } from './currency'
 
 export const C = {
   deep: '#0B3B49', rail: '#0E4A5B', cream: '#F4EFE6', amber: '#F4A52A', teal: '#0E6E86', red: '#C83E2E',
@@ -27,12 +28,11 @@ export function initial(name?: string | null) {
   return (name || '?').trim().charAt(0).toUpperCase()
 }
 
-// One money formatter for the whole renderer. Decimals come from the receipt config
-// (currency_decimals) once loaded; the currency symbol is shown next to totals via useStatus.
-let MONEY_DECIMALS = 2
-export function setMoneyDecimals(d: number) { if (Number.isFinite(d) && d >= 0 && d <= 4) MONEY_DECIMALS = d }
-export function money(n: number | null | undefined, decimals = MONEY_DECIMALS) {
-  const v = Number(n) || 0
+// One money formatter for the whole renderer. Decimals come from ui/currency (receipt config
+// currency_decimals, else the currency's default); the symbol is shown next to totals via useStatus.
+export { roundMoney, getMoneyDecimals } from './currency'
+export function money(n: number | null | undefined, decimals = getMoneyDecimals()) {
+  const v = roundMoney(n, decimals)
   return v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
@@ -238,13 +238,13 @@ export function pinKey(pin: string, k: KeypadKey, max = 8) {
   if (k === '.') return pin
   return pin.length >= max ? pin : pin + k
 }
-/** Applies a keypad key to a money entry string. */
-export function amountKey(v: string, k: KeypadKey) {
+/** Applies a keypad key to a money entry string (at most the currency's decimals after the point). */
+export function amountKey(v: string, k: KeypadKey, decimals = getMoneyDecimals()) {
   if (k === 'back') return v.slice(0, -1)
   if (k === 'C') return ''
-  if (k === '.') return v.includes('.') ? v : (v || '0') + '.'
+  if (k === '.') return v.includes('.') || decimals === 0 ? v : (v || '0') + '.'
   const dot = v.indexOf('.')
-  if (dot >= 0 && v.length - dot > 2) return v
+  if (dot >= 0 && v.length - dot > decimals) return v
   if (v.length >= 9) return v
   return v === '0' ? k : v + k
 }

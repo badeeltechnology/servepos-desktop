@@ -5,7 +5,7 @@ import { askConfirm, toast } from '../stores/ui'
 import StatusBand from './StatusBand'
 import CashCount, { Counts, countTotal } from './CashCount'
 import VoidDialog from './VoidDialog'
-import { SubBar, BackButton, Btn, Cap, Field, money } from '../ui'
+import { SubBar, BackButton, Btn, Cap, Field, money, roundMoney, getMoneyDecimals } from '../ui'
 import { timeOf } from '../ui/hosts'
 import { cn } from '../lib/utils'
 import { useT } from '../stores/i18n'
@@ -92,7 +92,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
   const cashName = paymentMethods.find((m: any) => isCashMethod(m.mode_of_payment))?.mode_of_payment || 'Cash'
   const counted = manual !== null ? parseFloat(manual || '0') || 0 : countTotal(counts)
   const cashExp = expected[cashName] || 0
-  const cashDiff = Math.round((counted - cashExp) * 100) / 100
+  const cashDiff = roundMoney((counted - cashExp))
   const openCount = allOpenOrders.length
   // Open orders still block closing. Unsynced sales do not: the shift closes locally and the
   // sales and the shift log go to ERPNext on the next sync (works offline).
@@ -131,7 +131,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
       // Every method closes at its expected amount except Cash, which is what was counted (as before)
       const closingBalances: Record<string, number> = {}
       for (const m of paymentMethods) closingBalances[m.mode_of_payment] = expected[m.mode_of_payment] || 0
-      closingBalances[cashName] = Math.round(counted * 100) / 100
+      closingBalances[cashName] = roundMoney(counted)
       const closingBalance = Object.entries(closingBalances).map(([mode, amount]) => ({ mode, amount }))
       await window.api.sessions.close(sessionId, closingBalance, remarks)
       // Print closing voucher
@@ -172,7 +172,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
                   <span className="flex justify-between"><span>{t('Opening float')}</span><span className="num">{money(opening[cashName] || 0)}</span></span>
                   <span className="flex justify-between"><span>{t('Cash sales')}</span><span className="num">+ {money(cashExp - (opening[cashName] || 0))}</span></span>
                   <span className="flex justify-between font-semibold"><span>{t('Expected in drawer')}</span><span className="num">{money(cashExp)}</span></span>
-                  <span className={cn('mt-1.5 text-sm font-bold', cashDiff === 0 ? 'text-n-lamp' : Math.abs(cashDiff) <= 20 ? 'text-n-gold' : 'text-n-coral')}>
+                  <span className={cn('mt-1.5 text-sm font-bold', cashDiff === 0 ? 'text-n-lamp' : Math.abs(cashDiff) <= (getMoneyDecimals() >= 3 ? 2 : 20) ? 'text-n-gold' : 'text-n-coral')}>
                     {cashDiff === 0 ? t('Drawer matches') : `${cashDiff > 0 ? 'Over' : 'Short'} by ${money(Math.abs(cashDiff))}, goes on the closing entry`}
                   </span>
                   <button type="button" onClick={() => setRevealed(false)} className="mt-1 self-start text-xs font-semibold text-n-mist underline">{t('Recount')}</button>

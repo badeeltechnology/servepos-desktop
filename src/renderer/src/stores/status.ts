@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { setMoneyDecimals } from '../ui'
+import { setCurrency, resolveCode, resolveDecimals } from '../ui/currency'
 
 // Live status for the lamps in the status band. The POS shell polls and writes here;
 // every full-screen view reads the same values so lamps never disagree.
@@ -23,6 +23,8 @@ interface StatusState {
   erpConfigured: boolean
   brand: { name: string; sub: string }
   currency: string
+  /** ISO code (QAR, OMR…) driving decimals, quick cash and denominations */
+  currencyCode: string
   /** Payment method treated as cash (change, drawer). From config `cash_payment_method`, else the method named like "cash". */
   cashMethod: string | null
   setSync: (s: SyncStatus | null) => void
@@ -38,6 +40,7 @@ export const useStatus = create<StatusState>((set) => ({
   erpConfigured: true,
   brand: { name: 'ServePOS', sub: '' },
   currency: 'QAR',
+  currencyCode: 'QAR',
   cashMethod: null,
   setSync: (sync) => set((st) => (JSON.stringify(st.sync) === JSON.stringify(sync) ? st : { sync })),
   set: (p) => set(p as any)
@@ -46,10 +49,13 @@ export const useStatus = create<StatusState>((set) => ({
 /** Loads the brand line (restaurant name · POS profile) once. */
 export async function loadBrand() {
   try {
-    const [rc, profile] = await Promise.all([window.api.receiptConfig.getAll(), window.api.config.get('pos_profile')])
+    const [rc, profile, configCurrency] = await Promise.all([window.api.receiptConfig.getAll(), window.api.config.get('pos_profile'), window.api.config.get('currency')])
     const name = (rc?.restaurant_name || 'ServePOS').trim()
-    useStatus.getState().set({ brand: { name, sub: profile || '' }, currency: rc?.currency_symbol || 'QAR', cashMethod: rc?.cash_payment_method || null })
-    setMoneyDecimals(parseInt(rc?.currency_decimals ?? '2'))
+    // Currency code from the POS Profile (synced to config `currency`), else the receipt symbol;
+    // decimals from currency_decimals when set (0-4), else the currency's default (OMR 3, QAR 2…)
+    const code = resolveCode(configCurrency, rc?.currency_symbol)
+    setCurrency(code, resolveDecimals(rc?.currency_decimals, code))
+    useStatus.getState().set({ brand: { name, sub: profile || '' }, currency: rc?.currency_symbol || code, currencyCode: code, cashMethod: rc?.cash_payment_method || null })
   } catch { /* keep default */ }
   try {
     const printers = await window.api.printers.get()

@@ -6,6 +6,7 @@ import { itemColor } from '../stores/menu'
 import { toast } from '../stores/ui'
 import TablePicker from './TablePicker'
 import VoidDialog, { VoidResult } from './VoidDialog'
+import { roundMoney } from '../ui/currency'
 import { Btn, Dialog, Sheet, Option, Stepper, Cap, Field, Keypad, PinDots, Chevron, money, amountKey, pinKey, staffColor, initial } from '../ui'
 import { timeOf } from '../ui/hosts'
 import { cn } from '../lib/utils'
@@ -118,7 +119,7 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
   async function confirmVoid(line: CartItem, r: VoidResult) {
     const orderId = activeOrderId
     const partial = r.qty < line.qty
-    const removed: RemovedItem = { dbId: line.dbId, itemName: line.itemName, qty: partial ? r.qty : line.qty, rate: line.rate, amount: partial ? (line.amount / line.qty) * r.qty : line.amount }
+    const removed: RemovedItem = { dbId: line.dbId, itemName: line.itemName, qty: partial ? r.qty : line.qty, rate: line.rate, amount: partial ? roundMoney((line.amount / line.qty) * r.qty) : line.amount }
     if (partial) {
       updateItemQty(line.id, line.qty - r.qty)
       if (orderId && onPartialVoid) await onPartialVoid(orderId, removed, r.qty, r.reason, r.remarks, r.disposition)

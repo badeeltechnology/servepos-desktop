@@ -20,8 +20,16 @@ const opt = {
   autoAccept: q.get('autoaccept') !== '0',
   setup: q.get('setup') === '1',
   empty: q.get('empty') === '1',
-  printFail: q.get('printfail') === '1'
+  printFail: q.get('printfail') === '1',
+  currency: (q.get('currency') || 'QAR').toUpperCase(),
+  tax: q.get('tax')
 }
+// ?currency=OMR: Omani outlet. Prices in rials (3 decimals), VAT 5% unless ?tax=0,
+// currency_decimals left unset so the decimals come from the currency code.
+const OMR = opt.currency === 'OMR'
+const OMR_PRICES: Record<string, number> = { 'Cold Brew': 1.375, 'Iced Spanish Latte': 2.1, 'Karak Tea': 0.3, 'Water 500 ml': 0.2, Cappuccino: 1.6 }
+/** Convert a QAR mock amount to rials (≈ /9.5, to the nearest 5 baisa). */
+const cv = (n: number) => (OMR ? Math.round((n / 9.5) * 200) / 200 : n)
 
 let seq = 1000
 const uid = (p = 'id') => `${p}-${++seq}`
@@ -63,12 +71,12 @@ const menuRaw: MI[] = [
   ['Shisha Double Apple', 'شيشة تفاحتين', 80, 'Shisha'], ['Shisha Grape Mint', 'شيشة عنب ونعناع', 80, 'Shisha']
 ]
 const code = (n: string) => n.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '')
-const items: any[] = menuRaw.map(([n, ar, rate, g, desc]) => ({
+const items: any[] = menuRaw.map(([n, ar, qarRate, g, desc]) => ({
   item_code: code(n), item_name: n, item_name_ar: ar, description: desc || null, description_ar: desc ? 'وصف الصنف بالعربية' : null,
-  item_group: g, rate, image: null, has_variants: n === 'Soft Drinks' ? 1 : 0, variant_of: null, attributes: null, is_visible: 1
+  item_group: g, rate: OMR ? (OMR_PRICES[n] ?? cv(qarRate)) : qarRate, image: null, has_variants: n === 'Soft Drinks' ? 1 : 0, variant_of: null, attributes: null, is_visible: 1
 }))
 for (const [v, ar] of [['Coca-Cola', 'كوكا كولا'], ['Sprite', 'سبرايت'], ['Fanta Orange', 'فانتا برتقال'], ['Diet Coke', 'دايت كولا']]) {
-  items.push({ item_code: 'SOFT-DRINKS-' + code(v), item_name: 'Soft Drinks - ' + v, item_name_ar: ar, description: null, description_ar: null, item_group: 'Soft drinks', rate: 10, image: null, has_variants: 0, variant_of: 'SOFT-DRINKS', attributes: JSON.stringify({ Flavour: v }) })
+  items.push({ item_code: 'SOFT-DRINKS-' + code(v), item_name: 'Soft Drinks - ' + v, item_name_ar: ar, description: null, description_ar: null, item_group: 'Soft drinks', rate: cv(10), image: null, has_variants: 0, variant_of: 'SOFT-DRINKS', attributes: JSON.stringify({ Flavour: v }) })
 }
 
 // modifier groups
@@ -133,19 +141,19 @@ const printers = [
 ]
 
 const config: Record<string, string> = {
-  setup_complete: opt.setup ? '0' : '1', erpnext_url: 'https://demo.example.com', pos_profile: 'Cocktail · Till 2', company: 'Harbour Lane Hospitality',
+  setup_complete: opt.setup ? '0' : '1', currency: OMR ? 'OMR' : 'QAR', erpnext_url: 'https://demo.example.com', pos_profile: 'Cocktail · Till 2', company: 'Harbour Lane Hospitality',
   inactivity_timeout: q.get('idle') || '600', touch_keyboard_enabled: '0', last_sync_at: new Date(Date.now() - 4 * 60000).toISOString()
 }
 const receiptConfig: Record<string, string> = {
   restaurant_name: 'COCKTAIL BAR', restaurant_name_ar: 'كوكتيل بار', address_line_1: 'Corniche, Doha', address_line_1_ar: 'الكورنيش، الدوحة', phone: '+974 4400 1234',
-  footer_message: 'Thank you, visit again', footer_message_ar: 'شكراً لزيارتكم', show_arabic: '1', show_arabic_items: '1', currency_symbol: 'QAR', currency_position: 'before', currency_decimals: '2',
-  tax_enabled: '0', tax_rate: '0', tax_label: 'VAT', discount_enabled: '1', discount_permission: 'all_users', show_description_on_pos: '1',
+  footer_message: 'Thank you, visit again', footer_message_ar: 'شكراً لزيارتكم', show_arabic: '1', show_arabic_items: '1', currency_symbol: OMR ? 'OMR' : 'QAR', currency_position: 'before', currency_decimals: OMR ? '' : '2',
+  tax_enabled: OMR && opt.tax !== '0' ? '1' : '0', tax_rate: OMR && opt.tax !== '0' ? '5' : '0', tax_label: 'VAT', discount_enabled: '1', discount_permission: 'all_users', show_description_on_pos: '1',
   waiter_order_auto_accept: opt.autoAccept ? '1' : '0', receipt_auto_print: '1', kot_copies: '1', receipt_copies: '1', show_cashier_name: '1', vat_number: '', cr_number: ''
 }
 
 // ------------------------------------------------------------------ session + orders
-let session: any = opt.shiftClosed ? null : { id: 'sess-1', user_id: 'u-mariam', user_name: 'Mariam', opened_at: ago(380), status: 'Open', opening_balance: JSON.stringify([{ mode: 'Cash', amount: 1000 }]) }
-const lastSession = { id: 'sess-0', user_name: 'Joseph', opened_at: ago(60 * 24), closed_at: ago(60 * 9), status: 'Closed', opening_balance: JSON.stringify([{ mode: 'Cash', amount: 1000 }]), closing_balance: JSON.stringify([{ mode: 'Cash', amount: 7420 }]) }
+let session: any = opt.shiftClosed ? null : { id: 'sess-1', user_id: 'u-mariam', user_name: 'Mariam', opened_at: ago(380), status: 'Open', opening_balance: JSON.stringify([{ mode: 'Cash', amount: cv(1000) }]) }
+const lastSession = { id: 'sess-0', user_name: 'Joseph', opened_at: ago(60 * 24), closed_at: ago(60 * 9), status: 'Closed', opening_balance: JSON.stringify([{ mode: 'Cash', amount: cv(1000) }]), closing_balance: JSON.stringify([{ mode: 'Cash', amount: cv(7420) }]) }
 const orders: any[] = []
 const orderItems: any[] = []
 const payments: any[] = []
@@ -201,7 +209,8 @@ const histDefs: [string, string | null, string, number, string, string, string |
   ['Takeaway', null, 'Cash', 74, 'failed', 'ERPNext timed out', null], ['Dine In', 'T4', 'Card', 212, 'failed', 'Item "Crepe Kinder" disabled in ERPNext', null],
   ['Delivery', null, 'Talabat', 88, 'synced', '', null], ['Dine In', 'T6', 'Card', 240, 'pending', '', null], ['Takeaway', null, 'Cash', 28, 'synced', '', null]
 ]
-histDefs.forEach(([type, table, method, total, sync, err], i) => {
+histDefs.forEach(([type, table, method, qarTotal, sync, err], i) => {
+  const total = cv(qarTotal)
   const o = makeOrder({ order_type: type, table_name: table, status: 'Completed', created_at: ago(300 - i * 30), completed_at: ago(290 - i * 30), sync_status: sync, sync_error: err || null, erpnext_docname: sync === 'synced' ? `ACC-PSINV-2026-0${4100 + i}` : null, grand_total: total }, [lineFor('Cappuccino', 1), lineFor('Brownies', 1)])
   o.subtotal = total
   payments.push({ id: uid('pay'), order_id: o.id, payment_method: method, amount: total, reference: null })

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../stores/auth'
 import { askConfirm, toast } from '../stores/ui'
+import { useStatus } from '../stores/status'
+import { money } from '../ui'
 import {
   Users, Settings, Printer, Package, LayoutGrid, ClipboardList,
   Plus, Trash2, Edit3, Eye, EyeOff, Save, RefreshCw, ArrowLeft,
@@ -474,13 +476,13 @@ function WaiterOrders() {
                         <p className="text-xs text-gray-500 italic">"{item.special_instructions}"</p>
                       )}
                     </div>
-                    <span className="font-medium">{((item.rate + (item.modifier_total || 0)) * item.qty).toFixed(2)}</span>
+                    <span className="font-medium">{money((item.rate + (item.modifier_total || 0)) * item.qty)}</span>
                   </div>
                 ))}
                 <div className="mt-2 flex justify-between border-t pt-2">
                   <span className="font-bold">Total</span>
                   <span className="font-bold text-primary">
-                    {(wo.items || []).reduce((s: number, i: any) => s + ((i.rate + (i.modifier_total || 0)) * i.qty), 0).toFixed(2)} QAR
+                    {money((wo.items || []).reduce((s: number, i: any) => s + ((i.rate + (i.modifier_total || 0)) * i.qty), 0))} {useStatus.getState().currency}
                   </span>
                 </div>
                 {wo.notes && <p className="mt-2 text-xs text-gray-500">Notes: {wo.notes}</p>}
@@ -562,7 +564,7 @@ function ModifierManagement() {
                   <div key={m.id} className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-muted/50">
                     <span className="text-sm font-medium">{m.modifier_name}</span>
                     <span className={`text-xs font-semibold ${m.price > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
-                      {m.price > 0 ? `+${m.price.toFixed(2)}` : 'Free'}
+                      {m.price > 0 ? `+${money(m.price)}` : 'Free'}
                     </span>
                   </div>
                 ))}
@@ -661,7 +663,7 @@ function ItemVisibility() {
                   <span className={`text-sm font-medium ${!item.is_visible ? 'text-muted-foreground line-through' : ''}`}>
                     {item.item_name}
                   </span>
-                  <span className="text-xs text-muted-foreground">{item.rate?.toFixed(2)}</span>
+                  <span className="text-xs text-muted-foreground">{money(item.rate)}</span>
                 </div>
                 {item.description && (
                   <p className="mt-0.5 truncate text-xs text-gray-400">{item.description}</p>
@@ -1073,7 +1075,7 @@ function OrderHistory() {
                   {o.table_name && <span className="ml-1 text-xs text-muted-foreground">• {o.table_name}</span>}
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="font-medium">{(o.grand_total || 0).toFixed(2)}</span>
+                  <span className="font-medium">{money(o.grand_total || 0)}</span>
                   <span className="text-xs text-muted-foreground">{o.cashier_name}</span>
                   {(o.status === 'Completed' || o.status === 'Hold' || o.status === 'Open') && (
                     <div className="flex gap-1">
@@ -1236,7 +1238,7 @@ function ShiftHistory() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <span className="text-sm font-bold">{(s.total_sales || 0).toFixed(2)}</span>
+                      <span className="text-sm font-bold">{money(s.total_sales || 0)}</span>
                       <p className="text-xs text-gray-400">{s.total_orders || 0} orders</p>
                     </div>
                   </button>
@@ -1254,10 +1256,10 @@ function ShiftHistory() {
               <div className="flex justify-between"><span className="text-gray-500">Cashier</span><span className="font-medium">{selected.user_name}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Status</span><span className="font-medium">{selected.status}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Orders</span><span className="font-medium">{selected.total_orders || 0}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Total Sales</span><span className="font-bold text-primary">{(selected.total_sales || 0).toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Opening Cash</span><span>{(selected.opening_cash || 0).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Total Sales</span><span className="font-bold text-primary">{money(selected.total_sales || 0)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Opening Cash</span><span>{money(selected.opening_cash || 0)}</span></div>
               {selected.closing_cash !== null && (
-                <div className="flex justify-between"><span className="text-gray-500">Closing Cash</span><span>{(selected.closing_cash || 0).toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Closing Cash</span><span>{money(selected.closing_cash || 0)}</span></div>
               )}
             </div>
 
@@ -1269,7 +1271,7 @@ function ShiftHistory() {
                   {Object.entries(JSON.parse(selected.payment_breakdown)).map(([method, amount]: [string, any]) => (
                     <div key={method} className="flex justify-between text-sm">
                       <span className="text-gray-500">{method}</span>
-                      <span className="font-medium">{amount.toFixed(2)}</span>
+                      <span className="font-medium">{money(amount)}</span>
                     </div>
                   ))}
                 </div>
@@ -1330,7 +1332,7 @@ function ReportsDashboard() {
 
   useEffect(() => { loadAll(date) }, [date])
 
-  const fmt = (n: number) => (n || 0).toFixed(2)
+  const fmt = (n: number) => money(n || 0)
   const maxCatRevenue = categories.length > 0 ? Math.max(...categories.map((c) => c.revenue || 0)) : 0
   const paymentColors: Record<string, string> = { Cash: 'bg-emerald-500', Card: 'bg-blue-500', Mobile: 'bg-purple-500' }
 

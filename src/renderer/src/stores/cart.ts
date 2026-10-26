@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { roundMoney } from '../ui/currency'
 
 export interface CartModifier {
   id: string
@@ -74,7 +75,8 @@ function calcItemAmount(item: { rate: number; qty: number; discountPercent: numb
   const modTotal = (item.modifiers || []).reduce((sum, m) => sum + m.price, 0)
   const lineTotal = (item.rate + modTotal) * item.qty
   const discPct = lineTotal * (item.discountPercent / 100)
-  return Math.max(0, lineTotal - discPct - item.discountAmount)
+  // Rounded to the currency's minor unit (2 for QAR, 3 for OMR) so lines, totals and payments agree
+  return roundMoney(Math.max(0, lineTotal - discPct - item.discountAmount))
 }
 
 let cartIdCounter = 0
@@ -245,7 +247,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       orderNotes: ''
     }),
 
-  getSubtotal: () => get().items.reduce((sum, item) => sum + item.amount, 0),
+  getSubtotal: () => roundMoney(get().items.reduce((sum, item) => sum + item.amount, 0)),
   getModifierTotal: () => get().items.reduce((sum, item) => sum + item.modifierTotal * item.qty, 0),
   getItemDiscountTotal: () => {
     return get().items.reduce((sum, item) => {
@@ -257,15 +259,15 @@ export const useCartStore = create<CartState>((set, get) => ({
   getOrderDiscountValue: () => {
     const subtotal = get().getSubtotal()
     const pctDiscount = subtotal * (get().orderDiscountPercent / 100)
-    return pctDiscount + get().orderDiscountAmount
+    return roundMoney(pctDiscount + get().orderDiscountAmount)
   },
   getTaxTotal: (taxRate) => {
     const afterDiscount = get().getSubtotal() - get().getOrderDiscountValue()
-    return Math.max(0, afterDiscount) * (taxRate / 100)
+    return roundMoney(Math.max(0, afterDiscount) * (taxRate / 100))
   },
   getGrandTotal: (taxRate) => {
-    const afterDiscount = get().getSubtotal() - get().getOrderDiscountValue()
-    const tax = Math.max(0, afterDiscount) * (taxRate / 100)
-    return Math.max(0, afterDiscount + tax)
+    const afterDiscount = roundMoney(get().getSubtotal() - get().getOrderDiscountValue())
+    const tax = get().getTaxTotal(taxRate)
+    return roundMoney(Math.max(0, afterDiscount + tax))
   }
 }))

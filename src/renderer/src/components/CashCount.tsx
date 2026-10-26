@@ -1,17 +1,20 @@
 import { useRef, useState } from 'react'
 import { Field, money } from '../ui'
 import { cn } from '../lib/utils'
+import { useStatus } from '../stores/status'
+import { denominations, denomLabel, isCoin, roundMoney } from '../ui/currency'
 import { useT } from '../stores/i18n'
 
 // Count the drawer note by note. Tap + for one, hold + for ten. "Type a total" keeps the old
 // single-amount entry for drawers with odd coins.
 
-export const DENOMS = [500, 200, 100, 50, 10, 5, 1, 0.5]
-const NOTE_COLOR: Record<string, string> = { 500: '#6B4E8E', 200: '#2E6DA4', 100: '#2E8B57', 50: '#C2662B', 10: '#B98B3C', 5: '#7A7F85', 1: '#7A7F85', 0.5: '#7A7F85' }
+// Notes and coins come from the currency table (ui/currency): QAR 500…1 + 50d, OMR 50…1, 500 bz,
+// 100 bz notes and 50/25/10/5 bz coins, etc.
+const NOTE_COLORS = ['#6B4E8E', '#2E6DA4', '#2E8B57', '#C2662B', '#B98B3C', '#8B5A2B', '#3F7FD1', '#7C5CBF']
 
 export type Counts = Record<string, number>
-export function countTotal(c: Counts) {
-  return DENOMS.reduce((s, d) => s + (c[d] || 0) * d, 0)
+export function countTotal(c: Counts, denoms = denominations()) {
+  return roundMoney(denoms.reduce((s, d) => s + (c[d] || 0) * d, 0))
 }
 
 export default function CashCount({ counts, onCounts, manual, onManual, rowHeight = 68, title, hint }: {
@@ -23,6 +26,8 @@ export default function CashCount({ counts, onCounts, manual, onManual, rowHeigh
   title: string
   hint: string
 }) {
+  const code = useStatus((st) => st.currencyCode)
+  const denoms = denominations(code)
   const hold = useRef<number | null>(null)
   const held = useRef(false)
   const [, force] = useState(0)
@@ -56,11 +61,12 @@ export default function CashCount({ counts, onCounts, manual, onManual, rowHeigh
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-1">
-          {DENOMS.map((d) => {
+          {denoms.map((d, i) => {
             const n = counts[d] || 0
+            const coin = isCoin(d, code)
             return (
               <div key={d} className="flex items-center gap-3.5 border-b border-[#F0ECE3]" style={{ height: rowHeight }}>
-                <span className="cond num flex h-9 w-[72px] flex-shrink-0 items-center justify-center rounded-[3px] text-[17px] font-bold text-white" style={{ background: NOTE_COLOR[d] }}>{d >= 1 ? d : '50d'}</span>
+                <span className={cn('cond num flex h-9 w-[72px] flex-shrink-0 items-center justify-center text-[17px] font-bold text-white', coin ? 'rounded-full' : 'rounded-[3px]')} style={{ background: coin ? '#7A7F85' : NOTE_COLORS[i % NOTE_COLORS.length] }}>{denomLabel(d, code)}</span>
                 <button type="button" aria-label={`One less ${d}`} onClick={() => set(d, -1)} className="press h-12 w-14 rounded-md border border-n-edge bg-white text-xl">−</button>
                 <span className={cn('cond num min-w-[44px] text-center text-[26px] font-bold', !n && 'text-n-stone')}>{n}</span>
                 <button type="button" aria-label={`One more ${d}`} onPointerDown={() => down(d)} onPointerUp={up} onPointerLeave={up}

@@ -18,7 +18,7 @@ import CoordinatorScreen from './CoordinatorScreen'
 import OpenShift from '../components/OpenShift'
 import CloseShift from '../components/CloseShift'
 import { ActiveOrderRow, orderLabel } from '../components/orderStatus'
-import { useTier } from '../ui'
+import { useTier, roundMoney } from '../ui'
 import { timeOf } from '../ui/hosts'
 import { cn } from '../lib/utils'
 
@@ -316,7 +316,8 @@ export default function POS() {
 
         // Compute subtotal from order_items (source of truth for receipt)
         const dbItems = await window.api.orderItems.get(orderId!)
-        const itemsSubtotal = dbItems.reduce((sum: number, i: any) => sum + i.amount, 0)
+        // Rounded to the currency's minor unit so the stored total equals the sum of payments
+        const itemsSubtotal = roundMoney(dbItems.reduce((sum: number, i: any) => sum + i.amount, 0))
 
         // Add payments with waiter collection tracking
         for (const p of payments) {
@@ -326,9 +327,9 @@ export default function POS() {
         // Compute discount & totals from order_items subtotal
         const discountPct = c.orderDiscountPercent
         const discountAmt = c.orderDiscountAmount
-        const orderDiscount = itemsSubtotal * (discountPct / 100) + discountAmt
-        const afterDiscount = Math.max(0, itemsSubtotal - orderDiscount)
-        const taxTotal = afterDiscount * (taxRate / 100)
+        const orderDiscount = roundMoney(itemsSubtotal * (discountPct / 100) + discountAmt)
+        const afterDiscount = roundMoney(Math.max(0, itemsSubtotal - orderDiscount))
+        const taxTotal = roundMoney(afterDiscount * (taxRate / 100))
 
         // Complete the order
         await window.api.orders.update(orderId!, {
@@ -342,7 +343,7 @@ export default function POS() {
           voucherCode: c.voucherCode || null,
           tipAmount: tipAmount || 0,
           orderNotes: c.orderNotes || null,
-          grandTotal: Math.max(0, afterDiscount + taxTotal),
+          grandTotal: roundMoney(Math.max(0, afterDiscount + taxTotal)),
           completedAt: new Date().toISOString()
         })
 
@@ -656,7 +657,7 @@ export default function POS() {
                   }
                   // Update order totals (getOrderItems already excludes voided)
                   const dbItems = await window.api.orderItems.get(orderId)
-                  const newSubtotal = dbItems.reduce((s: number, i: any) => s + i.amount, 0)
+                  const newSubtotal = roundMoney(dbItems.reduce((s: number, i: any) => s + i.amount, 0))
                   await window.api.orders.update(orderId, { subtotal: newSubtotal, grandTotal: newSubtotal })
                   // Print void slip
                   try { await window.api.print.voidSlip(orderId, reason, user?.name || '', [item], remarks, disposition) } catch {}
@@ -677,7 +678,7 @@ export default function POS() {
                     } catch {}
                   }
                   const dbItems = await window.api.orderItems.get(orderId)
-                  const newSubtotal = dbItems.reduce((s: number, i: any) => s + i.amount, 0)
+                  const newSubtotal = roundMoney(dbItems.reduce((s: number, i: any) => s + i.amount, 0))
                   await window.api.orders.update(orderId, { subtotal: newSubtotal, grandTotal: newSubtotal })
                   try { await window.api.print.voidSlip(orderId, reason, user?.name || '', [{ ...item, qty: voidQty }], remarks, disposition) } catch {}
                 } : undefined}

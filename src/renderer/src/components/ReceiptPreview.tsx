@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { toast } from '../stores/ui'
+import { currencyCode, resolveDecimals } from '../ui/currency'
 import { Btn } from '../ui'
 
 interface Props {
@@ -54,9 +55,9 @@ export default function ReceiptPreview({ orderId, onClose }: Props) {
   const showCashier = config.show_cashier_name !== '0'
   const showCr = config.show_cr_number === '1' && config.cr_number
   const showVat = config.show_vat_number === '1' && config.vat_number
-  const currSym = config.currency_symbol || 'QAR'
+  const currSym = config.currency_symbol || currencyCode()
   const currPos = config.currency_position || 'after'
-  const decimals = parseInt(config.currency_decimals || '2')
+  const decimals = resolveDecimals(config.currency_decimals, currencyCode())
   const taxEnabled = config.tax_enabled === '1'
   const taxLabel = config.tax_label || 'VAT'
 

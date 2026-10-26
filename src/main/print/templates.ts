@@ -1,6 +1,21 @@
 import { CMD } from './printer'
 import { getDb } from '../database/schema'
-import { getAllReceiptConfig } from '../database/queries'
+import { getAllReceiptConfig, getConfig } from '../database/queries'
+
+/** Currencies whose minor unit is 1/1000 (Omani rial = 1000 baisa, etc.). */
+const THREE_DECIMAL = ['OMR', 'KWD', 'BHD', 'JOD', 'IQD', 'LYD', 'TND']
+/**
+ * Money decimals for printing: receipt config currency_decimals (0-4) when set, else by the
+ * POS Profile currency (3 for OMR/KWD/BHD…, 2 otherwise). Unset + QAR stays 2, as before.
+ */
+export function currencyDecimals(config?: Record<string, string>): number {
+  const raw = (config || getAllReceiptConfig()).currency_decimals
+  const n = raw !== undefined && raw !== null && String(raw).trim() !== '' ? parseInt(String(raw), 10) : NaN
+  if (Number.isFinite(n) && n >= 0 && n <= 4) return n
+  let code = ''
+  try { code = String(getConfig('currency') || '').toUpperCase() } catch { /* no db */ }
+  return THREE_DECIMAL.includes(code) ? 3 : 2
+}
 
 const LF = '\x0A'
 
@@ -81,9 +96,9 @@ function generateReceiptClassic(data: ReceiptData, config: Record<string, string
   const showCashier = config.show_cashier_name !== '0'
   const showCr = config.show_cr_number === '1' && config.cr_number
   const showVat = config.show_vat_number === '1' && config.vat_number
-  const currSym = config.currency_symbol || 'QAR'
+  const currSym = config.currency_symbol || getConfig('currency') || 'QAR'
   const currPos = config.currency_position || 'after'
-  const decimals = parseInt(config.currency_decimals || '2')
+  const decimals = currencyDecimals(config)
 
   const fmtAmt = (n: number) => {
     const num = n.toFixed(decimals)
@@ -226,9 +241,9 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
   const showCashier = config.show_cashier_name !== '0'
   const showCr = config.show_cr_number === '1' && config.cr_number
   const showVat = config.show_vat_number === '1' && config.vat_number
-  const currSym = config.currency_symbol || 'QAR'
+  const currSym = config.currency_symbol || getConfig('currency') || 'QAR'
   const currPos = config.currency_position || 'after'
-  const decimals = parseInt(config.currency_decimals || '2')
+  const decimals = currencyDecimals(config)
   const showDescEn = config.show_description_on_receipt === '1'
   const showDescAr = config.show_description_ar_on_receipt === '1'
   const showArabicItems = config.show_arabic_items === '1'
@@ -406,9 +421,9 @@ interface WaiterCopyData {
 export function generateWaiterCopy(data: WaiterCopyData): string {
   const config = getAllReceiptConfig()
   const showArabicItems = config.show_arabic_items === '1'
-  const currSym = config.currency_symbol || 'QAR'
+  const currSym = config.currency_symbol || getConfig('currency') || 'QAR'
   const currPos = config.currency_position || 'after'
-  const decimals = parseInt(config.currency_decimals || '2')
+  const decimals = currencyDecimals(config)
 
   const fmtAmt = (n: number) => {
     const num = n.toFixed(decimals)
@@ -670,9 +685,9 @@ function generateInvoiceClassic(data: ReceiptData, config: Record<string, string
   const showCashier = config.show_cashier_name !== '0'
   const showCr = config.show_cr_number === '1' && config.cr_number
   const showVat = config.show_vat_number === '1' && config.vat_number
-  const currSym = config.currency_symbol || 'QAR'
+  const currSym = config.currency_symbol || getConfig('currency') || 'QAR'
   const currPos = config.currency_position || 'after'
-  const decimals = parseInt(config.currency_decimals || '2')
+  const decimals = currencyDecimals(config)
 
   const fmtAmt = (n: number) => {
     const num = n.toFixed(decimals)
@@ -781,9 +796,9 @@ function generateInvoiceModern(data: ReceiptData, config: Record<string, string>
   const showCashier = config.show_cashier_name !== '0'
   const showCr = config.show_cr_number === '1' && config.cr_number
   const showVat = config.show_vat_number === '1' && config.vat_number
-  const currSym = config.currency_symbol || 'QAR'
+  const currSym = config.currency_symbol || getConfig('currency') || 'QAR'
   const currPos = config.currency_position || 'after'
-  const decimals = parseInt(config.currency_decimals || '2')
+  const decimals = currencyDecimals(config)
   const showDescEn = config.show_description_on_receipt === '1'
   const showDescAr = config.show_description_ar_on_receipt === '1'
   const showArabicItems = config.show_arabic_items === '1'
@@ -929,12 +944,13 @@ export function generateVoidSlip(data: VoidSlipData): string {
   lines.push(formatLine('Qty  Item', 'Amount'))
   lines.push(getDashLine())
 
+  const voidDecimals = currencyDecimals()
   for (const item of data.items) {
-    lines.push(formatLine(`${item.qty}x ${item.itemName}`, item.amount.toFixed(2)))
+    lines.push(formatLine(`${item.qty}x ${item.itemName}`, item.amount.toFixed(voidDecimals)))
   }
 
   lines.push(getDashLine())
-  lines.push(CMD.BOLD_ON + formatLine('TOTAL (VOIDED)', data.grandTotal.toFixed(2)) + CMD.BOLD_OFF)
+  lines.push(CMD.BOLD_ON + formatLine('TOTAL (VOIDED)', data.grandTotal.toFixed(voidDecimals)) + CMD.BOLD_OFF)
   lines.push(getDashLine())
 
   lines.push('')
@@ -978,8 +994,8 @@ interface CloseShiftData {
 
 export function generateCloseShiftSlip(data: CloseShiftData): string {
   const config = getAllReceiptConfig()
-  const currSym = config.currency_symbol || 'QAR'
-  const decimals = parseInt(config.currency_decimals || '2')
+  const currSym = config.currency_symbol || getConfig('currency') || 'QAR'
+  const decimals = currencyDecimals(config)
   const fmtAmt = (n: number) => `${(n || 0).toFixed(decimals)} ${currSym}`
 
   const lines: string[] = [CMD.INIT, CMD.ALIGN_CENTER]

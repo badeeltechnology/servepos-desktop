@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../stores/auth'
+import { resolveCode, resolveDecimals } from '../ui/currency'
 import { askConfirm, toast } from '../stores/ui'
 import { ArrowLeft, Save, Printer, Image, FileText, Users, Settings, Database, Loader2, Wifi } from 'lucide-react'
 
@@ -12,6 +13,11 @@ export default function AdminPanel() {
 
   // Receipt config state
   const [receiptConfig, setReceiptConfig] = useState<Record<string, string>>({})
+  // Preview amounts follow the configured symbol, position and decimals (Auto = by currency)
+  const pvCode = resolveCode(null, receiptConfig.currency_symbol)
+  const pvDec = resolveDecimals(receiptConfig.currency_decimals, pvCode)
+  const pv = (n: number) => n.toFixed(pvDec)
+  const pvTotal = (n: number) => (receiptConfig.currency_position === 'before' ? `${receiptConfig.currency_symbol || pvCode} ${pv(n)}` : `${pv(n)} ${receiptConfig.currency_symbol || pvCode}`)
 
   useEffect(() => {
     loadReceiptConfig()
@@ -352,7 +358,7 @@ export default function AdminPanel() {
                   <label className="mb-1 block text-sm font-medium">Symbol</label>
                   <input
                     type="text"
-                    value={receiptConfig.currency_symbol || 'QAR'}
+                    value={receiptConfig.currency_symbol ?? ''} placeholder={pvCode}
                     onChange={(e) => updateField('currency_symbol', e.target.value)}
                     className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
@@ -371,10 +377,11 @@ export default function AdminPanel() {
                 <div>
                   <label className="mb-1 block text-sm font-medium">Decimals</label>
                   <select
-                    value={receiptConfig.currency_decimals || '2'}
+                    value={receiptConfig.currency_decimals ?? ''}
                     onChange={(e) => updateField('currency_decimals', e.target.value)}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   >
+                    <option value="">Auto (by currency: OMR/KWD/BHD 3, others 2)</option>
                     <option value="0">0</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
@@ -410,12 +417,12 @@ export default function AdminPanel() {
                     <div className="my-1 border-t border-dashed border-gray-300" />
                     <div className="flex justify-between font-bold"><span>Qty  Item</span><span>Amt</span></div>
                     <div className="my-0.5 border-t border-dashed border-gray-300" />
-                    <div className="flex justify-between"><span> 2   Cappuccino</span><span>52.00</span></div>
-                    <div className="flex justify-between"><span> 1   Croissant</span><span>18.00</span></div>
+                    <div className="flex justify-between"><span> 2   Cappuccino</span><span>{pv(52)}</span></div>
+                    <div className="flex justify-between"><span> 1   Croissant</span><span>{pv(18)}</span></div>
                     <div className="my-1 border-t border-dashed border-gray-300" />
-                    <div className="flex justify-between"><span>Subtotal:</span><span>70.00</span></div>
+                    <div className="flex justify-between"><span>Subtotal:</span><span>{pv(70)}</span></div>
                     <div className="my-0.5 border-t border-dashed border-gray-300" />
-                    <div className="flex justify-between font-bold"><span>TOTAL:</span><span>70.00 QAR</span></div>
+                    <div className="flex justify-between font-bold"><span>TOTAL:</span><span>{pvTotal(70)}</span></div>
                     <div className="my-1 border-t-2 border-gray-400" />
                     <div className="text-center text-[7px]">Thank you!</div>
                   </div>
@@ -441,13 +448,13 @@ export default function AdminPanel() {
                     <div className="flex justify-between"><span>Dine In</span><span>14:30</span></div>
                     <div className="my-1 border-t-2 border-gray-400" />
                     <div className="font-bold">1. Cappuccino</div>
-                    <div className="flex justify-between pl-2"><span>2 x 26.00</span><span>52.00</span></div>
+                    <div className="flex justify-between pl-2"><span>2 x {pv(26)}</span><span>{pv(52)}</span></div>
                     <div className="font-bold">2. Croissant</div>
-                    <div className="flex justify-between pl-2"><span>1 x 18.00</span><span>18.00</span></div>
+                    <div className="flex justify-between pl-2"><span>1 x {pv(18)}</span><span>{pv(18)}</span></div>
                     <div className="my-1 border-t-2 border-gray-400" />
-                    <div className="flex justify-between"><span>  Subtotal</span><span>70.00</span></div>
+                    <div className="flex justify-between"><span>  Subtotal</span><span>{pv(70)}</span></div>
                     <div className="my-0.5 border-t border-dashed border-gray-300" />
-                    <div className="text-center font-bold text-xs">TOTAL: 70.00 QAR</div>
+                    <div className="text-center font-bold text-xs">TOTAL: {pvTotal(70)}</div>
                     <div className="my-0.5 border-t border-dashed border-gray-300" />
                     <div className="my-1 border-t-2 border-gray-400" />
                     <div className="text-center text-[7px]">Thank you!</div>

@@ -1,12 +1,13 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { currencyCode, getMoneyDecimals, roundMoney } from '../ui/currency'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatCurrency(amount: number, symbol = 'QAR', position = 'after', decimals = 2): string {
-  const formatted = amount.toFixed(decimals)
+export function formatCurrency(amount: number, symbol = currencyCode(), position = 'after', decimals = getMoneyDecimals()): string {
+  const formatted = roundMoney(amount, decimals).toFixed(decimals)
   if (position === 'before') {
     return `${symbol} ${formatted}`
   }
