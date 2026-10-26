@@ -616,6 +616,16 @@ export default function AdminPanel() {
                 ))}
               </div>
 
+              {/* Order behaviour */}
+              <label className="mt-3 flex items-start gap-2 text-sm">
+                <input type="checkbox" checked={receiptConfig.hold_sends_kot === '1'}
+                  onChange={(e) => updateField('hold_sends_kot', e.target.checked ? '1' : '0')} className="mt-0.5 rounded" />
+                <div>
+                  <span className="font-medium">Hold sends to the kitchen</span>
+                  <p className="text-xs text-gray-400">Off (default): Hold saves the order and its new items stay “Not sent” until Send. On: Hold also prints the KOT (the old behaviour).</p>
+                </div>
+              </label>
+
               {/* Print Copy Count */}
               <h4 className="mb-3 mt-5 text-xs font-semibold uppercase text-gray-400">Number of Copies</h4>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

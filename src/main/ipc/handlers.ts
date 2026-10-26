@@ -6,7 +6,7 @@ import { writeFileSync, readFileSync } from 'fs'
 import { runSync, getSyncStatus, startAutoSync, stopAndDrainSync } from '../sync/sync-engine'
 import { ERPNextClient, getActiveUrl } from '../sync/erpnext-client'
 import { getPrinters, addPrinter, updatePrinter, deletePrinter, testPrinter, getPrintRoutes, addPrintRoute, deletePrintRoute, discoverUsbPrinters } from '../print/printer'
-import { printReceipt, printKots, printAmendmentKot, printWaiterCopy, printPrepDoc, printInvoice, printVoidSlip, printCloseShift } from '../print/print-engine'
+import { printReceipt, printKots, printAmendmentKot, printWaiterCopy, printPrepDoc, printInvoice, printGuestShare, printVoidSlip, printCloseShift } from '../print/print-engine'
 
 let acceptingRequests = true
 let shutdownRequested = false
@@ -552,6 +552,7 @@ export function registerIpcHandlers(): void {
   handle('print:waiterCopy', async (_e, orderId: string, cartDiscount?: any) => await printWaiterCopy(orderId, cartDiscount))
   handle('print:prepDoc', async (_e, orderId: string) => await printPrepDoc(orderId))
   handle('print:invoice', async (_e, orderId: string, cartDiscount?: any) => await printInvoice(orderId, cartDiscount))
+  handle('print:guestShare', async (_e, data: any) => await printGuestShare(data))
   handle('print:voidSlip', async (_e, orderId: string, voidReason: string, voidedBy: string, removedItems?: any[], voidRemarks?: string, voidDisposition?: string) => await printVoidSlip(orderId, voidReason, voidedBy, removedItems, voidRemarks, voidDisposition))
   handle('print:closeShift', async (_e, sessionId: string) => await printCloseShift(sessionId))
 

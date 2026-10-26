@@ -323,7 +323,9 @@ export function getOrder(id: string): any | null {
 
 export function getActiveOrders(): any[] {
   return queryAll(
-    "SELECT * FROM orders WHERE status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced') ORDER BY created_at DESC"
+    // unsent_items (additive): lines the kitchen has not had yet, so held rounds show as "Not sent"
+    `SELECT o.*, (SELECT COUNT(*) FROM order_items i WHERE i.order_id = o.id AND COALESCE(i.kot_printed, 0) = 0 AND COALESCE(i.voided, 0) = 0) AS unsent_items
+     FROM orders o WHERE o.status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced') ORDER BY o.created_at DESC`
   )
 }
 
@@ -695,7 +697,9 @@ export function getSessionOpenOrders(sessionId: string): any[] {
 
 export function getAllOpenOrders(): any[] {
   return queryAll(
-    "SELECT * FROM orders WHERE status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced') ORDER BY created_at DESC"
+    // unsent_items (additive): lines the kitchen has not had yet, so held rounds show as "Not sent"
+    `SELECT o.*, (SELECT COUNT(*) FROM order_items i WHERE i.order_id = o.id AND COALESCE(i.kot_printed, 0) = 0 AND COALESCE(i.voided, 0) = 0) AS unsent_items
+     FROM orders o WHERE o.status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced') ORDER BY o.created_at DESC`
   )
 }
 

@@ -105,3 +105,27 @@ export function denomLabel(v: number, code = CODE): string {
 export function isCoin(v: number, code = CODE) {
   return rule(code).coins.includes(v)
 }
+
+/** Split a total into n shares in the currency's minor unit. Every share but the last is the total / n
+ *  rounded down; the last takes the remainder, so the shares always add up to the total exactly
+ *  (100.00 / 3 → 33.33, 33.33, 33.34; OMR 1.375 / 3 → 0.458, 0.458, 0.459). */
+export function splitEvenly(total: number, n: number, decimals = DECIMALS): number[] {
+  const f = Math.pow(10, decimals)
+  const units = Math.round(roundMoney(total, decimals) * f)
+  const base = Math.floor(units / n)
+  return Array.from({ length: n }, (_, i) => (i === n - 1 ? units - base * (n - 1) : base) / f)
+}
+
+/** Split a total in proportion to weights (e.g. each guest's items before discount and tax). Shares are
+ *  rounded down to the minor unit and the last guest with any weight takes the remainder, so they sum
+ *  to the total exactly. Discount and tax follow the items proportionally. */
+export function splitByWeights(total: number, weights: number[], decimals = DECIMALS): number[] {
+  const f = Math.pow(10, decimals)
+  const units = Math.round(roundMoney(total, decimals) * f)
+  const sum = weights.reduce((s, w) => s + w, 0)
+  if (sum <= 0) return splitEvenly(total, weights.length, decimals)
+  const last = weights.reduce((k, w, i) => (w > 0 ? i : k), 0)
+  const out = weights.map((w) => Math.floor((units * w) / sum + 1e-9))
+  out[last] = units - out.reduce((s, u, i) => (i === last ? s : s + u), 0)
+  return out.map((u) => u / f)
+}

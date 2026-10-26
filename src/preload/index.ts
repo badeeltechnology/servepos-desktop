@@ -155,6 +155,8 @@ const api = {
     waiterCopy: (orderId: string, cartDiscount?: any) => ipcRenderer.invoke('print:waiterCopy', orderId, cartDiscount),
     prepDoc: (orderId: string) => ipcRenderer.invoke('print:prepDoc', orderId),
     invoice: (orderId: string, cartDiscount?: any) => ipcRenderer.invoke('print:invoice', orderId, cartDiscount),
+    /** Split bill: print one guest's share slip (additive) */
+    guestShare: (data: any) => ipcRenderer.invoke('print:guestShare', data),
     voidSlip: (orderId: string, voidReason: string, voidedBy: string, removedItems?: { itemName: string; qty: number; rate: number; amount: number }[], voidRemarks?: string, voidDisposition?: string) => ipcRenderer.invoke('print:voidSlip', orderId, voidReason, voidedBy, removedItems, voidRemarks, voidDisposition),
     closeShift: (sessionId: string) => ipcRenderer.invoke('print:closeShift', sessionId),
     pollReadyOrders: () => ipcRenderer.invoke('print:pollReadyOrders')

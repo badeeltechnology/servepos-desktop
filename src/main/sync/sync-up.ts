@@ -80,6 +80,13 @@ export async function syncUp(): Promise<SyncResult> {
           }
           return { mode_of_payment: p.payment_method, amount }
         }).filter((p) => p.amount > 0)
+          // Split bill stores one row per guest; ERPNext gets one row per method, as before
+          .reduce((acc: { mode_of_payment: string; amount: number }[], p) => {
+            const hit = acc.find((x) => x.mode_of_payment === p.mode_of_payment)
+            if (hit) hit.amount = Math.round((hit.amount + p.amount) * 1000) / 1000
+            else acc.push({ ...p })
+            return acc
+          }, [])
 
         // Create as Sales Invoice with is_pos=1 (works with all POS Profile modes)
         const posDate = order.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]

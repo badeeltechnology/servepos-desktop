@@ -974,6 +974,49 @@ export function generateVoidSlip(data: VoidSlipData): string {
   return lines.join(LF)
 }
 
+// ==================== Guest share slip (split bill) ====================
+
+export interface GuestShareData {
+  orderNumber: string | null
+  label: string
+  guestNo: number
+  guestCount: number
+  items: { qty: number; itemName: string; amount: number }[]
+  share: number
+  payments: { method: string; amount: number }[]
+  change: number
+}
+
+/** One guest's part of a split bill: their items (or "even share"), their share and how they paid. */
+export function generateGuestShare(data: GuestShareData): string {
+  const config = getAllReceiptConfig()
+  const currSym = config.currency_symbol || getConfig('currency') || 'QAR'
+  const decimals = currencyDecimals(config)
+  const amt = (n: number) => (n || 0).toFixed(decimals)
+  const lines: string[] = [CMD.INIT, CMD.ALIGN_CENTER]
+  if (config.restaurant_name) lines.push(CMD.BOLD_ON + config.restaurant_name + CMD.BOLD_OFF)
+  lines.push(CMD.BOLD_ON + `GUEST ${data.guestNo} OF ${data.guestCount}` + CMD.BOLD_OFF)
+  lines.push(`${data.label}${data.orderNumber ? `  #${data.orderNumber}` : ''}`)
+  lines.push(CMD.ALIGN_LEFT)
+  lines.push(getDashLine())
+  if (data.items.length) {
+    for (const i of data.items) lines.push(formatLine(`${i.qty}x ${i.itemName}`, amt(i.amount)))
+  } else {
+    lines.push('Even share of the bill')
+  }
+  lines.push(getDashLine())
+  lines.push(CMD.BOLD_ON + formatLine(`SHARE (${currSym})`, amt(data.share)) + CMD.BOLD_OFF)
+  for (const p of data.payments) lines.push(formatLine(`Paid: ${p.method}`, amt(p.amount)))
+  if (data.change > 0) lines.push(formatLine('Change:', amt(data.change)))
+  lines.push(getSeparatorLine())
+  lines.push(CMD.ALIGN_CENTER)
+  lines.push('Part of a split bill. The full')
+  lines.push('receipt prints when all have paid.')
+  lines.push(CMD.FEED_5)
+  lines.push(CMD.PARTIAL_CUT)
+  return lines.join(LF)
+}
+
 // ==================== Close Shift Slip ====================
 
 interface CloseShiftData {

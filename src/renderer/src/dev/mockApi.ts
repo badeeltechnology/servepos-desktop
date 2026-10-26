@@ -288,7 +288,10 @@ const ORDER_FIELDS: Record<string, string> = {
   waiterId: 'waiter_id', waiterName: 'waiter_name', orderType: 'order_type'
 }
 function liveItems(orderId: string) { return orderItems.filter((i) => i.order_id === orderId && !i.voided) }
-function activeOrders() { return orders.filter((o) => ['Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced'].includes(o.status)).sort((a, b) => (a.created_at < b.created_at ? 1 : -1)) }
+function activeOrders() {
+  return orders.filter((o) => ['Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced'].includes(o.status)).sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .map((o) => Object.assign(o, { unsent_items: orderItems.filter((i) => i.order_id === o.id && !i.kot_printed && !i.voided).length }))
+}
 function log(orderId: string, type: string, source = 'manual', actor = 'Mariam') { printLog.push({ id: uid('pl'), order_id: orderId, print_type: type, source, printer_name: type === 'kot' ? 'Kitchen' : 'Counter', actor_name: actor, status: 'success', printed_at: new Date().toISOString().slice(0, 19).replace('T', ' ') }) }
 
 const impl: Record<string, Record<string, (...a: any[]) => any>> = {
@@ -386,7 +389,7 @@ const impl: Record<string, Record<string, (...a: any[]) => any>> = {
       return { success: true, errors: [] }
     },
     amendmentKot: () => ({ success: true }), waiterCopy: (id: string) => { log(id, 'waiter_copy'); return { success: true } }, prepDoc: () => ({ success: true }),
-    invoice: (id: string) => { log(id, 'invoice'); return { success: true } }, voidSlip: () => ({ success: true }), closeShift: () => ({ success: true }), pollReadyOrders: () => ({ printed: 0 })
+    invoice: (id: string) => { log(id, 'invoice'); return { success: true } }, guestShare: (d: any) => { printLog.push({ id: uid('pl'), order_id: null, print_type: 'guest_share', data: d, status: 'success' }); return { success: true } }, voidSlip: () => ({ success: true }), closeShift: () => ({ success: true }), pollReadyOrders: () => ({ printed: 0 })
   },
   printLog: { getForOrder: (id: string) => clone(printLog.filter((p) => p.order_id === id)) },
   waiters: { list: () => clone(waiters), fetchFromServer: () => clone(waiters), create: () => ({ success: true }), resetPin: () => ({ success: true }), toggleActive: () => ({ success: true }) },
@@ -450,6 +453,6 @@ export function installMockApi() {
     }
   })
   ;(window as any).api = api
-  ;(window as any).__mock = { orders, orderItems, payments, tables, opt, waiterOrders: () => waiterOrders }
+  ;(window as any).__mock = { orders, orderItems, payments, tables, opt, printLog, waiterOrders: () => waiterOrders }
   console.info('[mockApi] installed (dev browser harness)')
 }

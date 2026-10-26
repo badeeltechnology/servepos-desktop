@@ -2,12 +2,13 @@ import { useState, useEffect, useMemo } from 'react'
 import { CartItem } from '../stores/cart'
 import { useAuthStore } from '../stores/auth'
 import { useStatus, isCashMethod } from '../stores/status'
-import { useSessionGuard } from '../stores/ui'
+import { useSessionGuard, askConfirm, toast } from '../stores/ui'
 import { useT } from '../stores/i18n'
 import StatusBand from './StatusBand'
 import { Btn, SubBar, BackButton, Cap, Keypad, Field, Dot, money, amountKey, roundMoney, C } from '../ui'
 import { quickCash } from '../ui/currency'
 import { cn } from '../lib/utils'
+import { SplitChooser, EvenSplit, ItemSplit, GuestShare, guestColor } from './SplitBill'
 
 // Payment: the receipt as it will print on the left, tender on the right, and the change as the
 // biggest thing on screen. Supports one method, split across methods, card tips, references,
@@ -30,6 +31,8 @@ interface Props {
   orderSub?: string
   orderNumber?: string | null
   orderWaiterName?: string | null
+  /** Guests on the order: the default number of ways for a split */
+  guests?: number
   processing?: boolean
   onComplete: (payments: PaymentEntry[], collectedByWaiter: string | null, tipAmount?: number, receiptCopies?: number) => Promise<boolean> | boolean | void
   onCancel: () => void
@@ -57,7 +60,18 @@ export default function PaymentDialog(props: Props) {
     sub: props.orderSub || '',
     number: props.orderNumber || null
   }))
-  const due = snap.due
+  // Split by guest (evenly / by item): each guest's share is collected in turn. Nothing is stored
+  // until the last share is taken; then the order completes once with one payment row per guest.
+  const [splitPick, setSplitPick] = useState<null | 'choose' | 'even' | 'items'>(null)
+  const [gShares, setGShares] = useState<(GuestShare & { label?: string })[] | null>(null)
+  const [gIdx, setGIdx] = useState(0)
+  const [gCount, setGCount] = useState(0)
+  const [gPaid, setGPaid] = useState<Record<number, { method: string; amount: number; reference: string; change: number }>>({})
+  const [gChange, setGChange] = useState<null | { label: string; change: number }>(null)
+  const guestMode = !!gShares
+  const gCur = gShares ? gShares[gIdx] : null
+  const gLabel = (s: GuestShare & { label?: string }) => s.label || t('Guest {n}', { n: s.guest })
+  const due = gCur ? gCur.amount : snap.due
   const user = useAuthStore((s) => s.user)
   const cur = useStatus((s) => s.currency)
   const [rc, setRc] = useState<Record<string, string>>({})
@@ -116,7 +130,7 @@ export default function PaymentDialog(props: Props) {
     if (isCash) return [{ method, amount: fresh && !cashEntry ? due : received, reference: '' }]
     return [{ method, amount: due, reference }]
   }, [split, parts, method, isCash, fresh, cashEntry, received, due, reference])
-  const tipLine = lines.findIndex((p) => !cashy(p.method) && p.amount > 0)
+  const tipLine = guestMode ? -1 : lines.findIndex((p) => !cashy(p.method) && p.amount > 0)
   const tipAmount = tipLine >= 0 ? roundMoney(tipVal) : 0
   const covered = roundMoney(lines.reduce((s, p) => s + p.amount, 0))
   const remaining = roundMoney((due - covered))
@@ -156,6 +170,10 @@ export default function PaymentDialog(props: Props) {
 
   function startSplit() {
     if (split) { setSplit(false); setParts([]); return }
+    if (guestMode) { leaveGuests(); return }
+    setSplitPick('choose')
+  }
+  function startByAmount() {
     const first: PaymentEntry = { method: method || methods[0]?.mode_of_payment || 'Cash', amount: due, reference: '' }
     setParts([first]); setActivePart(0); setSplit(true); setTipMode(false)
   }
@@ -166,8 +184,66 @@ export default function PaymentDialog(props: Props) {
     setActivePart(parts.length)
   }
 
+  function startGuests(shares: GuestShare[]) {
+    setSplitPick(null); setSplit(false); setParts([]); setTipMode(false); setTip('')
+    setGShares(shares); setGCount(shares.length); setGIdx(0); setGPaid({}); setGChange(null); setCashEntry(''); setFresh(true); setReference('')
+  }
+  async function leaveGuests() {
+    const taken = Object.keys(gPaid).length
+    if (taken && !(await askConfirm({ title: t('Leave the split?'), body: t('{n} guest payments taken here are not saved yet. Hand the money back, or take it again.', { n: taken }), ok: t('Leave'), cancel: t('Stay'), danger: true }))) return false
+    setGShares(null); setGPaid({}); setGIdx(0); setGChange(null); setCashEntry(''); setFresh(true)
+    return true
+  }
+  /** Fold every unpaid share into one ("Pay remaining together"). */
+  function payRestTogether() {
+    if (!gShares) return
+    const unpaid = gShares.filter((_, i) => !gPaid[i])
+    if (unpaid.length < 2) return
+    const merged = { guest: unpaid[0].guest, amount: roundMoney(unpaid.reduce((x, u) => x + u.amount, 0)), items: unpaid.flatMap((u) => u.items), label: `${t('Guests')} ${unpaid.map((u) => u.label ? u.label.replace(/^\D+/, '') : u.guest).join('+')}` }
+    const kept = gShares.filter((_, i) => gPaid[i])
+    const next = [...kept, merged]
+    const paid: typeof gPaid = {}
+    kept.forEach((_, i) => { paid[i] = gPaid[gShares.indexOf(kept[i])] })
+    setGShares(next); setGPaid(paid); setGIdx(next.length - 1); setCashEntry(''); setFresh(true)
+  }
+  async function printGuestSlip(i: number) {
+    if (!gShares) return
+    const s = gShares[i]; const p = gPaid[i]
+    try {
+      const r = await window.api.print.guestShare({ orderNumber: snap.number, label: snap.label, guestNo: s.guest, guestCount: gCount, items: s.items, share: s.amount, payments: p ? [{ method: p.method, amount: p.amount }] : [], change: p?.change || 0 })
+      r?.success === false ? toast.error(r.error || 'Guest slip did not print') : toast.success(t('{who} slip printed', { who: gLabel(s) }))
+    } catch (e: any) { toast.error(e?.message || 'Guest slip did not print') }
+  }
+  async function takeGuestShare() {
+    if (!gShares || !gCur || finishing) return
+    if (short) { setError(`Payment is short by ${money(remaining)}`); return }
+    const m = lines[0]?.method || method
+    const paidAmt = roundMoney(Math.min(lines[0]?.amount || 0, due))
+    const entry = { method: m, amount: paidAmt, reference: (!cashy(m) && reference) || '', change }
+    const paid = { ...gPaid, [gIdx]: entry }
+    setGPaid(paid)
+    setGChange({ label: gLabel(gCur), change })
+    setCashEntry(''); setFresh(true); setReference(''); setError('')
+    // each guest starts on the default method again
+    const def = methods.find((x) => x.is_default) || methods[0]
+    if (def) setMethod(def.mode_of_payment)
+    const next = gShares.findIndex((_, i) => !paid[i])
+    if (next >= 0) { setGIdx(next); return }
+    // Last share: complete the order once, one payment row per guest ("Guest 2 of 3" in the reference)
+    const all = gShares.map((g, i) => ({ method: paid[i].method, amount: paid[i].amount, reference: [`${g.label ? `Guests ${g.label.replace(/^\D+/, '')}` : `Guest ${g.guest}`} of ${gCount}`, paid[i].reference].filter(Boolean).join(' · ') }))
+    setFinishing(true)
+    try {
+      const res = await onComplete(all, collectedBy || null, undefined, copies)
+      if (res === false) { setGPaid(gPaid); return }
+      setDone({ change, tip: 0, payments: all })
+    } finally {
+      setFinishing(false)
+    }
+  }
+
   async function handleComplete() {
     if (done) { onDone?.(); return }
+    if (guestMode) { await takeGuestShare(); return }
     if (finishing) return
     if (short) { setError(`Payment is short by ${money(remaining)}`); return }
     // Cap cash at what is still owed (the excess is change handed back, not stored).
@@ -193,17 +269,18 @@ export default function PaymentDialog(props: Props) {
   const tipMethod = tipLine >= 0 ? lines[tipLine].method : null
   const entryLabel = tipMode ? t('Tip on {method}', { method: tipMethod || '' }) : split ? `${parts[activePart]?.method || ''} amount` : isCash ? t('Cash received') : t('Amount')
   const entryValue = tipMode ? tipVal : split ? (parts[activePart]?.amount || 0) : isCash ? (fresh && !cashEntry ? due : received) : due
-  const rcMethodLine = (done?.payments || payments).map((p) => `Paid ${p.method.toLowerCase()}`)
+  const rcPayments: PaymentEntry[] = done?.payments || (gShares ? gShares.map((g, i) => gPaid[i] ? { method: gPaid[i].method, amount: gPaid[i].amount, reference: gLabel(g) } : null).filter(Boolean) as PaymentEntry[] : payments)
+  const rcMethodLine = rcPayments.map((p) => `Paid ${p.method.toLowerCase()}${/^Guest/.test(p.reference || '') ? ` (${p.reference.split(' · ')[0]})` : ''}`)
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-n-cream" role="dialog" aria-label="Payment">
       <StatusBand userName={user?.name} showWaiter={false} />
       <SubBar>
-        <BackButton onClick={onCancel} />
+        <BackButton onClick={async () => { if (guestMode && !(await leaveGuests())) return; onCancel() }} />
         <span className="cond text-2xl font-bold">{snap.label}</span>
         <span className="truncate text-[13px] text-n-mist">{snap.sub}</span>
         <span className="flex-1" />
-        <Btn variant="ghostDark" aria-pressed={split} onClick={startSplit} disabled={!!done || methods.length < 2} className={cn(split && 'bg-white text-n-deep')}>{t('Split')}</Btn>
+        <Btn variant="ghostDark" aria-pressed={split || guestMode} onClick={startSplit} disabled={!!done} className={cn((split || guestMode) && 'bg-white text-n-deep')}>{split || guestMode ? t('Split off') : t('Split')}</Btn>
         <Btn variant="ghostDark" aria-pressed={tipMode} disabled={!!done || tipLine < 0} onClick={() => setTipMode(!tipMode)} className={cn(tipMode && 'bg-white text-n-deep')}>{tipAmount > 0 ? `${t('Tip')} ${money(tipAmount)}` : t('Tip')}</Btn>
         {waiters.length > 0 && (
           <span className="relative">
@@ -243,8 +320,8 @@ export default function PaymentDialog(props: Props) {
             {(snap.discount > 0 || snap.tax > 0) && <div className="flex justify-between"><span>Subtotal</span><span>{money(snap.subtotal)}</span></div>}
             {snap.discount > 0 && <div className="flex justify-between"><span>Discount</span><span>-{money(snap.discount)}</span></div>}
             {snap.tax > 0 && <div className="flex justify-between"><span>{snap.taxLabel}</span><span>{money(snap.tax)}</span></div>}
-            <div className="flex justify-between text-[13px] font-semibold"><span>TOTAL {cur}</span><span>{money(due)}</span></div>
-            {(done?.payments || payments).map((p, i) => (
+            <div className="flex justify-between text-[13px] font-semibold"><span>TOTAL {cur}</span><span>{money(snap.due)}</span></div>
+            {rcPayments.map((p, i) => (
               <div key={i} className="flex justify-between"><span>{rcMethodLine[i]}</span><span>{money(p.amount)}</span></div>
             ))}
             {(done ? done.tip : tipAmount) > 0 && <div className="flex justify-between"><span>Tip</span><span>{money(done ? done.tip : tipAmount)}</span></div>}
@@ -260,10 +337,32 @@ export default function PaymentDialog(props: Props) {
         {/* Tender */}
         <section className="flex min-w-0 flex-1 flex-col gap-2.5">
           <div className="flex items-baseline gap-3 px-0.5">
-            <Cap className="text-n-muted">{t('To pay')}</Cap>
+            <Cap className="text-n-muted">{gCur && !done ? t('{who} pays', { who: gLabel(gCur) }) : t('To pay')}</Cap>
             <span className="cond num text-[44px] font-bold leading-none text-n-deep">{cur} {money(due)}</span>
             {split && <span className="ml-auto text-sm text-n-muted">{short ? <b className="num text-n-red">{t('Left to split {amount}', { amount: money(remaining) })}</b> : t('Fully covered')}</span>}
           </div>
+
+          {gShares && (
+            <div aria-label={t('Guests')} className="flex flex-shrink-0 items-stretch gap-1.5 overflow-x-auto">
+              {gShares.map((g, i) => {
+                const p = gPaid[i]
+                const on = i === gIdx && !p
+                return (
+                  <div key={i} className={cn('flex min-w-[150px] flex-shrink-0 flex-col justify-center rounded-md px-3 py-1.5', on ? 'text-white' : 'border-2 bg-white')}
+                    style={on ? { background: guestColor(g.guest) } : { borderColor: p ? '#2E8B57' : guestColor(g.guest) }}>
+                    <button type="button" disabled={!!p || !!done} onClick={() => { setGIdx(i); setCashEntry(''); setFresh(true) }} className="text-start">
+                      <span className="block text-[13px] font-bold">{gLabel(g)} {t('of {n}', { n: gCount })}</span>
+                      <span className="cond num block text-xl font-bold leading-none">{money(g.amount)} {p && <span className="font-sans text-[13px] text-n-green">· {t('Paid')} ✓ {p.method}</span>}</span>
+                    </button>
+                    {p && <button type="button" onClick={() => printGuestSlip(i)} className="mt-0.5 self-start text-xs font-semibold text-n-teal underline">{t('Print slip')}</button>}
+                  </div>
+                )
+              })}
+              {!done && gShares.filter((_, i) => !gPaid[i]).length > 1 && (
+                <button type="button" onClick={payRestTogether} className="press flex-shrink-0 rounded-md border-[1.5px] border-n-edge bg-white px-3 text-[13px] font-semibold">{t('Pay remaining together')}</button>
+              )}
+            </div>
+          )}
 
           <div role="radiogroup" aria-label="Method" className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, methods.length))}, minmax(0, 1fr))` }}>
             {methods.map((m) => {
@@ -320,8 +419,8 @@ export default function PaymentDialog(props: Props) {
               )}
 
               <div className={cn('flex min-h-[100px] flex-1 items-center justify-between rounded-md px-4', done ? 'bg-n-amber text-n-ink' : short ? 'bg-white text-n-red shadow-[inset_0_0_0_2px_#C83E2E]' : 'bg-n-amber text-n-ink')}>
-                <Cap>{!done && short ? t('Still owed') : t('Change')}</Cap>
-                <span className="cond num text-[56px] font-bold leading-none">{cur} {money(!done && short ? remaining : heroChange)}</span>
+                <Cap>{!done && short ? t('Still owed') : gChange && fresh && !done ? t('Change for {who}', { who: gChange.label }) : t('Change')}</Cap>
+                <span className="cond num text-[56px] font-bold leading-none">{cur} {money(!done && short ? remaining : gChange && fresh && !done ? gChange.change : heroChange)}</span>
               </div>
 
               <div role="radiogroup" aria-label="Receipt" className="flex flex-shrink-0 gap-1.5">
@@ -338,11 +437,17 @@ export default function PaymentDialog(props: Props) {
           <button type="button" onClick={handleComplete} disabled={!done && !ok}
             className={cn('press flex h-16 flex-shrink-0 items-center justify-between rounded-lg px-[18px] text-xl font-bold',
               done ? 'bg-n-green text-white' : ok ? 'bg-n-deep text-white' : 'bg-n-sand text-n-stone')}>
-            <span>{done ? (copies ? t('Done, printing') : t('Done')) : processing || finishing ? t('Completing…') : short ? `${t('Still owed')} ${money(remaining)}` : t('Finish sale')}</span>
+            <span>{done ? (copies ? t('Done, printing') : t('Done')) : processing || finishing ? t('Completing…') : short ? `${t('Still owed')} ${money(remaining)}` : gShares && gShares.filter((_, i) => !gPaid[i]).length > 1 ? t('Take {who}’s share', { who: gCur ? gLabel(gCur) : '' }) : t('Finish sale')}</span>
             <span className="text-[13px] font-medium">{done ? t('Tap for the next order') : copies ? t('Prints the receipt') : ''}</span>
           </button>
         </section>
       </div>
+      {splitPick === 'choose' && (
+        <SplitChooser canByAmount={methods.length >= 2} onCancel={() => setSplitPick(null)}
+          onPick={(k) => { if (k === 'amount') { setSplitPick(null); startByAmount() } else setSplitPick(k) }} />
+      )}
+      {splitPick === 'even' && <EvenSplit total={snap.due} initial={props.guests} onCancel={() => setSplitPick(null)} onDone={startGuests} />}
+      {splitPick === 'items' && <ItemSplit lines={snap.lines} total={snap.due} initial={props.guests} onCancel={() => setSplitPick(null)} onDone={startGuests} />}
     </div>
   )
 }

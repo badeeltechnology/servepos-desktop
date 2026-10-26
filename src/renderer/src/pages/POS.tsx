@@ -36,6 +36,7 @@ export default function POS() {
   // In-flight guard: a second tap while Send / Hold / Pay / Save is running is ignored
   const busy = useRef(false)
   const resuming = useRef<string | null>(null)
+  const holdSendsKot = useRef(false)
   const activeRef = useRef<string | null>(null)
   const cart = useCartStore()
   const [showPayment, setShowPayment] = useState(false)
@@ -169,6 +170,8 @@ export default function POS() {
     const enabled = config.tax_enabled === '1'
     setTaxRate(enabled ? parseFloat(config.tax_rate || '0') : 0)
     setTaxLabel(config.tax_label || 'VAT')
+    // Hold = save without sending (default). hold_sends_kot = 1 restores "Hold prints the KOT".
+    holdSendsKot.current = config.hold_sends_kot === '1'
     // Waiter-app orders: auto-accept after 5 s unless switched off in admin (default on)
     setAutoAccept(config.waiter_order_auto_accept !== '0')
   }
@@ -487,6 +490,8 @@ export default function POS() {
     if (useCartStore.getState().items.length === 0 || busy.current) return
     busy.current = true
     setProcessing(true)
+    const unsentQty = useCartStore.getState().items.filter((i) => !i.kotPrinted).reduce((n, i) => n + i.qty, 0)
+    const wasSaved = !!activeOrderId
     try {
       let order: any
 
@@ -497,9 +502,9 @@ export default function POS() {
         await window.api.orders.update(activeOrderId, { status: 'Hold', subtotal: c.getSubtotal(), grandTotal: c.getGrandTotal(taxRate) })
         order = await window.api.orders.get(activeOrderId)
       } else {
-        // Not saved yet — create as Hold + print KOT so kitchen starts
+        // Not saved yet: create as Hold. The items stay "Not sent" unless hold_sends_kot = 1.
         order = await saveCartAsOrder('Hold')
-        if (!opts?.noKot) {
+        if (!opts?.noKot && holdSendsKot.current) {
           const oid = order.id
           try {
             const kotRes = await window.api.print.kots(order.id, user?.name)
@@ -510,7 +515,7 @@ export default function POS() {
 
       resetTicket()
       loadActiveOrders()
-      if (!opts?.silent) { toast.success(`On hold: ${orderLabel(order)} · ${order.order_number}`); goHome() }
+      if (!opts?.silent) { toast.success(`On hold: ${orderLabel(order)} · ${order.order_number}${unsentQty && !(holdSendsKot.current && !wasSaved) ? ` · ${unsentQty} not sent` : ''}`); goHome() }
     } catch (err: any) {
       toast.error(`Hold failed: ${err.message}`)
     } finally {
@@ -942,6 +947,7 @@ export default function POS() {
           orderSub={[cart.room, cart.orderType === 'Dine In' ? `${cart.guests} ${t(cart.guests === 1 ? 'guest' : 'guests')}` : t(cart.orderType), cart.waiterName].filter(Boolean).join(' · ')}
           orderNumber={orderMeta.number}
           orderWaiterName={cart.waiterName}
+          guests={cart.guests}
           processing={processing}
           onComplete={handlePaymentComplete}
           onCancel={() => setShowPayment(false)}

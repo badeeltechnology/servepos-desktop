@@ -38,6 +38,13 @@ eq('close-shift count with baisa coins = 10.280', c.roundMoney(c.denominations()
 
 // QAR, 2 decimals: same as before
 c.setCurrency('QAR', 2)
+// split bill
+eq('QAR 100.00 evenly 3 ways = 33.33 + 33.33 + 33.34', c.splitEvenly(100, 3), [33.33, 33.33, 33.34])
+eq('QAR 100 evenly sums exactly', c.roundMoney(c.splitEvenly(100, 7).reduce((s, x) => s + x, 0)), 100)
+eq('OMR 1.375 evenly 3 ways = 0.458 + 0.458 + 0.459', c.splitEvenly(1.375, 3, 3), [0.458, 0.458, 0.459])
+eq('by item 50/30 of 88.00 (after discount/tax) = 55.00 + 33.00', c.splitByWeights(88, [50, 30]), [55, 33])
+eq('by item with an empty guest', c.splitByWeights(10, [1, 2, 0]), [3.33, 6.67, 0])
+eq('by item sums exactly', c.roundMoney(c.splitByWeights(123.45, [3, 5, 7]).reduce((s, x) => s + x, 0)), 123.45)
 const oldQuick = (due) => { const out = [due]; for (const step of [10, 50, 100, 500, 1000]) { const v = Math.ceil(due / step) * step; if (v > due && !out.includes(v)) out.push(v) } return out.slice(0, 4) }
 for (const due of [132.8, 408, 46, 22, 999.99, 1000]) eq(`QAR quick cash unchanged for ${due}`, c.quickCash(due), oldQuick(due))
 eq('QAR rounding 2dp', [c.roundMoney(24.225), c.roundMoney(1.005), c.roundMoney(0.1 + 0.2)], [24.23, 1.01, 0.3])

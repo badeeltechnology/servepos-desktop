@@ -1,7 +1,7 @@
 import { getDb, saveDatabase } from '../database/schema'
 import { getConfig, getAllReceiptConfig, getOrderItems, getOrderPayments, getSessionVoidedOrders, getSessionVoidedItems } from '../database/queries'
 import { sendToPrinter, getPrinters, getPrintRoutes, PrinterConfig } from './printer'
-import { generateReceipt, generateKot, generateWaiterCopy, generatePrepDoc, generateInvoice, generateVoidSlip, generateCloseShiftSlip } from './templates'
+import { generateReceipt, generateKot, generateWaiterCopy, generatePrepDoc, generateInvoice, generateVoidSlip, generateCloseShiftSlip, generateGuestShare, GuestShareData } from './templates'
 import { processForPrinter } from './arabic-bitmap'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -150,7 +150,7 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
     taxRate,
     discountAmount: totalDiscount,
     grandTotal: computedGrandTotal,
-    payments: payments.map((p: any) => ({ method: p.payment_method, amount: p.amount })),
+    payments: payments.map((p: any) => ({ method: /^Guest \d/.test(p.reference || '') ? `${p.payment_method} (${p.reference})` : p.payment_method, amount: p.amount })),
     change: payments.some((p: any) => p.payment_method === 'Card') ? 0 : Math.max(0, totalPaid - computedGrandTotal),
     promoName: order.promo_name || undefined,
     orderNotes: order.order_notes || undefined,
@@ -552,6 +552,18 @@ export async function printVoidSlip(orderId: string, voidReason: string, voidedB
   const result = await sendToPrinter(printer, printBuffer)
   await logPrint(orderId, 'void_slip', printer.id, result.success, result.error)
   return result
+}
+
+/** Split bill: one guest's share slip on the receipt printer (nothing is stored). */
+export async function printGuestShare(data: GuestShareData): Promise<{ success: boolean; error?: string }> {
+  const routes = await getPrintRoutes()
+  const receiptRoute = routes.find((r) => r.print_type === 'receipt')
+  if (!receiptRoute) return { success: false, error: 'No receipt printer configured' }
+  const printers = await getPrinters()
+  const printer = printers.find((p) => p.id === receiptRoute.printer_id)
+  if (!printer) return { success: false, error: 'Receipt printer not found' }
+  const buffer = await processForPrinter(generateGuestShare(data), printer.paper_width || 80)
+  return await sendToPrinter(printer, buffer)
 }
 
 export async function printCloseShift(sessionId: string): Promise<{ success: boolean; error?: string }> {

@@ -14,6 +14,8 @@ export interface ActiveOrderRow {
   created_at: string
   kot_printed?: number
   invoice_printed?: number
+  /** Lines the kitchen has not had yet (held rounds) */
+  unsent_items?: number
   order_notes?: string | null
   cashier_id?: string | null
   session_id?: string | null
@@ -31,8 +33,8 @@ export const STAGE: Record<Stage, { label: string; color: string }> = {
 
 /** One name per state, everywhere (rail, floor, open orders, close shift):
  *  anything the kitchen never got is "Not sent", held or not; a printed bill is "Bill printed". */
-export function stageOf(o: { status: string; kot_printed?: number; invoice_printed?: number }): Stage {
-  if ((o.status === 'Hold' || o.status === 'Open') && !o.kot_printed) return 'draft'
+export function stageOf(o: { status: string; kot_printed?: number; invoice_printed?: number; unsent_items?: number }): Stage {
+  if ((o.status === 'Hold' || o.status === 'Open') && (!o.kot_printed || (o.unsent_items || 0) > 0)) return 'draft'
   if (o.status === 'Ready to Serve') return 'ready'
   if (o.status === 'Invoiced' || o.invoice_printed) return 'invoiced'
   if (o.status === 'Hold') return 'hold'
