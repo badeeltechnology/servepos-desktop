@@ -64,3 +64,25 @@ export function groupColor(group?: string | null): string {
   if (!group) return FALLBACK
   return useMenu.getState().groupColors[group] || FALLBACK
 }
+
+// Sync runs in the background (main process) and writes the local database, but the menu here is
+// loaded once per POS session, so new, changed or removed items only showed after signing out and in.
+// Reload the menu, tables and brand whenever a sync-down finishes.
+let lastSeenSync: string | null = null
+export function watchSyncForMenu() {
+  return import('./status').then(({ useStatus, loadBrand }) =>
+    import('./floor').then(({ useFloor }) =>
+      useStatus.subscribe((st) => {
+        const at = st.sync?.lastSyncAt || null
+        if (!at || at === lastSeenSync) return
+        const first = lastSeenSync === null
+        lastSeenSync = at
+        if (first) return // the session's first load already has this data
+        if (st.sync?.lastResult?.down && st.sync.lastResult.down.success === false) return
+        useMenu.getState().load().catch(() => {})
+        useFloor.getState().load().catch(() => {})
+        loadBrand().catch(() => {})
+      })
+    )
+  )
+}

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuthStore } from '../stores/auth'
 import { useCartStore } from '../stores/cart'
 import { useStatus, refreshPendingSync } from '../stores/status'
-import { useMenu } from '../stores/menu'
+import { useMenu, watchSyncForMenu } from '../stores/menu'
 import { toast, askConfirm, useSessionGuard, useToast } from '../stores/ui'
 import { useT, useLang } from '../stores/i18n'
 import ItemGrid from '../components/ItemGrid'
@@ -79,6 +79,7 @@ export default function POS() {
   const isOrderPlaced = !!activeOrderId && cart.items.length > 0 && cart.items.every((i) => i.kotPrinted)
 
   useEffect(() => { loadTaxConfig(); checkSession(); useMenu.getState().load().catch(() => {}); loadFloorPrefs() }, [])
+  useEffect(() => { let off: (() => void) | undefined; watchSyncForMenu().then((u) => { off = u }); return () => off?.() }, [])
 
   // Hand-over notice (review F09): orders someone else left that the kitchen never got
   const noticeFor = useRef<string | null>(null)
