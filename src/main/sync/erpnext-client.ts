@@ -199,6 +199,12 @@ export class ERPNextClient {
     return this.callMethod('servepos.api.registry.get_active_item_codes', { pos_profile })
   }
 
+  /** Ordered item codes the server pins to the Popular tab (servepos.api.registry.get_pinned_items, max 24). */
+  async getPinnedItems(posProfile?: string): Promise<string[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_pinned_items', { pos_profile })
+  }
+
   async getItemGroups(posProfile?: string): Promise<any[]> {
     const pos_profile = this.requireProfile(posProfile)
     return this.callMethod('servepos.api.registry.get_item_groups', { pos_profile })

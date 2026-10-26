@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '../stores/auth'
 import { askConfirm, toast } from '../stores/ui'
 import { useStatus } from '../stores/status'
+import UpdatesPanel from '../components/UpdatesPanel'
 import { money } from '../ui'
 import {
   Users, Settings, Printer, Package, LayoutGrid, ClipboardList,
@@ -10,7 +11,7 @@ import {
   Download, Upload, HardDrive
 } from 'lucide-react'
 
-type Tab = 'users' | 'waiters' | 'waiter-orders' | 'modifiers' | 'items' | 'printers' | 'sync' | 'orders' | 'shifts' | 'reports' | 'backup'
+type Tab = 'users' | 'waiters' | 'waiter-orders' | 'modifiers' | 'items' | 'printers' | 'sync' | 'orders' | 'shifts' | 'reports' | 'backup' | 'updates'
 
 export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('users')
@@ -27,7 +28,8 @@ export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
     { key: 'orders', label: 'Order History', icon: <ClipboardList className="h-4 w-4" /> },
     { key: 'shifts', label: 'Shift History', icon: <Clock className="h-4 w-4" /> },
     { key: 'sync', label: 'Sync', icon: <RefreshCw className="h-4 w-4" /> },
-    { key: 'backup', label: 'Backup', icon: <HardDrive className="h-4 w-4" /> }
+    { key: 'backup', label: 'Backup', icon: <HardDrive className="h-4 w-4" /> },
+    { key: 'updates', label: 'Updates', icon: <Download className="h-4 w-4" /> }
   ]
 
   return (
@@ -71,6 +73,7 @@ export default function SupervisorSettings({ onBack }: { onBack: () => void }) {
         {activeTab === 'shifts' && <ShiftHistory />}
         {activeTab === 'reports' && <ReportsDashboard />}
         {activeTab === 'backup' && <BackupRestore />}
+        {activeTab === 'updates' && <UpdatesPanel />}
       </div>
     </div>
   )

@@ -458,6 +458,10 @@ async function runV2(browser, W) {
     await btn(page, /^Send \d/).click()
     await page.getByRole('dialog', { name: 'Choose a table' }).getByRole('button', { name: /, Free$/ }).first().click()
     await page.getByText(/KOT print failed/).waitFor({ timeout: 4000 })
+    // optimistic send: the lines went back to "not sent" when the printer refused them
+    const unsent = await page.evaluate(() => { const m = window.__mock; const o = m.orders[m.orders.length - 1]; return m.orderItems.filter((i) => i.order_id === o.id && !i.kot_printed).length })
+    if (unsent < 1) throw new Error('failed KOT lines were marked printed')
+    await page.getByLabel('Current order').getByText(/^New$|not sent yet/).first().waitFor({ timeout: 3000 })
     await page.waitForTimeout(6500)
     if (!(await page.getByText(/KOT print failed/).isVisible())) throw new Error('error toast vanished')
     await v2(page, 'print-error-retry')
@@ -911,10 +915,12 @@ async function runSplitHold(browser) {
     await ticket(page).getByText(/^New$|not sent yet/).first().waitFor({ timeout: 4000 })
     await btn(page, /^Send & floor/).click()
     await page.getByText('A3 sent to the kitchen').waitFor({ timeout: 4000 })
+    // the KOT prints in the background now (optimistic send); wait for the printer to accept
+    await page.waitForFunction(() => { const m = window.__mock; const o = m.orders.find((x) => x.table_name === 'A3' && x.status === 'Open'); return o && m.orderItems.filter((i) => i.order_id === o.id).every((i) => i.kot_printed) }, null, { timeout: 4000 })
     const st = await page.evaluate(() => { const m = window.__mock; const o = m.orders.find((x) => x.table_name === 'A3' && x.status === 'Open'); return { items: m.orderItems.filter((i) => i.order_id === o.id).map((i) => i.kot_printed), logs: m.printLog.filter((l) => l.order_id === o.id && l.print_type === 'kot').length } })
     if (!st.items.every(Boolean) || st.logs !== 1) throw new Error('held items not sent ' + JSON.stringify(st))
     await fm().getByRole('button', { name: /^A3, Occupied/ }).waitFor()
-    if (await fm().getByRole('button', { name: /^A3, Occupied/ }).getByText('NOT SENT').count()) throw new Error('still Not sent after Send')
+    await fm().getByRole('button', { name: /^A3, Occupied/ }).getByText('NOT SENT').waitFor({ state: 'detached', timeout: 6000 })
   })
   await page.close()
 
@@ -1015,6 +1021,343 @@ async function runSplitHold(browser) {
   await page.close()
 }
 
+// Direct pay (no KOT): receipt only, unsent lines served without a KOT; screenshots suffixed -direct
+async function runDirect(browser) {
+  console.log('\n== direct pay (no KOT)')
+  const payDlg = (page) => page.getByRole('dialog', { name: 'Payment' })
+  const directBtn = (page) => page.getByRole('button', { name: /^Direct pay/ }).first()
+  const lastDone = (page) => mock(page, () => {
+    const m = window.__mock; const o = m.orders.filter((x) => x.status === 'Completed').pop()
+    const its = m.orderItems.filter((i) => i.order_id === o.id && !i.voided)
+    const logs = m.printLog.filter((l) => l.order_id === o.id)
+    return { id: o.id, number: o.order_number, table: o.table_name, type: o.order_type, kot: o.kot_printed, items: its.map((i) => [i.kot_printed, i.no_kot || 0]),
+      kots: logs.filter((l) => l.print_type === 'kot').length, receipts: logs.filter((l) => l.print_type === 'receipt').length,
+      noKot: logs.filter((l) => l.print_type === 'no_kot').map((l) => l.actor_name), pays: m.payments.filter((p) => p.order_id === o.id).map((p) => [p.payment_method, p.amount, p.reference]) }
+  })
+  /** The Print bill / Direct pay / Pay row fits the ticket: 44px+ tall, inside the panel, no overlap, Pay amount not cut. */
+  async function checkFit(page) {
+    const r = await page.evaluate(() => {
+      const aside = document.querySelector('aside[aria-label="Current order"]').getBoundingClientRect()
+      const find = (re) => [...document.querySelectorAll('aside[aria-label="Current order"] button')].find((b) => re.test(b.textContent.trim()))
+      const bs = [find(/^(Print bill|Reprint bill)$/), find(/^Direct pay/), find(/^(Send & pay|Pay)/)]
+      return { aside: [aside.left, aside.right], boxes: bs.map((b) => { const x = b.getBoundingClientRect(); return [x.left, x.right, x.height] }),
+        cut: bs.some((b) => [...b.querySelectorAll('span')].concat([b]).some((e) => e.scrollWidth > e.clientWidth + 1)) }
+    })
+    const [l, rt] = r.aside
+    r.boxes.forEach(([a, b, h], i) => { if (a < l - 0.5 || b > rt + 0.5 || h < 44) throw new Error('button ' + i + ' out of the ticket or short ' + JSON.stringify(r)) })
+    if (r.boxes[0][1] > r.boxes[1][0] + 0.5 || r.boxes[1][1] > r.boxes[2][0] + 0.5) throw new Error('buttons overlap ' + JSON.stringify(r))
+    if (r.cut) throw new Error('a label is cut ' + JSON.stringify(r))
+  }
+
+  let page = await newPage(browser, 1366, '?floor=olive&wo=none')
+  const fm = () => floorMain(page)
+  let paid = null
+  await step('direct: dine-in at A3 pays with no KOT prompt; receipt prints, no KOT, items marked, audit logged', async () => {
+    await pin(page, '111111')
+    await fm().getByRole('button', { name: 'A3, Free' }).click()
+    await page.getByRole('button', { name: '2 guests', exact: true }).click()
+    await btn(page, /^Coffee/).click()
+    await btn(page, /^Cold Brew/).click()
+    await btn(page, /^Soft drinks/).click()
+    await btn(page, /^Red Bull/).click()
+    await checkFit(page)
+    await directBtn(page).click()
+    await payDlg(page).waitFor({ timeout: 4000 })
+    if (await page.getByText('Send to kitchen and pay?').count()) throw new Error('asked to send to the kitchen')
+    await payDlg(page).getByText('Direct pay · no KOT').waitFor()
+    await btn(page, /Finish sale/).click()
+    await page.getByText('Tap for the next order').waitFor({ timeout: 5000 })
+    paid = await lastDone(page)
+    const want = { table: 'A3', type: 'Dine In', kot: 0, items: [[1, 1], [1, 1]], kots: 0, receipts: 1, noKot: ['Mariam'] }
+    for (const [k, v] of Object.entries(want)) if (JSON.stringify(paid[k]) !== JSON.stringify(v)) throw new Error(k + ': ' + JSON.stringify(paid))
+    await btn(page, /Done/).click()
+    await fm().getByRole('button', { name: 'A3, Free' }).waitFor({ timeout: 4000 })
+  })
+  await step('direct: a later Send / KOT for that order prints nothing', async () => {
+    const r = await mock(page, async () => { const id = window.__mock.orders.filter((x) => x.status === 'Completed').pop().id; const res = await window.api.print.kots(id, 'Mariam'); return { res, kots: window.__mock.printLog.filter((l) => l.order_id === id && l.print_type === 'kot').length } })
+    if (r.kots !== 0 || r.res.printed !== 0) throw new Error(JSON.stringify(r))
+  })
+  await step('direct: cancelling the payment marks nothing; Send still prints the KOT', async () => {
+    await fm().getByRole('button', { name: 'A4, Free' }).click()
+    await page.getByRole('button', { name: '2 guests', exact: true }).click()
+    await btn(page, /^Coffee/).click()
+    await btn(page, /^Cold Brew/).click()
+    await directBtn(page).click()
+    await payDlg(page).waitFor({ timeout: 4000 })
+    await payDlg(page).getByRole('button', { name: /^Back/ }).first().click()
+    await payDlg(page).waitFor({ state: 'detached', timeout: 3000 })
+    const n = await mock(page, () => window.__mock.orderItems.filter((i) => i.no_kot).length)
+    if (n !== 2) throw new Error(n + ' lines marked no KOT (want only the 2 from A3)')
+    await btn(page, /^Send & floor/).click()
+    await page.getByText('A4 sent to the kitchen').waitFor({ timeout: 4000 })
+    // Send returns before the printer answers (KOTs print in the background), so poll briefly
+    let st = null
+    for (let i = 0; i < 20; i++) {
+      st = await mock(page, () => { const m = window.__mock; const o = m.orders.find((x) => x.table_name === 'A4' && x.status === 'Open'); return { items: m.orderItems.filter((i) => i.order_id === o.id).map((i) => [i.kot_printed, i.no_kot || 0]), kots: m.printLog.filter((l) => l.order_id === o.id && l.print_type === 'kot').length } })
+      if (JSON.stringify(st) === JSON.stringify({ items: [[1, 0]], kots: 1 })) break
+      await page.waitForTimeout(150)
+    }
+    if (JSON.stringify(st) !== JSON.stringify({ items: [[1, 0]], kots: 1 })) throw new Error(JSON.stringify(st))
+  })
+  await step('direct: Sales today shows No KOT on the lines and who paid without KOT', async () => {
+    await page.getByText('A4 sent to the kitchen').waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {})
+    await btn(page, /^Mariam/).click()
+    await page.getByRole('menuitem', { name: 'Sales today' }).click()
+    await page.getByRole('button', { name: new RegExp(paid.number) }).first().click()
+    const sheet = page.getByRole('dialog', { name: paid.number })
+    await sheet.getByText('Paid without KOT').waitFor({ timeout: 3000 })
+    await sheet.getByText(/by Mariam/).waitFor()
+    if ((await sheet.getByText('No KOT', { exact: true }).count()) !== 2) throw new Error('No KOT tags missing')
+    await shot(page, 'history-no-kot', '-direct')
+    await page.keyboard.press('Escape')
+  })
+  await page.close()
+
+  page = await newPage(browser, 1366, '?wo=none')
+  await step('direct: split evenly 2 ways with Direct pay; payments by guest, no KOT', async () => {
+    await pin(page, '111111')
+    await btn(page, '+ Takeaway', true).click()
+    await btn(page, /^Shisha/).click()
+    await btn(page, /^Shisha Double Apple/).click()
+    await btn(page, /^Soft drinks/).click()
+    await btn(page, /^Red Bull/).click()
+    await directBtn(page).click()
+    await payDlg(page).waitFor({ timeout: 4000 })
+    await btn(page, 'Split', true).click()
+    await page.getByRole('dialog', { name: 'Split the bill' }).getByRole('button', { name: /^Evenly/ }).click()
+    await page.getByRole('button', { name: '2 ways', exact: true }).click()
+    await btn(page, /^Split 2 ways/).click()
+    await payDlg(page).getByRole('button', { name: /^(Take .*share|Finish sale)/ }).click()
+    await payDlg(page).getByRole('radio', { name: 'Card' }).click()
+    await payDlg(page).getByRole('button', { name: /^(Take .*share|Finish sale)/ }).click()
+    await page.getByText('Tap for the next order').waitFor({ timeout: 5000 })
+    const r = await lastDone(page)
+    if (JSON.stringify(r.pays) !== JSON.stringify([['Cash', 50, 'Guest 1 of 2'], ['Card', 50, 'Guest 2 of 2']]) || r.kots || JSON.stringify(r.items) !== '[[1,1],[1,1]]' || r.noKot.length !== 1) throw new Error(JSON.stringify(r))
+    await btn(page, /Done/).click()
+  })
+  await page.close()
+
+  page = await newPage(browser, 1024, '?wo=none&directpay=supervisor')
+  await step('direct: direct_pay = supervisor asks a cashier for a supervisor PIN; fits at 1024', async () => {
+    await pin(page, '111111')
+    await btn(page, '+ Takeaway', true).click()
+    await btn(page, /^Coffee/).click()
+    await btn(page, /^Cold Brew/).click()
+    await checkFit(page)
+    await shot(page, 'till', '-direct')
+    await directBtn(page).click()
+    const dlg = page.getByRole('dialog', { name: 'Direct pay (no KOT)' })
+    await dlg.waitFor({ timeout: 3000 })
+    if (await payDlg(page).count()) throw new Error('payment opened before the PIN')
+    for (const d of '111111') await dlg.getByRole('button', { name: d, exact: true }).click()
+    await dlg.getByText('Mariam is not a supervisor').waitFor({ timeout: 3000 })
+    for (const d of '222222') await dlg.getByRole('button', { name: d, exact: true }).click()
+    await payDlg(page).waitFor({ timeout: 4000 })
+    await btn(page, /Finish sale/).click()
+    await page.getByText('Tap for the next order').waitFor({ timeout: 5000 })
+    const r = await lastDone(page)
+    if (r.kots || JSON.stringify(r.noKot) !== JSON.stringify(['Mariam (approved by Joseph)'])) throw new Error(JSON.stringify(r))
+    await btn(page, /Done/).click()
+  })
+  await step('direct: cancelling the PIN opens nothing', async () => {
+    await btn(page, '+ Takeaway', true).click()
+    await btn(page, /^Coffee/).click()
+    await btn(page, /^Cold Brew/).click()
+    await directBtn(page).click()
+    const dlg = page.getByRole('dialog', { name: 'Direct pay (no KOT)' })
+    await dlg.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await dlg.waitFor({ state: 'detached', timeout: 3000 })
+    if (await payDlg(page).count()) throw new Error('payment opened after cancelling the PIN')
+  })
+  await page.close()
+
+  page = await newPage(browser, 1024, '?wo=none&directpay=supervisor')
+  await step('direct: a supervisor needs no PIN', async () => {
+    await pin(page, '222222')
+    await btn(page, '+ Takeaway', true).click()
+    await btn(page, /^Coffee/).click()
+    await btn(page, /^Cold Brew/).click()
+    await directBtn(page).click()
+    await payDlg(page).waitFor({ timeout: 4000 })
+    if (await page.getByRole('dialog', { name: 'Direct pay (no KOT)' }).count()) throw new Error('supervisor was asked for a PIN')
+  })
+  await page.close()
+
+  page = await newPage(browser, 1024, '?wo=none&directpay=off')
+  await step('direct: direct_pay = off hides the button', async () => {
+    await pin(page, '111111')
+    await btn(page, /^Coffee/).click()
+    await btn(page, /^Cold Brew/).click()
+    await page.getByRole('button', { name: /^(Send & pay|Pay)/ }).first().waitFor()
+    if (await page.getByRole('button', { name: /^Direct pay/ }).count()) throw new Error('Direct pay shown with direct_pay = off')
+  })
+  await page.close()
+}
+
+/** Popular tab: pinned favourites from the server first, ranked sellers by item code, voided lines
+ * left out, refreshed after a sync; a new till shows only the pins, and no tab when nothing at all. */
+async function popularTiles(page) {
+  return page.locator('div.grid.content-start > button').evaluateAll((els) => els.map((b) => ({ name: b.querySelector('span span')?.textContent || '', pinned: b.getAttribute('data-pinned') === '1' })))
+}
+async function runPopular(browser) {
+  console.log('\n== Popular tab')
+  let page = await newPage(browser, 1366)
+  await step('popular: opens on Popular, pinned first in server order', async () => {
+    await pin(page, '111111')
+    await page.getByText('Nothing on the ticket').waitFor({ timeout: 4000 })
+    await page.waitForTimeout(400)
+    const tiles = await popularTiles(page)
+    const names = tiles.map((t) => t.name)
+    if (names[0] !== 'Club Sandwich' || names[1] !== 'Brownies' || !tiles[0].pinned || !tiles[1].pinned) throw new Error(JSON.stringify(tiles.slice(0, 4)))
+    if (tiles.slice(2).some((t) => t.pinned)) throw new Error('ranked tile marked pinned')
+    if (names.filter((n) => n === 'Brownies').length !== 1) throw new Error('pinned item repeated in ranked fill')
+    if (tiles.length > 18 || !names.includes('Iced Spanish Latte')) throw new Error(JSON.stringify(names))
+    if ((await page.locator('[data-pinned="1"] svg[aria-label="Pinned"]').count()) !== 2) throw new Error('pin marks')
+    await shot(page, 'popular')
+  })
+  await step('popular: voided lines excluded from the ranking', async () => {
+    const names = (await popularTiles(page)).map((t) => t.name)
+    if (names.includes('Hot Mocha')) throw new Error('voided Hot Mocha ranked: ' + JSON.stringify(names))
+  })
+  await step('popular: refreshes after a sync with new pins', async () => {
+    await page.evaluate(() => { window.__mock.setServerPinned(['COLD-BREW']); return window.api.sync.run() })
+    await page.waitForFunction(() => {
+      const b = document.querySelector('div.grid.content-start > button')
+      return b && b.getAttribute('data-pinned') === '1' && /Cold Brew/.test(b.textContent || '')
+    }, null, { timeout: 8000 })
+    const tiles = await popularTiles(page)
+    if (tiles.filter((t) => t.pinned).length !== 1 || tiles[1].name !== 'Iced Spanish Latte') throw new Error(JSON.stringify(tiles.slice(0, 3)))
+  })
+  await page.close()
+
+  page = await newPage(browser, 1024, '?wo=none&pop=none')
+  await step('popular: new till with no history shows only the pins', async () => {
+    await pin(page, '111111')
+    await page.getByText('Nothing on the ticket').waitFor({ timeout: 4000 })
+    await page.waitForTimeout(400)
+    const tiles = await popularTiles(page)
+    if (tiles.length !== 2 || !tiles.every((t) => t.pinned)) throw new Error(JSON.stringify(tiles))
+  })
+  await page.close()
+
+  page = await newPage(browser, 1024, '?wo=none&pop=none&pinned=none')
+  await step('popular: no pins and no history hides the tab', async () => {
+    await pin(page, '111111')
+    await page.getByText('Nothing on the ticket').waitFor({ timeout: 4000 })
+    await page.waitForTimeout(400)
+    if (await page.getByRole('button', { name: /^Popular/ }).count()) throw new Error('Popular tab shown')
+  })
+  await page.close()
+}
+
+
+// In-app updates (?update=available|downloading|downloaded|none), screenshots suffixed -upd
+const up = (page, name) => shot(page, name, '-upd')
+const updPanel = (page) => page.getByLabel('Updates', { exact: true })
+async function supervisorUpdates(page) {
+  await pin(page, '222222')
+  await btn(page, /^Joseph/).click()
+  await page.getByRole('menuitem', { name: 'Settings' }).click()
+  await btn(page, 'Updates', true).click()
+  await updPanel(page).waitFor()
+  for (const d of await page.getByRole('button', { name: 'Dismiss' }).all()) await d.click().catch(() => {})
+}
+async function runUpdates(browser) {
+  const W = 1366
+  console.log(`\n== updates ${W}×768`)
+  let page = await newPage(browser, W, '?wo=none&update=none')
+  await step('upd none: no chip on sign-in; Updates says latest; Check for updates', async () => {
+    if (await page.getByRole('button', { name: /ask a supervisor/ }).count()) throw new Error('chip shown with no update')
+    await supervisorUpdates(page)
+    await page.getByText("You're on the latest version").waitFor()
+    await btn(page, 'Check for updates').click()
+    await page.getByText("You're on the latest version").waitFor({ timeout: 3000 })
+    await up(page, 'updates-none')
+  })
+  await step('upd channel: Off disables checks, Stable turns them back on', async () => {
+    await page.getByRole('radio', { name: /^Off/ }).click()
+    await page.getByText('Updates are off on this till.').waitFor()
+    if (!(await btn(page, 'Check for updates').isDisabled())) throw new Error('check not disabled when off')
+    const ch = await mock(page, () => window.__mock.update.channel)
+    if (ch !== 'off') throw new Error('channel not saved: ' + ch)
+    await page.getByRole('radio', { name: /^Stable/ }).click()
+    await page.waitForFunction(() => window.__mock.update.channel === 'stable')
+    if (await btn(page, 'Check for updates').isDisabled()) throw new Error('check still disabled')
+  })
+  await page.close()
+
+  page = await newPage(browser, W, '?wo=none&update=available')
+  await step('upd available: chip; cashier PIN refused; supervisor PIN opens Updates', async () => {
+    await btn(page, /Update available . ask a supervisor/).click()
+    const dlg = page.getByRole('dialog', { name: 'Software update' })
+    for (const d of '111111') await dlg.getByRole('button', { name: d, exact: true }).click()
+    await dlg.getByText('Only a supervisor can install updates').waitFor()
+    for (const d of '222222') await dlg.getByRole('button', { name: d, exact: true }).click()
+    await dlg.getByText('Approved by Joseph').waitFor()
+    await dlg.getByText('Version 2.18.0', { exact: true }).waitFor()
+    await up(page, 'updates-available')
+  })
+  await step('upd available: Update now shows progress, then Restart to install', async () => {
+    const dlg = page.getByRole('dialog', { name: 'Software update' })
+    await dlg.getByRole('button', { name: 'Update now' }).click()
+    await dlg.getByRole('progressbar', { name: 'Download progress' }).waitFor()
+    await dlg.getByRole('button', { name: 'Restart to install' }).waitFor({ timeout: 6000 })
+    await page.getByRole('button', { name: /Update ready . ask a supervisor/ }).waitFor()
+  })
+  await page.close()
+
+  page = await newPage(browser, W, '?wo=none&update=downloading')
+  await step('upd downloading: progress bar with percent and size in Supervisor settings', async () => {
+    await supervisorUpdates(page)
+    const bar = page.getByRole('progressbar', { name: 'Download progress' })
+    await bar.waitFor()
+    if ((await bar.getAttribute('aria-valuenow')) !== '42') throw new Error('progress not 42%')
+    await page.getByText(/^42% · [0-9.]+ MB of [0-9.]+ MB$/).waitFor()
+    await up(page, 'updates-downloading')
+  })
+  await page.close()
+
+  page = await newPage(browser, W, '?wo=none&update=downloaded')
+  await step('upd downloaded: sign-in chip', async () => {
+    await btn(page, /Update ready . ask a supervisor/).waitFor()
+    await up(page, 'login-update-ready')
+  })
+  await step('upd downloaded: restart refused while close shift is open', async () => {
+    await supervisorUpdates(page)
+    await mock(page, () => window.__mock.guard.getState().setBusy('close-shift', true))
+    await btn(page, 'Restart to install').click()
+    await page.getByRole('alert').filter({ hasText: 'Close shift is open' }).waitFor()
+    await mock(page, () => window.__mock.guard.getState().setBusy('close-shift', false))
+    await btn(page, 'OK', true).click()
+    if (await mock(page, () => window.__mock.installed)) throw new Error('installed while busy')
+  })
+  await step('upd downloaded: unsynced sales warn, Sync first, confirm, install', async () => {
+    await btn(page, 'Restart to install').click()
+    await page.getByRole('alert').filter({ hasText: /not synced to ERPNext yet/ }).waitFor()
+    await up(page, 'updates-unsynced')
+    await btn(page, 'Sync first', true).click()
+    // The mock leaves a failed sale unsynced, so the warning comes back: restart anyway.
+    await page.getByText(/still not synced/).waitFor({ timeout: 5000 })
+    await btn(page, 'Restart anyway', true).click()
+    await page.getByText('Restart to install v2.18.0?').waitFor({ timeout: 5000 })
+    await page.getByRole('button', { name: 'Restart now' }).click()
+    await page.waitForFunction(() => window.__mock.installed === true, null, { timeout: 3000 })
+  })
+  await page.close()
+
+  page = await newPage(browser, W, '?wo=none&update=downloaded')
+  await step('upd chip: Admin sign-in opens the admin panel on Updates', async () => {
+    await btn(page, /Update ready . ask a supervisor/).click()
+    await page.getByRole('dialog', { name: 'Software update' }).getByRole('button', { name: 'Admin sign-in' }).click()
+    await page.getByLabel('Username').fill('admin')
+    await page.getByLabel('Password').fill('admin')
+    await page.getByRole('dialog').getByRole('button', { name: 'Sign in' }).click()
+    await updPanel(page).getByRole('button', { name: 'Restart to install' }).waitFor()
+    await up(page, 'admin-updates')
+  })
+  await page.close()
+}
+
 ;(async () => {
   require('fs').mkdirSync(OUT, { recursive: true })
   const browser = await chromium.launch()
@@ -1024,6 +1367,9 @@ async function runSplitHold(browser) {
   if (!process.env.ONLY || process.env.ONLY === 'floor') for (const w of SIZES) await runFloor(browser, w)
   if (!process.env.ONLY || process.env.ONLY === 'review') await runReview(browser)
   if (!process.env.ONLY || process.env.ONLY === 'split') await runSplitHold(browser)
+  if (!process.env.ONLY || process.env.ONLY === 'direct') await runDirect(browser)
+  if (!process.env.ONLY || process.env.ONLY === 'popular') await runPopular(browser)
+  if (!process.env.ONLY || process.env.ONLY === 'upd') await runUpdates(browser)
   await browser.close()
   console.log(`\n${shots.length} screenshots in ${OUT}`)
   const real = errors.filter((e) => !/favicon|cached-image/.test(e))

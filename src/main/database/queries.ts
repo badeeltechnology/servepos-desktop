@@ -36,6 +36,7 @@ export const getOrderItems = (...args: Parameters<typeof WorkerQueries.getOrderI
 export const updateOrderItem = (...args: Parameters<typeof WorkerQueries.updateOrderItem>): Promise<Awaited<ReturnType<typeof WorkerQueries.updateOrderItem>>> => getDb().request('query', 'updateOrderItem', args)
 export const removeOrderItem = (...args: Parameters<typeof WorkerQueries.removeOrderItem>): Promise<Awaited<ReturnType<typeof WorkerQueries.removeOrderItem>>> => getDb().request('query', 'removeOrderItem', args)
 export const voidOrderItem = (...args: Parameters<typeof WorkerQueries.voidOrderItem>): Promise<Awaited<ReturnType<typeof WorkerQueries.voidOrderItem>>> => getDb().request('query', 'voidOrderItem', args)
+export const markItemsNoKot = (...args: Parameters<typeof WorkerQueries.markItemsNoKot>): Promise<Awaited<ReturnType<typeof WorkerQueries.markItemsNoKot>>> => getDb().request('query', 'markItemsNoKot', args)
 export const addOrderPayment = (...args: Parameters<typeof WorkerQueries.addOrderPayment>): Promise<Awaited<ReturnType<typeof WorkerQueries.addOrderPayment>>> => getDb().request('query', 'addOrderPayment', args)
 export const getOrderPayments = (...args: Parameters<typeof WorkerQueries.getOrderPayments>): Promise<Awaited<ReturnType<typeof WorkerQueries.getOrderPayments>>> => getDb().request('query', 'getOrderPayments', args)
 export const addOrderEditLog = (...args: Parameters<typeof WorkerQueries.addOrderEditLog>): Promise<Awaited<ReturnType<typeof WorkerQueries.addOrderEditLog>>> => getDb().request('query', 'addOrderEditLog', args)

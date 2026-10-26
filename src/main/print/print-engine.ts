@@ -157,9 +157,12 @@ export async function printReceipt(orderId: string): Promise<{ success: boolean;
     tipAmount: order.tip_amount || 0
   }
 
+  const t0 = Date.now()
   const receipt = generateReceipt(receiptData)
   const printBuffer = await processForPrinter(receipt, printer.paper_width || 80)
+  const t1 = Date.now()
   const result = await sendWithCopies(printer, printBuffer, getCopyCount('receipt'))
+  console.log(`[Print] receipt ${order.table_name || order.order_number} → ${printer.printer_name} ${Date.now() - t1} ms (render ${t1 - t0} ms)${result.success ? '' : ` FAILED: ${result.error}`}`)
   await logPrint(orderId, 'receipt', printer.id, result.success, result.error)
   return result
 }
@@ -290,7 +293,18 @@ export async function printInvoice(orderId: string, cartDiscount?: { percent: nu
   return result
 }
 
-export async function printKots(orderId: string, source: 'auto' | 'manual' | 'reprint' = 'manual', actorName?: string): Promise<{ success: boolean; printed: number; errors: string[] }> {
+// One KOT run at a time per order: the till no longer waits for the printer, so a second Send can
+// arrive while the first is printing; it must see the first run's lines as printed, not print them again.
+const kotQueue = new Map<string, Promise<unknown>>()
+export function printKots(orderId: string, source: 'auto' | 'manual' | 'reprint' = 'manual', actorName?: string): Promise<{ success: boolean; printed: number; errors: string[] }> {
+  const prev = kotQueue.get(orderId) || Promise.resolve()
+  const run = prev.catch(() => {}).then(() => printKotsNow(orderId, source, actorName))
+  kotQueue.set(orderId, run)
+  run.finally(() => { if (kotQueue.get(orderId) === run) kotQueue.delete(orderId) }).catch(() => {})
+  return run
+}
+
+async function printKotsNow(orderId: string, source: 'auto' | 'manual' | 'reprint' = 'manual', actorName?: string): Promise<{ success: boolean; printed: number; errors: string[] }> {
   const db = getDb()
   const errors: string[] = []
   let printed = 0
@@ -355,8 +369,13 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
   // Alias for the loop below
   const printerItems = routeItems
 
-  // Print KOT to each printer
-  for (const [, group] of Object.entries(printerItems)) {
+  // Build every KOT first (numbers stay in order), then send to the printers in parallel: the bar
+  // and the kitchen no longer wait for each other. Copies go as one job per printer.
+  const tStart = Date.now()
+  const label = order.table_name || order.order_number
+  const groups = Object.values(printerItems)
+  const jobs: { group: typeof groups[number]; buffer: Buffer; renderMs: number }[] = []
+  for (const group of groups) {
     const kotNumber = await getNextKotNumber()
     const kotData = {
       kotNumber,
@@ -378,24 +397,35 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
         }
       }))
     }
-
-    const kot = generateKot(kotData)
-    const kotBuffer = await processForPrinter(kot, group.printer.paper_width || 80)
-    const result = await sendWithCopies(group.printer, kotBuffer, getCopyCount('kot'))
-    await logPrint(orderId, 'kot', group.printer.id, result.success, result.error, source, actorName)
-
-    if (result.success) {
-      printed++
-    } else {
-      errors.push(`${group.printer.printer_name}: ${result.error}`)
-    }
+    const t0 = Date.now()
+    const buffer = await processForPrinter(generateKot(kotData), group.printer.paper_width || 80)
+    jobs.push({ group, buffer, renderMs: Date.now() - t0 })
   }
 
-  // Mark KOT as printed on order + individual items
-  await db.run('UPDATE orders SET kot_printed = 1 WHERE id = ?', [orderId])
+  const results = await Promise.all(jobs.map(async (job) => {
+    const t0 = Date.now()
+    const result = await sendWithCopies(job.group.printer, job.buffer, getCopyCount('kot'))
+    console.log(`[Print] kot ${label} → ${job.group.printer.printer_name} ${Date.now() - t0} ms (render ${job.renderMs} ms)${result.success ? '' : ` FAILED: ${result.error}`}`)
+    return { job, result }
+  }))
+
+  const sentItemIds: string[] = []
+  for (const { job, result } of results) {
+    await logPrint(orderId, 'kot', job.group.printer.id, result.success, result.error, source, actorName)
+    if (result.success) {
+      printed++
+      sentItemIds.push(...job.group.items.map((i: any) => i.id))
+    } else {
+      errors.push(`${job.group.printer.printer_name}: ${result.error}`)
+    }
+  }
+  console.log(`[Print] kot ${label} total ${Date.now() - tStart} ms, ${printed}/${jobs.length} printers`)
+
+  // Mark as sent only what a printer accepted, so Retry prints exactly what the kitchen is missing
+  if (printed > 0) await db.run('UPDATE orders SET kot_printed = 1 WHERE id = ?', [orderId])
   if (source !== 'reprint') {
-    for (const item of items) {
-      await db.run("UPDATE order_items SET kot_printed = 1, sent_at = COALESCE(sent_at, datetime('now')) WHERE id = ?", [item.id])
+    for (const id of sentItemIds) {
+      await db.run("UPDATE order_items SET kot_printed = 1, sent_at = COALESCE(sent_at, datetime('now')) WHERE id = ?", [id])
     }
   }
   await saveDatabase()

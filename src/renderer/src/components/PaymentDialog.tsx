@@ -34,6 +34,8 @@ interface Props {
   /** Guests on the order: the default number of ways for a split */
   guests?: number
   processing?: boolean
+  /** Opened by "Direct pay": nothing goes to the kitchen; the header says so */
+  noKot?: boolean
   onComplete: (payments: PaymentEntry[], collectedByWaiter: string | null, tipAmount?: number, receiptCopies?: number) => Promise<boolean> | boolean | void
   onCancel: () => void
   onDone?: () => void
@@ -279,6 +281,7 @@ export default function PaymentDialog(props: Props) {
         <BackButton onClick={async () => { if (guestMode && !(await leaveGuests())) return; onCancel() }} />
         <span className="cond text-2xl font-bold">{snap.label}</span>
         <span className="truncate text-[13px] text-n-mist">{snap.sub}</span>
+        {props.noKot && <span className="flex-shrink-0 whitespace-nowrap rounded border border-dashed border-n-amber px-2 py-0.5 text-[12px] font-bold uppercase tracking-[.04em] text-n-amber">{t('Direct pay · no KOT')}</span>}
         <span className="flex-1" />
         <Btn variant="ghostDark" aria-pressed={split || guestMode} onClick={startSplit} disabled={!!done} className={cn((split || guestMode) && 'bg-white text-n-deep')}>{split || guestMode ? t('Split off') : t('Split')}</Btn>
         <Btn variant="ghostDark" aria-pressed={tipMode} disabled={!!done || tipLine < 0} onClick={() => setTipMode(!tipMode)} className={cn(tipMode && 'bg-white text-n-deep')}>{tipAmount > 0 ? `${t('Tip')} ${money(tipAmount)}` : t('Tip')}</Btn>

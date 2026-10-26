@@ -739,6 +739,7 @@ function OrderDetail({ order, items, raw, onUpdateStatus, onClose, loading, cur 
 const PRINT_TYPE_LABEL: Record<string, string> = {
   kot: 'KOT',
   kot_amendment: 'KOT (Amend)',
+  no_kot: 'No KOT',
   receipt: 'Receipt',
   invoice: 'Invoice',
   prep_doc: 'Prep Doc',

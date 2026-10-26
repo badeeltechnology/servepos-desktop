@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, memo, useCallback, useRef } from 'react'
 import { useCartStore, CartModifier } from '../stores/cart'
 import { useMenu, MenuItem, groupColor } from '../stores/menu'
+import { useStatus } from '../stores/status'
 import ModifierModal from './ModifierModal'
 import { Btn, Dialog, Option, SearchIcon, useTier, money, C } from '../ui'
 import { cn } from '../lib/utils'
@@ -30,6 +31,16 @@ type ViewMode = 'grid' | 'list'
 const ALL = '__all'
 const POPULAR = '__popular'
 const UI_KEY = 'pos_menu_ui_v2'
+const POPULAR_MAX = 18
+const POPULAR_REFRESH_MS = 30 * 60 * 1000
+
+function PinMark() {
+  return (
+    <svg aria-label="Pinned" role="img" viewBox="0 0 16 16" className="h-3.5 w-3.5 flex-shrink-0 text-n-muted" fill="currentColor">
+      <path d="M10.6 1.4a1 1 0 0 1 1.4 0l2.6 2.6a1 1 0 0 1 0 1.4l-.9.9a1 1 0 0 1-1 .25l-2.1 2.1.3 2.6a1 1 0 0 1-.3.8l-.6.6a.5.5 0 0 1-.7 0L6.4 9.7l-3.5 3.5a.6.6 0 0 1-.85-.85L5.55 8.9 2.6 5.95a.5.5 0 0 1 0-.7l.6-.6a1 1 0 0 1 .8-.3l2.6.3 2.1-2.1a1 1 0 0 1 .25-1z" />
+    </svg>
+  )
+}
 
 function loadUi(): { lang?: Lang; view?: ViewMode } {
   try { return JSON.parse(localStorage.getItem(UI_KEY) || '{}') } catch { return {} }
@@ -52,7 +63,10 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
   const [showDescription, setShowDescription] = useState(false)
   const [confirmItem, setConfirmItem] = useState<MenuItem | null>(null)
   const [confirmModifiers, setConfirmModifiers] = useState<{ modifiers: CartModifier[]; instructions: string; qty: number } | null>(null)
-  const [popular, setPopular] = useState<string[]>([])
+  // Popular = server-pinned favourites (in server order) then this till's recent sellers, by item code
+  const [pinnedCodes, setPinnedCodes] = useState<string[]>([])
+  const [rankedCodes, setRankedCodes] = useState<string[]>([])
+  const popularDefaulted = useRef(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const { wide, large } = useTier()
   const t = useT()
@@ -66,6 +80,19 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
   const orderType = useCartStore((s) => s.orderType)
 
   useEffect(() => { if (!loaded) load(); loadConfig(); loadPopular() }, [])
+  // Refresh Popular every 30 min and after each sync (pinned items arrive with the sync)
+  useEffect(() => {
+    const timer = window.setInterval(loadPopular, POPULAR_REFRESH_MS)
+    let lastSync = useStatus.getState().sync?.lastSyncAt || null
+    const off = useStatus.subscribe((st) => {
+      const at = st.sync?.lastSyncAt || null
+      if (!at || at === lastSync) return
+      const first = lastSync === null
+      lastSync = at
+      if (!first) loadPopular()
+    })
+    return () => { window.clearInterval(timer); off() }
+  }, [])
   useEffect(() => { try { localStorage.setItem(UI_KEY, JSON.stringify({ lang, view: viewMode })) } catch {} }, [lang, viewMode])
 
   async function loadConfig() {
@@ -73,20 +100,20 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
     setShowDescription(config.show_description_on_pos === '1')
   }
 
-  // "Popular" = today's best sellers, topped up from yesterday early in the day.
   async function loadPopular() {
+    let pinned: string[] = []
     try {
-      const today = (await window.api.reports.bestSellingItems(undefined, 12)) || []
-      let names: string[] = today.map((r: any) => r.item_name)
-      if (names.length < 6) {
-        const y = new Date(Date.now() - 86400000).toLocaleDateString('en-CA')
-        const prev = (await window.api.reports.bestSellingItems(y, 12)) || []
-        for (const r of prev) if (!names.includes(r.item_name)) names.push(r.item_name)
-      }
-      names = names.slice(0, 12)
-      setPopular(names)
-      if (names.length > 0) setActive((a) => (a === ALL ? POPULAR : a))
+      const raw = await window.api.config.get('pinned_items')
+      const parsed = raw ? JSON.parse(raw) : []
+      if (Array.isArray(parsed)) pinned = parsed.filter((c: any) => typeof c === 'string')
+    } catch { /* no pinned items */ }
+    let ranked: string[] = []
+    try {
+      const rows = (await window.api.reports.popularItems(POPULAR_MAX)) || []
+      ranked = rows.map((r: any) => r.item_code).filter(Boolean)
     } catch { /* report not available */ }
+    setPinnedCodes(pinned)
+    setRankedCodes(ranked)
   }
 
   const mainItems = useMemo(() => items.filter((i) => !i.variant_of), [items])
@@ -100,7 +127,40 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
   // Only groups that have items (hides system groups like Raw Material, Services)
   const visibleGroups = useMemo(() => groups.filter((g) => (groupCounts[g.name] || 0) > 0), [groups, groupCounts])
 
-  const popularSet = useMemo(() => new Set(popular.slice(0, 4)), [popular])
+  // Pinned first (only those on this menu), then ranked sellers not already pinned; variants
+  // count toward their template tile.
+  const { popular, pinnedSet, popularSet } = useMemo(() => {
+    const byCode: Record<string, MenuItem> = {}
+    for (const i of items) byCode[i.item_code] = i
+    const tile = (code: string) => {
+      const it = byCode[code]
+      if (!it) return null
+      return it.variant_of && byCode[it.variant_of] ? byCode[it.variant_of] : it
+    }
+    const seen = new Set<string>()
+    const list: MenuItem[] = []
+    const pinnedSet = new Set<string>()
+    for (const code of pinnedCodes) {
+      const it = byCode[code]
+      if (!it || seen.has(it.item_code) || list.length >= POPULAR_MAX) continue
+      seen.add(it.item_code); pinnedSet.add(it.item_code); list.push(it)
+    }
+    const top: string[] = []
+    for (const code of rankedCodes) {
+      const it = tile(code)
+      if (!it || seen.has(it.item_code)) continue
+      if (top.length < 4) top.push(it.item_code)
+      if (list.length >= POPULAR_MAX) continue
+      seen.add(it.item_code); list.push(it)
+    }
+    return { popular: list, pinnedSet, popularSet: new Set(top) }
+  }, [items, pinnedCodes, rankedCodes])
+
+  // Popular is the opening tab when it has anything; hide it (fall back to All) when it empties
+  useEffect(() => {
+    if (popular.length > 0 && !popularDefaulted.current) { popularDefaulted.current = true; setActive((a) => (a === ALL ? POPULAR : a)) }
+    if (popular.length === 0) setActive((a) => (a === POPULAR ? ALL : a))
+  }, [popular.length])
 
   const filteredItems = useMemo(() => {
     if (search) {
@@ -114,14 +174,14 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
     }
     let list: MenuItem[]
     if (active === POPULAR) {
-      list = popular.map((n) => mainItems.find((i) => i.item_name === n)).filter(Boolean) as MenuItem[]
+      list = popular
     } else if (active === ALL) {
       list = mainItems
     } else {
       list = mainItems.filter((i) => i.item_group === active)
     }
-    // Best sellers first (they get the big tiles)
-    if (active !== ALL) list = [...list].sort((a, b) => Number(popularSet.has(b.item_name)) - Number(popularSet.has(a.item_name)))
+    // Best sellers first in a category (they get the big tiles); Popular keeps its own order
+    if (active !== ALL && active !== POPULAR) list = [...list].sort((a, b) => Number(popularSet.has(b.item_code)) - Number(popularSet.has(a.item_code)))
     return list
   }, [mainItems, active, search, popular, popularSet])
 
@@ -285,10 +345,11 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
             <div className="grid content-start gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: 86, gridAutoFlow: 'dense' }}>
               {filteredItems.map((item) => {
                 const c = groupColor(item.item_group)
-                const big = !search && popularSet.has(item.item_name)
+                const big = !search && popularSet.has(item.item_code)
+                const pinned = !search && active === POPULAR && pinnedSet.has(item.item_code)
                 const qty = inCart[item.item_code] || 0
                 return (
-                  <button key={item.item_code} type="button"
+                  <button key={item.item_code} type="button" data-pinned={pinned ? '1' : undefined}
                     onClick={() => { if (longPressed.current) { longPressed.current = false; return } handleItemClick(item) }}
                     onPointerDown={() => pressStart(item)} onPointerUp={pressEnd} onPointerLeave={pressEnd}
                     className="press relative flex h-[86px] items-center gap-2.5 rounded-md bg-white py-[9px] pl-3 pr-2.5 text-start text-n-ink"
@@ -302,6 +363,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
                       <span className="flex flex-shrink-0 items-baseline gap-1.5 leading-none">
                         <span className={cn('cond num font-semibold', big ? 'text-[19px]' : 'text-[17px]')}>{money(item.rate)}</span>
                         {!!item.has_variants && <span className="text-xs text-n-muted">{t('choose')}</span>}
+                        {pinned && <span className="ms-auto"><PinMark /></span>}
                       </span>
                     </span>
                     {qty > 0 && <span className="cond num absolute end-1.5 top-1.5 flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-n-deep px-[5px] text-sm font-bold text-white">{qty}</span>}
@@ -314,16 +376,17 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
               {filteredItems.map((item) => {
                 const c = groupColor(item.item_group)
                 const qty = inCart[item.item_code] || 0
+                const pinned = !search && active === POPULAR && pinnedSet.has(item.item_code)
                 return (
                   <div key={item.item_code} className="flex items-stretch gap-1.5">
-                    <button type="button" onClick={() => handleItemClick(item)}
+                    <button type="button" data-pinned={pinned ? '1' : undefined} onClick={() => handleItemClick(item)}
                       className="press flex min-h-[64px] flex-1 items-center gap-3 rounded-md bg-white px-3 py-2 text-start text-n-ink"
                       style={{ boxShadow: `inset 4px 0 0 ${c}, 0 1px 2px rgba(60,45,20,.12)`, outline: qty ? `2px solid ${C.deep}` : undefined, outlineOffset: -2 }}>
                       {item.image
                         ? <ItemImage item={item} className="h-12 w-12 flex-shrink-0 rounded-md object-cover" />
                         : <span className="cond flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-md text-2xl font-bold text-white" style={{ background: c }}>{item.item_name.charAt(0)}</span>}
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span dir={lang === 'ar' ? 'rtl' : 'ltr'} className={cn('truncate text-[15px] font-semibold', lang === 'ar' && 'text-right')}>{itemName(item)}</span>
+                        <span dir={lang === 'ar' ? 'rtl' : 'ltr'} className={cn('flex items-center gap-1.5 truncate text-[15px] font-semibold', lang === 'ar' && 'text-right')}>{pinned && <PinMark />}<span className="truncate">{itemName(item)}</span></span>
                         {lang === 'both' && item.item_name_ar && <span dir="rtl" className="truncate text-right text-[13px] text-n-muted">{item.item_name_ar}</span>}
                         {showDescription && item.description && <span className="truncate text-xs text-n-muted">{item.description}</span>}
                         {item.item_group && <span className="text-xs text-n-muted">{item.item_group}{item.has_variants ? ' · choose a size' : ''}</span>}

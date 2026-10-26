@@ -11,8 +11,9 @@ import { BrowserWindow } from 'electron'
 const ARABIC_REGEX = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/
 
 let offscreenWin: BrowserWindow | null = null
+let ready: Promise<void> | null = null
 
-function getOffscreenWindow(): BrowserWindow {
+function getOffscreenWindow(): { win: BrowserWindow; ready: Promise<void> } {
   if (!offscreenWin || offscreenWin.isDestroyed()) {
     offscreenWin = new BrowserWindow({
       width: 800,
@@ -23,15 +24,24 @@ function getOffscreenWindow(): BrowserWindow {
         contextIsolation: false
       }
     })
-    offscreenWin.loadURL('about:blank')
+    // Wait for the blank page before the first executeJavaScript (it used to race on the first print)
+    ready = offscreenWin.loadURL('about:blank').then(() => undefined, () => undefined)
   }
-  return offscreenWin
+  return { win: offscreenWin, ready: ready! }
+}
+
+/** Create the offscreen renderer at startup and draw one line, so the first KOT doesn't pay for it. */
+export async function warmArabicRenderer(): Promise<void> {
+  const t0 = Date.now()
+  await renderBatch([{ text: 'تجربة', bold: false, doubleSize: false, align: 'right' }], 576)
+  console.log(`[Print] Arabic renderer warm in ${Date.now() - t0} ms`)
 }
 
 export function cleanupRenderer(): void {
   if (offscreenWin && !offscreenWin.isDestroyed()) {
     offscreenWin.destroy()
     offscreenWin = null
+    ready = null
   }
 }
 
@@ -80,83 +90,67 @@ interface RenderOptions {
   align?: 'left' | 'center' | 'right'
 }
 
-/** Render a line of Arabic text as an ESC/POS raster bitmap */
-async function renderArabicLine(
-  text: string,
-  dotsWidth: number,
-  options: RenderOptions = {}
-): Promise<Buffer> {
-  const win = getOffscreenWindow()
-  const fontSize = options.doubleSize ? 36 : 22
-  const lineHeight = Math.ceil(fontSize * 1.5)
-  const bold = options.bold ? 'bold ' : ''
-  const align = options.align || 'right'
+interface LineJob { text: string; bold: boolean; doubleSize: boolean; align: 'left' | 'center' | 'right' }
 
-  // Escape text for safe embedding in JavaScript string
-  const escaped = text
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '')
+// Rendered lines, by text + style + width. Item names repeat across tickets all day.
+const cache = new Map<string, Buffer>()
+const CACHE_MAX = 600
+const keyOf = (j: LineJob, w: number) => `${w}|${j.bold ? 1 : 0}${j.doubleSize ? 1 : 0}${j.align}|${j.text}`
 
-  let alignX: number
-  if (align === 'center') alignX = Math.floor(dotsWidth / 2)
-  else if (align === 'left') alignX = 10
-  else alignX = dotsWidth - 10
-
-  const canvasAlign = align === 'right' ? 'right' : align
-
-  const script = `
-    (function() {
-      var canvas = document.createElement('canvas');
-      canvas.width = ${dotsWidth};
-      canvas.height = ${lineHeight};
-      var ctx = canvas.getContext('2d');
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = 'black';
-      ctx.font = "${bold}${fontSize}px Tahoma, Arial, 'Geeza Pro', 'Noto Sans Arabic', sans-serif";
-      ctx.direction = 'rtl';
-      ctx.textAlign = '${canvasAlign}';
-      ctx.textBaseline = 'middle';
-      ctx.fillText("${escaped}", ${alignX}, ${Math.floor(lineHeight / 2)});
-      var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      var mono = new Array(canvas.width * canvas.height);
-      for (var i = 0; i < imageData.data.length; i += 4) {
-        var gray = (imageData.data[i] + imageData.data[i+1] + imageData.data[i+2]) / 3;
-        mono[i / 4] = gray < 128 ? 1 : 0;
-      }
-      return { w: canvas.width, h: canvas.height, px: mono };
-    })()
-  `
-
-  const result = await win.webContents.executeJavaScript(script)
-  return monoToEscPosRaster(result.px, result.w, result.h)
+/**
+ * Render many Arabic lines in ONE executeJavaScript round trip (it used to be one per line).
+ * The page packs each line into ESC/POS raster bytes itself, so only small arrays come back.
+ */
+async function renderBatch(jobs: LineJob[], dotsWidth: number): Promise<Buffer[]> {
+  const out: (Buffer | null)[] = jobs.map((j) => cache.get(keyOf(j, dotsWidth)) || null)
+  const todo: LineJob[] = []
+  const todoKeys: string[] = []
+  jobs.forEach((j, i) => { if (!out[i]) { const k = keyOf(j, dotsWidth); if (!todoKeys.includes(k)) { todoKeys.push(k); todo.push(j) } } })
+  if (todo.length) {
+    const { win, ready: loaded } = getOffscreenWindow()
+    await loaded
+    const specs = todo.map((j) => {
+      const fontSize = j.doubleSize ? 36 : 22
+      const lineHeight = Math.ceil(fontSize * 1.5)
+      const x = j.align === 'center' ? Math.floor(dotsWidth / 2) : j.align === 'left' ? 10 : dotsWidth - 10
+      return { t: j.text, f: `${j.bold ? 'bold ' : ''}${fontSize}px Tahoma, Arial, 'Geeza Pro', 'Noto Sans Arabic', sans-serif`, h: lineHeight, x, a: j.align }
+    })
+    const script = `
+      (function(specs, W) {
+        var canvas = document.createElement('canvas');
+        var ctx = canvas.getContext('2d', { willReadFrequently: true });
+        var bpl = Math.ceil(W / 8);
+        return specs.map(function(s) {
+          canvas.width = W; canvas.height = s.h;
+          ctx.fillStyle = 'white'; ctx.fillRect(0, 0, W, s.h);
+          ctx.fillStyle = 'black'; ctx.font = s.f; ctx.direction = 'rtl';
+          ctx.textAlign = s.a; ctx.textBaseline = 'middle';
+          ctx.fillText(s.t, s.x, Math.floor(s.h / 2));
+          var d = ctx.getImageData(0, 0, W, s.h).data;
+          var bytes = new Array(bpl * s.h).fill(0);
+          for (var y = 0; y < s.h; y++) for (var x = 0; x < W; x++) {
+            var i = (y * W + x) * 4;
+            if ((d[i] + d[i+1] + d[i+2]) / 3 < 128) bytes[y * bpl + (x >> 3)] |= 1 << (7 - (x & 7));
+          }
+          return { w: W, h: s.h, b: bytes };
+        });
+      })(${JSON.stringify(specs)}, ${dotsWidth})
+    `
+    const results: { w: number; h: number; b: number[] }[] = await win.webContents.executeJavaScript(script)
+    results.forEach((r, k) => {
+      const buf = packedToRaster(r.b, r.w, r.h)
+      if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value as string)
+      cache.set(todoKeys[k], buf)
+    })
+    jobs.forEach((j, i) => { if (!out[i]) out[i] = cache.get(keyOf(j, dotsWidth))! })
+  }
+  return out as Buffer[]
 }
 
-/** Convert monochrome pixel array to ESC/POS GS v 0 raster command */
-function monoToEscPosRaster(pixels: number[], width: number, height: number): Buffer {
+function packedToRaster(bytes: number[], width: number, height: number): Buffer {
   const bytesPerLine = Math.ceil(width / 8)
-  const xL = bytesPerLine & 0xff
-  const xH = (bytesPerLine >> 8) & 0xff
-  const yL = height & 0xff
-  const yH = (height >> 8) & 0xff
-
-  // GS v 0 m xL xH yL yH d1...dk
-  const header = Buffer.from([0x1d, 0x76, 0x30, 0x00, xL, xH, yL, yH])
-
-  const bitmapData = Buffer.alloc(bytesPerLine * height)
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (pixels[y * width + x]) {
-        const byteIdx = y * bytesPerLine + Math.floor(x / 8)
-        bitmapData[byteIdx] |= 1 << (7 - (x % 8))
-      }
-    }
-  }
-
-  return Buffer.concat([header, bitmapData])
+  const header = Buffer.from([0x1d, 0x76, 0x30, 0x00, bytesPerLine & 0xff, (bytesPerLine >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff])
+  return Buffer.concat([header, Buffer.from(bytes)])
 }
 
 /**
@@ -166,7 +160,8 @@ function monoToEscPosRaster(pixels: number[], width: number, height: number): Bu
 export async function processForPrinter(templateOutput: string, paperWidth: number): Promise<Buffer> {
   const dotsWidth = getPrinterDotsWidth(paperWidth)
   const lines = templateOutput.split('\x0A')
-  const buffers: Buffer[] = []
+  const parts: (Buffer | number)[] = [] // a number is the index of an Arabic job
+  const jobs: LineJob[] = []
 
   // Track ESC/POS state across lines
   let currentAlign: 'left' | 'center' | 'right' = 'left'
@@ -180,20 +175,14 @@ export async function processForPrinter(templateOutput: string, paperWidth: numb
     const plainText = stripEscPos(line)
 
     if (containsArabic(plainText)) {
-      const isBold = line.includes('\x1BE\x01')
-      const isDouble = line.includes('\x1D!\x11')
-
-      const bitmap = await renderArabicLine(plainText.trim(), dotsWidth, {
-        bold: isBold,
-        doubleSize: isDouble,
-        align: currentAlign
-      })
-      buffers.push(bitmap)
+      parts.push(jobs.length)
+      jobs.push({ text: plainText.trim(), bold: line.includes('\x1BE\x01'), doubleSize: line.includes('\x1D!\x11'), align: currentAlign })
     } else {
       // Use latin1 encoding to preserve ESC/POS command bytes (especially > 0x7F)
-      buffers.push(Buffer.from(line + '\x0A', 'latin1'))
+      parts.push(Buffer.from(line + '\x0A', 'latin1'))
     }
   }
 
-  return Buffer.concat(buffers)
+  const bitmaps = jobs.length ? await renderBatch(jobs, dotsWidth) : []
+  return Buffer.concat(parts.map((p) => (typeof p === 'number' ? bitmaps[p] : p)))
 }

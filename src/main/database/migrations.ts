@@ -534,6 +534,12 @@ export function runMigrations(): void {
     database.run('ALTER TABLE order_items ADD COLUMN sent_at TEXT')
   }
 
+  // Additive: "Direct pay (no KOT)" marks lines that were paid without ever going to the kitchen.
+  // Nullable; set together with kot_printed = 1 so no later KOT prints them. Older versions ignore it.
+  if (!hasColumn('order_items', 'no_kot')) {
+    database.run('ALTER TABLE order_items ADD COLUMN no_kot INTEGER')
+  }
+
   // Migration 12 recreated the orders table and may have dropped columns added earlier.
   const ordersCols: [string, string][] = [
     ['waiter_id', 'TEXT'],

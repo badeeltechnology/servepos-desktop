@@ -118,6 +118,18 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
     }
     await setConfig('last_item_sync', new Date().toISOString())
 
+    // Pinned favourites for the Popular tab. Older servers lack the method: keep the previous value.
+    try {
+      const pinned = await client.getPinnedItems()
+      if (Array.isArray(pinned)) {
+        const codes = pinned.filter((c) => typeof c === 'string' && c).slice(0, 24)
+        await setConfig('pinned_items', JSON.stringify(codes))
+        counts.pinned_items = codes.length
+      }
+    } catch (e: any) {
+      console.log('[Sync] Pinned items skipped:', e?.message || e)
+    }
+
     // Sync payment methods and POS Profile details
     const posProfile = getConfig('pos_profile')
     if (posProfile) {

@@ -39,6 +39,8 @@ export default function History({ onClose, isSupervisor, cashierId, sessionId, b
   const [filter, setFilter] = useState<Filter>('all')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [orderItems, setOrderItems] = useState<any[]>([])
+  // Direct pay audit ("Paid without KOT by Mariam"), from the print log
+  const [noKotLog, setNoKotLog] = useState<any[]>([])
   const [orderPayments, setOrderPayments] = useState<any[]>([])
   const [voidTarget, setVoidTarget] = useState<any>(null)
   const [previewOrderId, setPreviewOrderId] = useState<string | null>(null)
@@ -80,6 +82,10 @@ export default function History({ onClose, isSupervisor, cashierId, sessionId, b
     ])
     setOrderItems(items)
     setOrderPayments(payments)
+    setNoKotLog([])
+    if ((items || []).some((i: any) => i.no_kot)) {
+      try { setNoKotLog(((await window.api.printLog.getForOrder(order.id)) || []).filter((l: any) => l.print_type === 'no_kot')) } catch {}
+    }
   }
 
   async function doVoidOrder(id: string, reason: string, remarks?: string, disposition?: string, approver?: string) {
@@ -248,6 +254,7 @@ export default function History({ onClose, isSupervisor, cashierId, sessionId, b
                     <div key={item.id} className="flex justify-between gap-2">
                       <div className="min-w-0">
                         <span className="font-medium">{item.qty} × {item.item_name}</span>
+                        {!!item.no_kot && <span className="ms-1.5 inline-block rounded-[3px] border border-n-edge px-1 align-[1px] text-[11px] font-bold uppercase leading-[16px] tracking-[.04em] text-n-muted">No KOT</span>}
                         {mods.map((m: any, i: number) => <p key={i} className="ml-4 text-xs text-n-muted">+ {m.name} {m.price > 0 ? `(${money(m.price)})` : ''}</p>)}
                         {item.special_instructions && <p className="ml-4 text-xs text-[#B56A00]">“{item.special_instructions}”</p>}
                       </div>
@@ -276,6 +283,9 @@ export default function History({ onClose, isSupervisor, cashierId, sessionId, b
               </div>
             )}
 
+            {noKotLog.map((l) => (
+              <div key={l.id} className="rounded-md bg-white p-3 text-xs text-n-muted shadow-tile"><b className="text-n-ink">Paid without KOT</b>{l.actor_name ? ` by ${l.actor_name}` : ''}{l.printed_at ? ` · ${timeOf(l.printed_at)}` : ''}</div>
+            ))}
             {selectedOrder.void_reason && <div className="rounded-md bg-[#F6E3DF] p-3 text-sm text-n-red"><b>Void reason:</b> {selectedOrder.void_reason}</div>}
             {selectedOrder.sync_error && <div className="rounded-md bg-[#FBEFD9] p-3 text-xs text-[#8A5A00]"><b>Sync error:</b> {selectedOrder.sync_error}</div>}
             {selectedOrder.erpnext_docname && <div className="rounded-md bg-white p-3 text-xs text-n-muted"><b>ERPNext:</b> {selectedOrder.erpnext_docname}</div>}

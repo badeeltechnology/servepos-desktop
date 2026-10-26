@@ -2,11 +2,13 @@ import { app, shell, BrowserWindow, nativeImage, ipcMain, dialog, protocol, net 
 import { join } from 'path'
 import { exec } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { autoUpdater } from 'electron-updater'
 import { initDatabase, closeDatabase } from './database/schema'
 import { registerIpcHandlers, drainIpcHandlers, resumeIpcHandlers } from './ipc/handlers'
 import { startAutoSync, stopAndDrainSync } from './sync/sync-engine'
 import { getImageDir } from './sync/image-cache'
+import { startPrintWorker, stopPrintWorker } from './print/printer'
+import { warmArabicRenderer } from './print/arabic-bitmap'
+import { initUpdater } from './updater'
 
 // Register scheme as privileged before app ready
 protocol.registerSchemesAsPrivileged([
@@ -96,37 +98,24 @@ if (ownsInstance) app.whenReady().then(async () => {
 
   createWindow()
 
-  // Auto-update (production only)
-  if (!is.dev) {
-    autoUpdater.autoDownload = false
-    autoUpdater.autoInstallOnAppQuit = true
+  // Printing: start the Windows print worker and the Arabic renderer now, not on the first KOT
+  startPrintWorker()
+  warmArabicRenderer().catch(() => {})
 
-    autoUpdater.on('update-available', (info) => {
-      dialog.showMessageBox(mainWindow!, {
-        type: 'info',
-        title: 'Update Available',
-        message: `ServePOS v${info.version} is available. Download now?`,
-        buttons: ['Download', 'Later'],
-        defaultId: 0
-      }).then(({ response }) => {
-        if (response === 0) autoUpdater.downloadUpdate()
-      })
-    })
-
-    autoUpdater.on('update-downloaded', () => {
-      dialog.showMessageBox(mainWindow!, {
-        type: 'info',
-        title: 'Update Ready',
-        message: 'Update has been downloaded. Restart now to install?',
-        buttons: ['Restart', 'Later'],
-        defaultId: 0
-      }).then(({ response }) => {
-        if (response === 0) autoUpdater.quitAndInstall()
-      })
-    })
-
-    autoUpdater.checkForUpdates().catch(() => {})
-  }
+  // In-app updates: checks on the chosen channel, never downloads or installs by itself.
+  // The renderer drives download and restart (Supervisor settings → Updates).
+  initUpdater({
+    prepareForInstall: async () => {
+      try {
+        await Promise.all([drainIpcHandlers(), stopAndDrainSync()])
+        await closeDatabase()
+        shutdownComplete = true
+      } catch (error) {
+        resumeIpcHandlers()
+        throw error
+      }
+    }
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -151,6 +140,7 @@ app.on('before-quit', event => {
   void (async () => {
     try {
       await Promise.all([drainIpcHandlers(), stopAndDrainSync()])
+      stopPrintWorker()
       await closeDatabase()
       shutdownComplete = true
       app.quit()

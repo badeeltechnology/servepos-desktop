@@ -5,6 +5,8 @@ import { Btn, Dialog, Cap, Field, Keypad, PinDots, Dot, staffColor, initial, Key
 import { Clock } from '../ui/hosts'
 import { cn } from '../lib/utils'
 import { useT, useLang } from '../stores/i18n'
+import { useUpdates, hasUpdate } from '../stores/updates'
+import UpdatesPanel from '../components/UpdatesPanel'
 
 // Sign in: who is on the till (optional, a hint) + a 6–8 digit PIN that verifies itself.
 // "Supervisor tools" opens the admin login (same credentials as before).
@@ -17,7 +19,8 @@ export default function Login() {
   const [adminPassword, setAdminPassword] = useState('')
   const [adminError, setAdminError] = useState('')
   const [appVersion, setAppVersion] = useState('')
-  const [updateInfo, setUpdateInfo] = useState<any>(null)
+  const updates = useUpdates((s) => s.state)
+  const [showUpdate, setShowUpdate] = useState(false)
   const [staff, setStaff] = useState<any[]>([])
   const [who, setWho] = useState<any>(null)
   const [shiftOpen, setShiftOpen] = useState<boolean | null>(null)
@@ -44,9 +47,8 @@ export default function Login() {
     try {
       const version = await window.api.app.getVersion()
       setAppVersion(version)
-      const update = await window.api.app.checkForUpdate()
-      if (update?.hasUpdate) setUpdateInfo(update)
     } catch { /* offline */ }
+    useUpdates.getState().init()
   }
 
   function signIn(user: any) {
@@ -109,7 +111,7 @@ export default function Login() {
 
   // Physical keyboard / USB keypad
   useEffect(() => {
-    if (showAdminLogin) return
+    if (showAdminLogin || showUpdate) return
     const h = (e: KeyboardEvent) => {
       if (/^[0-9]$/.test(e.key)) handlePinInput(e.key)
       else if (e.key === 'Backspace') handleBackspace()
@@ -118,7 +120,7 @@ export default function Login() {
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [handlePinInput, handleBackspace, handleSubmit, showAdminLogin])
+  }, [handlePinInput, handleBackspace, handleSubmit, showAdminLogin, showUpdate])
 
   function onKey(k: KeypadKey) {
     if (k === 'back') handleBackspace()
@@ -172,9 +174,11 @@ export default function Login() {
           <Btn variant="ghostDark" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} title="Language">{lang === 'ar' ? 'English' : 'العربية'}</Btn>
           <span className="text-xs text-n-steel">v{appVersion}</span>
         </div>
-        {updateInfo && (
-          <button type="button" onClick={() => window.open(updateInfo.releaseUrl, '_blank')} className="mt-2 self-start text-xs font-semibold text-n-gold">
-            Update available: v{updateInfo.latestVersion}
+        {hasUpdate(updates) && (
+          <button type="button" onClick={() => setShowUpdate(true)} title={`ServePOS v${updates!.version}`}
+            className="press mt-3 flex h-9 items-center gap-2 self-start rounded-full border border-n-gold/60 px-3 text-xs font-semibold text-n-gold">
+            <Dot color={updates!.status === 'downloaded' ? '#5FD38D' : '#FFD27A'} />
+            {updates!.status === 'downloaded' ? t('Update ready — ask a supervisor') : t('Update available — ask a supervisor')}
           </button>
         )}
       </section>
@@ -211,9 +215,14 @@ export default function Login() {
         </div>
       </section>
 
+      {showUpdate && (
+        <UpdateDialog onClose={() => setShowUpdate(false)}
+          onAdmin={() => { useUpdates.getState().requestOpen(); setShowUpdate(false); setShowAdminLogin(true) }} />
+      )}
+
       {/* Admin login */}
       {showAdminLogin && (
-        <Dialog onClose={() => { setShowAdminLogin(false); setAdminUsername(''); setAdminPassword(''); setAdminError('') }} className="w-[420px] text-n-ink" label="Supervisor tools">
+        <Dialog onClose={() => { setShowAdminLogin(false); setAdminUsername(''); setAdminPassword(''); setAdminError(''); useUpdates.getState().takeOpenRequest() }} className="w-[420px] text-n-ink" label="Supervisor tools">
           <div className="flex flex-col gap-3 p-5">
             <span className="flex flex-col">
               <span className="cond text-[28px] font-bold leading-none text-n-deep">Supervisor tools</span>
@@ -228,12 +237,74 @@ export default function Login() {
             {adminError && <p className="text-sm font-semibold text-n-red">{adminError}</p>}
           </div>
           <div className="flex gap-2 bg-white px-4 py-3">
-            <Btn size="lg" variant="outline" onClick={() => { setShowAdminLogin(false); setAdminUsername(''); setAdminPassword(''); setAdminError('') }}>Cancel</Btn>
+            <Btn size="lg" variant="outline" onClick={() => { setShowAdminLogin(false); setAdminUsername(''); setAdminPassword(''); setAdminError(''); useUpdates.getState().takeOpenRequest() }}>Cancel</Btn>
             <span className="flex-1" />
             <Btn size="lg" variant="deep" onClick={handleAdminLogin}>Sign in</Btn>
           </div>
         </Dialog>
       )}
     </div>
+  )
+}
+
+// From the sign-in chip: a supervisor confirms with their PIN and gets the Updates section
+// right here (no sign-in, no shift needed); the admin can use Supervisor tools instead.
+function UpdateDialog({ onClose, onAdmin }: { onClose: () => void; onAdmin: () => void }) {
+  const state = useUpdates((s) => s.state)
+  const [pin, setPin] = useState('')
+  const [err, setErr] = useState('')
+  const [approved, setApproved] = useState<string | null>(null)
+  const t = useT()
+
+  async function tryPin(p: string) {
+    if (p.length < 6) return
+    const u = await window.api.users.verifyPin(p).catch(() => null)
+    if (u && u.role === 'supervisor') { setApproved(u.full_name || u.name); setPin(''); setErr('') }
+    else if (u) { setErr(t('Only a supervisor can install updates')); setPin('') }
+    else if (p.length >= 8) { setErr(t('Invalid PIN')); setPin('') }
+  }
+  function onKey(k: KeypadKey) {
+    setErr('')
+    if (k === 'back') setPin((x) => x.slice(0, -1))
+    else if (k === 'C') setPin('')
+    else if (k !== '.' && pin.length < 8) { const n = pin + k; setPin(n); void tryPin(n) }
+  }
+  useEffect(() => {
+    if (approved) return
+    const h = (e: KeyboardEvent) => {
+      if (/^[0-9]$/.test(e.key)) onKey(e.key as KeypadKey)
+      else if (e.key === 'Backspace') onKey('back')
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  })
+
+  return (
+    <Dialog onClose={onClose} className={cn('text-n-ink', approved ? 'w-[760px]' : 'w-[420px]')} label="Software update">
+      <div className="flex flex-col gap-3 p-5">
+        <span className="flex flex-col">
+          <span className="cond text-[28px] font-bold leading-none text-n-deep">
+            {state?.status === 'downloaded' ? t('Update ready') : t('Update available')}{state?.version ? ` · v${state.version}` : ''}
+          </span>
+          <span className="text-sm text-n-muted">
+            {approved ? t('Approved by {name}', { name: approved }) : t('A supervisor installs updates. Enter a supervisor PIN to continue.')}
+          </span>
+        </span>
+        {approved ? (
+          <UpdatesPanel compact />
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            <PinDots count={Math.max(6, pin.length)} filled={pin.length} />
+            <span className={cn('min-h-[18px] text-sm', err ? 'font-semibold text-n-red' : 'text-n-muted')}>{err || t('Supervisor PIN')}</span>
+            <Keypad className="h-[300px] w-[262px]" onKey={onKey} />
+          </div>
+        )}
+      </div>
+      <div className="flex gap-2 bg-white px-4 py-3">
+        {!approved && <Btn size="lg" variant="plain" onClick={onAdmin}>{t('Admin sign-in')}</Btn>}
+        <span className="flex-1" />
+        <Btn size="lg" variant="outline" onClick={onClose}>{t('Close')}</Btn>
+      </div>
+    </Dialog>
   )
 }

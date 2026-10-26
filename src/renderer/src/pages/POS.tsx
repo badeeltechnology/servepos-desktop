@@ -18,6 +18,7 @@ import SupervisorSettings from './SupervisorSettings'
 import CoordinatorScreen from './CoordinatorScreen'
 import OpenShift from '../components/OpenShift'
 import CloseShift from '../components/CloseShift'
+import SupervisorPin from '../components/SupervisorPin'
 import { ActiveOrderRow, orderLabel, stageOf, STAGE } from '../components/orderStatus'
 import FloorGrid, { TileInfo, tileInfo } from '../components/FloorGrid'
 import TablePicker from '../components/TablePicker'
@@ -72,6 +73,12 @@ export default function POS() {
   const [afterSend, setAfterSend] = useState<'floor' | 'stay'>('floor')
   // Config quick_sale_kot = 0: a takeaway / delivery paid straight away prints no KOT (counter cafés)
   const [quickSaleNoKot, setQuickSaleNoKot] = useState(false)
+  // Receipt config direct_pay = all (default) | supervisor | off: "Direct pay (no KOT)" on the ticket
+  const [directPay, setDirectPay] = useState<'all' | 'supervisor' | 'off'>('all')
+  // Set while the payment screen was opened by Direct pay: who did it and who approved (null = normal Pay)
+  const directRef = useRef<{ approver: string | null } | null>(null)
+  const [direct, setDirect] = useState(false)
+  const [pinAsk, setPinAsk] = useState<null | ((name: string | null) => void)>(null)
   afterSendRef.current = afterSend
   useTick(30000)
 
@@ -173,6 +180,7 @@ export default function POS() {
     setTaxLabel(config.tax_label || 'VAT')
     // Hold = save without sending (default). hold_sends_kot = 1 restores "Hold prints the KOT".
     holdSendsKot.current = config.hold_sends_kot === '1'
+    setDirectPay(config.direct_pay === 'off' || config.direct_pay === 'supervisor' ? config.direct_pay : 'all')
     // Waiter-app orders: auto-accept after 5 s unless switched off in admin (default on)
     setAutoAccept(config.waiter_order_auto_accept !== '0')
   }
@@ -261,13 +269,18 @@ export default function POS() {
       const now = new Date().toISOString()
       const rows = (dbItems || []).filter((i: any) => i.kot_printed || kotOk)
       useCartStore.getState().setKotPrinted(rows.map((i: any) => i.id), Object.fromEntries(rows.map((i: any) => [i.id, i.sent_at || now])))
+      // A printer refused: lines the DB doesn't have as printed go back to "not sent" (optimistic send)
+      if (!kotOk) {
+        const printed = new Set((dbItems || []).filter((i: any) => i.kot_printed).map((i: any) => i.id))
+        useCartStore.setState((st) => ({ items: st.items.map((l) => (l.dbId && l.kotPrinted && !printed.has(l.dbId) ? { ...l, kotPrinted: false, sentAt: null } : l)) }))
+      }
     } catch {
       if (kotOk) { const ids = useCartStore.getState().items.filter((i) => i.dbId).map((i) => i.dbId!); useCartStore.getState().setKotPrinted(ids, Object.fromEntries(ids.map((id) => [id, new Date().toISOString()]))) }
     }
   }
 
   // Send: place order & print KOT (only unprinted items go to the kitchen)
-  const handlePlaceOrder = useCallback(async (opts?: { stay?: boolean }): Promise<boolean> => {
+  const handlePlaceOrder = useCallback(async (opts?: { stay?: boolean; awaitPrint?: boolean }): Promise<boolean> => {
     if (useCartStore.getState().items.length === 0 || busy.current) return false
     busy.current = true
     let ok = false
@@ -290,29 +303,35 @@ export default function POS() {
         await window.api.orders.update(order.id, { kotPrinted: 1 })
       }
 
-      // Print KOT
-      let kotResult: any
-      try { kotResult = await window.api.print.kots(order.id, user?.name) } catch (e: any) { kotResult = { success: false, errors: [e.message] } }
-      const kotOk = !(kotResult?.success === false || (kotResult?.errors && kotResult.errors.length > 0))
-
-      // Auto-print waiter copy if enabled
-      try {
-        const rc = await window.api.receiptConfig.getAll()
-        if (rc.auto_print_waiter_copy === '1') {
-          await window.api.print.waiterCopy(order.id)
-        }
-      } catch {}
-
-      setActiveOrderId(order.id)
-      touch(order.id)
-      await syncSentFlags(order.id, kotOk)
-      setOrderMeta({ number: order.order_number, createdAt: order.created_at, sentAt: timeOf(new Date().toISOString()) })
-      if (!kotOk) {
-        const oid = order.id
-        toast.sticky(`Order placed but KOT print failed: ${kotResult?.errors?.join(', ') || 'Unknown error'}`, () => retryKot(oid))
-      } else {
-        toast.success(order.table_name ? `${order.table_name} ${t('sent to the kitchen')}` : `${t('Sent to the kitchen')} · ${order.order_number}`)
-      }
+      // Optimistic send: the lines show as sent and the till moves on at once; the KOT prints in the
+      // background. The DB only marks lines printed when a printer accepts them, so if a printer fails
+      // the sticky error + Retry prints exactly what is missing, and the flags are put back here.
+      const oid = order.id
+      const now = new Date().toISOString()
+      const unsentIds = useCartStore.getState().items.filter((i) => i.dbId && !i.kotPrinted).map((i) => i.dbId!)
+      useCartStore.getState().setKotPrinted(unsentIds, Object.fromEntries(unsentIds.map((id) => [id, now])))
+      setActiveOrderId(oid)
+      touch(oid)
+      setOrderMeta({ number: order.order_number, createdAt: order.created_at, sentAt: timeOf(now) })
+      const where = order.table_name ? `${order.table_name} ${t('sent to the kitchen')}` : `${t('Sent to the kitchen')} · ${order.order_number}`
+      const printing = (async () => {
+        const t0 = performance.now()
+        let kotResult: any
+        try { kotResult = await window.api.print.kots(oid, user?.name) } catch (e: any) { kotResult = { success: false, errors: [e.message] } }
+        const kotOk = !(kotResult?.success === false || (kotResult?.errors && kotResult.errors.length > 0))
+        console.log(`[Print] Send ${order.table_name || order.order_number}: KOT back in ${Math.round(performance.now() - t0)} ms`)
+        // Auto-print waiter copy if enabled
+        try {
+          const rc = await window.api.receiptConfig.getAll()
+          if (rc.auto_print_waiter_copy === '1') await window.api.print.waiterCopy(oid)
+        } catch {}
+        if (activeRef.current === oid) await syncSentFlags(oid, kotOk)
+        if (!kotOk) toast.sticky(`${order.table_name || order.order_number}: KOT print failed: ${kotResult?.errors?.join(', ') || 'Unknown error'}`, () => retryKot(oid))
+        loadActiveOrders()
+        return kotOk
+      })()
+      if (!opts?.awaitPrint) toast.success(where)
+      else if (await printing) toast.success(where)
       loadActiveOrders()
       ok = true
       // Dine-in at a table: back to the floor so the next guest isn't rung onto this table (review F07)
@@ -375,10 +394,33 @@ export default function POS() {
         ok: t('Send and pay'), cancel: t('Back')
       })
       if (!go) return
-      if (!(await placeRef.current({ stay: true }))) return
+      // Pay waits for the printer, so the payment reads what the kitchen really got
+      if (!(await placeRef.current({ stay: true, awaitPrint: true }))) return
     }
     setShowPayment(true)
   }, [quickSaleNoKot])
+
+  // Direct pay (no KOT): straight to payment, no kitchen prompt. On completion the unsent lines are
+  // marked served without a KOT (so no later KOT prints them) and the till logs who did it. With
+  // direct_pay = supervisor a cashier needs a supervisor PIN first. Cancelling the payment marks nothing.
+  const handleDirectPay = useCallback(async () => {
+    const c = useCartStore.getState()
+    if (c.items.length === 0 || busy.current || directPay === 'off') return
+    let approver: string | null = null
+    if (directPay === 'supervisor' && user?.role !== 'supervisor') {
+      approver = await new Promise<string | null>((resolve) => setPinAsk(() => resolve))
+      setPinAsk(null)
+      if (!approver) return
+    }
+    directRef.current = { approver }
+    setDirect(true)
+    setShowPayment(true)
+  }, [directPay, user])
+  function closePayment() {
+    directRef.current = null
+    setDirect(false)
+    setShowPayment(false)
+  }
 
   const payRef = useRef(handlePay)
   payRef.current = handlePay
@@ -409,6 +451,7 @@ export default function POS() {
         }
 
         if (!order) throw new Error('Order not found')
+        const directPaid = directRef.current
 
         // Compute subtotal from order_items (source of truth for receipt)
         const dbItems = await window.api.orderItems.get(orderId!)
@@ -443,6 +486,13 @@ export default function POS() {
           completedAt: new Date().toISOString()
         })
 
+        // Direct pay: what the kitchen never got is served without a KOT (never prints later), logged
+        let noKotCount = 0
+        if (directPaid) {
+          const who = `${user?.name || 'Cashier'}${directPaid.approver && directPaid.approver !== user?.name ? ` (approved by ${directPaid.approver})` : ''}`
+          try { noKotCount = (await window.api.orderItems.markNoKot(orderId!, who)) || 0 } catch (e: any) { toast.error(`Could not mark the items as served without KOT: ${e?.message || e}`) }
+        }
+
         // Free the table the order is on (the DB row is the truth after a move)
         const freeTable = (order && order.table_name) || c.tableName
         if (freeTable) {
@@ -472,7 +522,7 @@ export default function POS() {
           }
           toast.sticky(`${order.order_number} paid, but the receipt did not print: ${receiptResult?.error || 'check the printer'}`, retryReceipt)
         } else {
-          toast.success(`${order.order_number} paid${receiptCopies > 0 ? ' · receipt printed' : ''}`)
+          toast.success(`${order.order_number} paid${receiptCopies > 0 ? ' · receipt printed' : ''}${noKotCount ? ' · no KOT' : ''}`)
         }
         return true
       } catch (err: any) {
@@ -874,6 +924,7 @@ export default function POS() {
                 quickSaleNoKot={quickSaleNoKot}
                 onUpdateOnly={activeOrderId ? handleUpdateOnly : undefined}
                 onPay={handlePay}
+                onDirectPay={directPay === 'off' ? undefined : handleDirectPay}
                 onHold={() => handleHoldOrder()}
                 onNewOrder={handleNewOrder}
                 onOpenOrder={handleResumeOrder}
@@ -950,10 +1001,15 @@ export default function POS() {
           orderWaiterName={cart.waiterName}
           guests={cart.guests}
           processing={processing}
+          noKot={direct}
           onComplete={handlePaymentComplete}
-          onCancel={() => setShowPayment(false)}
-          onDone={() => { setShowPayment(false); goHome() }}
+          onCancel={closePayment}
+          onDone={() => { closePayment(); goHome() }}
         />
+      )}
+      {pinAsk && (
+        <SupervisorPin title={t('Direct pay (no KOT)')} body={t('Nothing goes to the kitchen; only the receipt prints. A supervisor approves this.')}
+          onApproved={(u) => pinAsk(u.name)} onCancel={() => pinAsk(null)} />
       )}
 
       {/* Floor dialogs */}

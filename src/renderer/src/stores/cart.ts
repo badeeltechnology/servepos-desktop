@@ -23,6 +23,7 @@ export interface CartItem {
   amount: number // computed: (rate * qty) - discounts + modifierTotal
   kotPrinted?: boolean // line already went to the kitchen (order_items.kot_printed)
   sentAt?: string | null // when it went (order_items.sent_at, SQLite UTC); groups the ticket into rounds
+  noKot?: boolean // served without a KOT ("Direct pay"; order_items.no_kot)
 }
 
 type NewItem = Omit<CartItem, 'id' | 'amount' | 'discountAmount' | 'discountPercent' | 'modifierTotal' | 'specialInstructions' | 'modifiers'> & { modifiers?: CartModifier[]; specialInstructions?: string }
@@ -115,7 +116,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       specialInstructions: item.specialInstructions || '',
       amount: calcItemAmount({ rate: item.rate, qty: item.qty, discountPercent: 0, discountAmount: 0, modifiers }),
       kotPrinted: !!item.kotPrinted,
-      sentAt: (item as any).sentAt ?? null
+      sentAt: (item as any).sentAt ?? null,
+      noKot: !!(item as any).noKot
     }
     set((state) => ({ items: [...state.items, newItem] }))
     return id

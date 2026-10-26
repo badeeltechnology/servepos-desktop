@@ -2,13 +2,17 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '../stores/auth'
 import { resolveCode, resolveDecimals } from '../ui/currency'
 import { askConfirm, toast } from '../stores/ui'
-import { ArrowLeft, Save, Printer, Image, FileText, Users, Settings, Database, Loader2, Wifi } from 'lucide-react'
+import { ArrowLeft, Save, Printer, Image, FileText, Users, Settings, Database, Loader2, Wifi, Download } from 'lucide-react'
+import UpdatesPanel from '../components/UpdatesPanel'
+import { useUpdates } from '../stores/updates'
 
-type Tab = 'print-format' | 'system' | 'supervisor'
+type Tab = 'print-format' | 'system' | 'updates' | 'supervisor'
 
 export default function AdminPanel() {
   const { setAdminMode } = useAuthStore()
-  const [activeTab, setActiveTab] = useState<Tab>('print-format')
+  // The sign-in screen's update chip opens the panel straight on Updates.
+  const [activeTab, setActiveTab] = useState<Tab>(() => useUpdates.getState().openRequested ? 'updates' : 'print-format')
+  useEffect(() => { useUpdates.getState().takeOpenRequest() }, [])
   const [saving, setSaving] = useState(false)
 
   // Receipt config state
@@ -44,6 +48,7 @@ export default function AdminPanel() {
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'print-format', label: 'Print Format', icon: <FileText className="h-4 w-4" /> },
     { key: 'system', label: 'System', icon: <Settings className="h-4 w-4" /> },
+    { key: 'updates', label: 'Updates', icon: <Download className="h-4 w-4" /> },
     { key: 'supervisor', label: 'Supervisor', icon: <Users className="h-4 w-4" /> }
   ]
 
@@ -625,6 +630,22 @@ export default function AdminPanel() {
                   <p className="text-xs text-gray-400">Off (default): Hold saves the order and its new items stay “Not sent” until Send. On: Hold also prints the KOT (the old behaviour).</p>
                 </div>
               </label>
+              <div className="mt-3 text-sm">
+                <span className="font-medium">Direct pay (no KOT)</span>
+                <p className="text-xs text-gray-400">A “Direct pay” button next to Pay opens the payment straight away: only the receipt prints, the kitchen gets nothing, and the items are logged as served without KOT.</p>
+                <div className="mt-1.5 flex flex-wrap gap-4" role="radiogroup" aria-label="Direct pay (no KOT)">
+                  {[
+                    { v: 'all', label: 'Everyone' },
+                    { v: 'supervisor', label: 'Supervisor PIN for cashiers' },
+                    { v: 'off', label: 'Off (hide the button)' }
+                  ].map(({ v, label }) => (
+                    <label key={v} className="flex items-center gap-2 text-sm">
+                      <input type="radio" name="direct_pay" checked={(receiptConfig.direct_pay || 'all') === v} onChange={() => updateField('direct_pay', v)} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
 
               {/* Print Copy Count */}
               <h4 className="mb-3 mt-5 text-xs font-semibold uppercase text-gray-400">Number of Copies</h4>
@@ -665,6 +686,8 @@ export default function AdminPanel() {
         )}
 
         {activeTab === 'system' && <SystemSettings />}
+
+        {activeTab === 'updates' && <UpdatesPanel />}
 
         {activeTab === 'supervisor' && <SupervisorManagement />}
       </div>
@@ -855,8 +878,6 @@ function SupervisorManagement() {
 
 function SystemSettings() {
   const [version, setVersion] = useState('')
-  const [updateInfo, setUpdateInfo] = useState<any>(null)
-  const [checking, setChecking] = useState(false)
   const [config, setConfig] = useState<Record<string, string>>({})
   const [deleteStep, setDeleteStep] = useState(0) // 0=none, 1=first confirm, 2=type confirm
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
@@ -873,13 +894,6 @@ function SystemSettings() {
     setConfig(c)
   }
 
-  async function checkUpdate() {
-    setChecking(true)
-    const info = await window.api.app.checkForUpdate()
-    setUpdateInfo(info)
-    setChecking(false)
-  }
-
   async function saveConfig(key: string, value: string) {
     await window.api.config.set(key, value)
     setConfig((prev) => ({ ...prev, [key]: value }))
@@ -889,41 +903,13 @@ function SystemSettings() {
     <div className="mx-auto max-w-2xl">
       <h2 className="cond mb-6 text-[32px] font-bold leading-none text-n-deep">System Settings</h2>
 
-      {/* Version & Update */}
+      {/* Version (updates live under the Updates tab) */}
       <div className="mb-6 rounded-md border bg-white p-6">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Version
         </h3>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-lg font-bold">ServePOS v{version}</p>
-            <p className="text-xs text-muted-foreground">By Badeel Technology</p>
-          </div>
-          <button
-            onClick={checkUpdate}
-            disabled={checking}
-            className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
-          >
-            {checking ? 'Checking...' : 'Check for Update'}
-          </button>
-        </div>
-        {updateInfo && (
-          <div className={`mt-4 rounded-lg p-3 text-sm ${updateInfo.hasUpdate ? 'bg-primary/5 text-primary' : 'bg-green-50 text-green-700'}`}>
-            {updateInfo.hasUpdate ? (
-              <div className="flex items-center justify-between">
-                <span>New version available: <strong>v{updateInfo.latestVersion}</strong></span>
-                <button
-                  onClick={() => window.open(updateInfo.releaseUrl, '_blank')}
-                  className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  Download
-                </button>
-              </div>
-            ) : (
-              <span>You're on the latest version.</span>
-            )}
-          </div>
-        )}
+        <p className="text-lg font-bold">ServePOS v{version}</p>
+        <p className="text-xs text-muted-foreground">By Badeel Technology</p>
       </div>
 
       {/* ERPNext Connection */}

@@ -33,6 +33,8 @@ interface CartProps {
   quickSaleNoKot?: boolean
   onUpdateOnly?: () => void
   onPay: () => void
+  /** Direct pay (no KOT): straight to payment; unsent lines are served without a KOT. Undefined hides it (config direct_pay = off). */
+  onDirectPay?: () => void
   onHold: () => void
   onNewOrder: () => void
   /** Open an existing order (occupied table in the picker) */
@@ -53,7 +55,7 @@ interface CartProps {
   onPartialVoid?: (orderId: string, item: RemovedItem, voidQty: number, reason: string, remarks?: string, disposition?: string) => Promise<void> | void
 }
 
-export default function Cart({ onPlaceOrder, floorAfterSend, onPrintBill, stage, quickSaleNoKot, onUpdateOnly, onPay, onHold, onNewOrder, onMoveTable, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, orderNumber, orderCreatedAt, sentAt, processing, onAutoVoid, onItemRemoved, onPartialVoid }: CartProps) {
+export default function Cart({ onPlaceOrder, floorAfterSend, onPrintBill, stage, quickSaleNoKot, onUpdateOnly, onPay, onDirectPay, onHold, onNewOrder, onMoveTable, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, orderNumber, orderCreatedAt, sentAt, processing, onAutoVoid, onItemRemoved, onPartialVoid }: CartProps) {
   useTick(30000)
   const [discountEnabled, setDiscountEnabled] = useState(false)
   const [discountPermission, setDiscountPermission] = useState<'supervisor_only' | 'all_users'>('supervisor_only')
@@ -94,7 +96,7 @@ export default function Cart({ onPlaceOrder, floorAfterSend, onPrintBill, stage,
   const uiAr = useLang((s) => s.lang) === 'ar'
   const byCode = useMenu((s) => s.byCode)
   // Send / Hold / Pay waiting for a table (dine-in ticket without one)
-  const [pending, setPending] = useState<null | 'send' | 'hold' | 'pay'>(null)
+  const [pending, setPending] = useState<null | 'send' | 'hold' | 'pay' | 'direct'>(null)
   const floorRooms = useFloor((s) => s.rooms)
   const floorHasTables = useFloor((s) => s.tables.length > 0)
   const [noteFor, setNoteFor] = useState<CartItem | null>(null)
@@ -131,14 +133,14 @@ export default function Cart({ onPlaceOrder, floorAfterSend, onPrintBill, stage,
   const notes = cart.orderNotes?.trim() || ''
 
   /** Dine-in without a table: choose the table first, then carry on with what was tapped. */
-  function guarded(kind: 'send' | 'hold' | 'pay', fn: () => void) {
+  function guarded(kind: 'send' | 'hold' | 'pay' | 'direct', fn: () => void) {
     if (needsTable) { setPending(kind); setShowTablePicker(true); return }
     fn()
   }
-  function runPending(kind: 'send' | 'hold' | 'pay' | null) {
+  function runPending(kind: 'send' | 'hold' | 'pay' | 'direct' | null) {
     if (!kind) return
     // after the store update has rendered, so the action reads the new table / type
-    setTimeout(() => (kind === 'send' ? onPlaceOrder() : kind === 'hold' ? onHold() : onPay()), 0)
+    setTimeout(() => (kind === 'send' ? onPlaceOrder() : kind === 'hold' ? onHold() : kind === 'direct' ? onDirectPay?.() : onPay()), 0)
   }
   async function pickTable(name: string, rm: string | null) {
     const kind = pending
@@ -212,6 +214,7 @@ export default function Cart({ onPlaceOrder, floorAfterSend, onPrintBill, stage,
               {name}
               {disc && <span className="font-semibold text-n-green"> {disc}</span>}
               {l.dbId && !l.kotPrinted && <span className="text-xs font-semibold text-n-muted"> · {t('saved')}</span>}
+              {l.noKot && <span className="ms-1.5 inline-block rounded-[3px] border border-n-edge px-1 align-[1px] text-[11px] font-bold uppercase leading-[16px] tracking-[.04em] text-n-muted">{t('No KOT')}</span>}
             </span>
             {mods && <span className="text-[12.5px] leading-snug text-n-muted">{mods}</span>}
             {l.specialInstructions && <span className="text-[12.5px] font-medium leading-snug text-n-teal">“{l.specialInstructions}”</span>}
@@ -410,13 +413,23 @@ export default function Cart({ onPlaceOrder, floorAfterSend, onPrintBill, stage,
         </div>
         <div className="flex gap-1.5">
           <button type="button" onClick={onPrintBill} disabled={processing || !activeOrderId || !onPrintBill}
-            className="press h-[54px] flex-[.8] whitespace-nowrap rounded-lg border-[1.5px] border-n-edge bg-white text-[15px] font-semibold text-n-ink disabled:text-n-stone">
+            className={cn('press h-[54px] min-w-0 rounded-lg border-[1.5px] border-n-edge bg-white font-semibold leading-tight text-n-ink disabled:text-n-stone',
+              onDirectPay ? 'w-[66px] flex-shrink-0 px-1 text-[14px] min-[1300px]:w-[78px]' : 'flex-[.8] whitespace-nowrap text-[15px]')}>
             {stage === 'invoiced' ? t('Reprint bill') : t('Print bill')}
           </button>
+          {onDirectPay && (
+            // Secondary on purpose: outlined, beside Pay, never the default. Receipt only, the kitchen gets nothing.
+            <button type="button" onClick={() => guarded('direct', onDirectPay)} disabled={processing || items.length === 0}
+              className="press flex h-[54px] w-[92px] flex-shrink-0 flex-col items-center justify-center whitespace-nowrap rounded-lg border-[1.5px] border-dashed border-n-ink bg-white px-1 leading-tight text-n-ink disabled:border-n-edge disabled:text-n-stone min-[1300px]:w-[104px]">
+              <span className="text-[14px] font-bold">{t('Direct pay')}</span>
+              <span className="text-[11.5px] font-semibold uppercase tracking-[.04em] opacity-75">{t('no KOT')}</span>
+            </button>
+          )}
           <button type="button" onClick={() => guarded('pay', onPay)} disabled={processing || items.length === 0}
-            className="press flex h-[54px] min-w-0 flex-[1.4] items-center justify-between gap-2 whitespace-nowrap rounded-lg bg-n-amber px-3 leading-none text-n-ink disabled:bg-n-sand disabled:text-n-stone">
-            <span className="text-base font-bold">{newLines.length && !(quickSaleNoKot && !activeOrderId && orderType !== 'Dine In') ? t('Send & pay') : t('Pay')}</span>
-            <span className="cond num truncate text-[22px] font-bold" dir="ltr">{money(grandTotal)}</span>
+            className={cn('press flex h-[54px] min-w-0 flex-[1.4] whitespace-nowrap rounded-lg bg-n-amber px-3 leading-none text-n-ink disabled:bg-n-sand disabled:text-n-stone',
+              onDirectPay ? 'flex-col items-start justify-center gap-1' : 'items-center justify-between gap-2')}>
+            <span className={onDirectPay ? 'text-[14px] font-bold' : 'text-base font-bold'}>{newLines.length && !(quickSaleNoKot && !activeOrderId && orderType !== 'Dine In') ? t('Send & pay') : t('Pay')}</span>
+            <span className={cn('cond num max-w-full truncate font-bold', onDirectPay ? 'text-[21px]' : 'text-[22px]')} dir="ltr">{money(grandTotal)}</span>
           </button>
         </div>
       </div>
@@ -432,7 +445,7 @@ export default function Cart({ onPlaceOrder, floorAfterSend, onPrintBill, stage,
       {showTablePicker && (
         <TablePicker onSelect={pickTable} currentTable={tableName}
           title={activeOrderId && tableName ? t('Move {table} to…', { table: tableName }) : undefined}
-          hint={pending === 'send' ? t('Pick the table, then the order goes to the kitchen') : pending === 'hold' ? t('Pick the table to hold this order on') : pending === 'pay' ? t('Pick the table, or make it Takeaway for a quick sale') : null}
+          hint={pending === 'send' ? t('Pick the table, then the order goes to the kitchen') : pending === 'hold' ? t('Pick the table to hold this order on') : pending === 'pay' || pending === 'direct' ? t('Pick the table, or make it Takeaway for a quick sale') : null}
           onTakeaway={pending && !activeOrderId ? () => { const k = pending; setShowTablePicker(false); setPending(null); setOrderType('Takeaway'); runPending(k) } : undefined}
           onCancel={() => { setShowTablePicker(false); setPending(null) }} />
       )}

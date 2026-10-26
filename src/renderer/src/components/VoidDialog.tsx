@@ -3,6 +3,7 @@ import { useStatus } from '../stores/status'
 import { Btn, Dialog, Option, Keypad, PinDots, Stepper, Cap, Field, pinKey, money, C } from '../ui'
 import { cn } from '../lib/utils'
 import { useT } from '../stores/i18n'
+import { useBusyWhileOpen } from '../stores/ui'
 
 // One void flow for everything: a sent line on the ticket, a held/open order, a paid sale.
 // Reason → was it made (waste / return) → optional remarks, with the supervisor PIN inline
@@ -36,6 +37,7 @@ export default function VoidDialog({ target, requirePin, initialQty, onCancel, o
   onCancel: () => void
   onConfirm: (r: VoidResult) => Promise<void> | void
 }) {
+  useBusyWhileOpen('void')
   const cur = useStatus((s) => s.currency)
   const [reasons, setReasons] = useState<{ name: string; reason_name: string }[]>([])
   const [reason, setReason] = useState('')

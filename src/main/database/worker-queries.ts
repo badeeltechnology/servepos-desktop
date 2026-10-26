@@ -433,6 +433,25 @@ export function voidOrderItem(id: string, reason: string, voidedBy: string, rema
   return true
 }
 
+/**
+ * Direct pay (no KOT): the order's unsent lines are served without a kitchen ticket. They are
+ * marked kot_printed = 1 (so no later KOT prints them) and no_kot = 1, and one print_log row of
+ * type 'no_kot' records who did it. orders.kot_printed is left as is (sync sends the same invoice).
+ * Returns the number of lines marked; nothing is logged when there was nothing unsent.
+ */
+export function markItemsNoKot(orderId: string, actorName: string): number {
+  const rows = queryAll('SELECT id FROM order_items WHERE order_id = ? AND COALESCE(kot_printed, 0) = 0 AND COALESCE(voided, 0) = 0', [orderId])
+  if (rows.length === 0) return 0
+  const db = getDb()
+  db.run('UPDATE order_items SET kot_printed = 1, no_kot = 1 WHERE order_id = ? AND COALESCE(kot_printed, 0) = 0 AND COALESCE(voided, 0) = 0', [orderId])
+  db.run(
+    'INSERT INTO print_log (id, order_id, print_type, printer_id, status, error, source, actor_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [uuidv4(), orderId, 'no_kot', null, 'success', null, 'manual', actorName || null]
+  )
+  saveDatabaseSync()
+  return rows.length
+}
+
 // ==================== Order Payments ====================
 
 export function addOrderPayment(orderId: string, method: string, amount: number, reference?: string, collectedByWaiter?: string): string {

@@ -14,6 +14,13 @@
 //   ?floor=olive      Garden Terrace layout: ~130 tables in Section A-F, Sofa, Terrace, Dine-in,
 //                     ~25 occupied; start_screen left unset so the till opens on Tables
 //   ?printfail=1      KOT and receipt printing fail (to test sticky errors + Retry)
+//   ?directpay=supervisor|off  receipt config direct_pay (default all)
+//   ?update=available|downloading|downloaded|none
+//                     in-app update state (default: not checked yet, no chip). "Update now"
+//                     from available runs a ~3 s download; install() records __mock.installed.
+//   ?channel=pilot|off  update channel (default stable)
+
+import { useSessionGuard } from '../stores/ui'
 
 const q = new URLSearchParams(location.search)
 const opt = {
@@ -25,7 +32,13 @@ const opt = {
   printFail: q.get('printfail') === '1',
   currency: (q.get('currency') || 'QAR').toUpperCase(),
   tax: q.get('tax'),
-  floor: q.get('floor')
+  floor: q.get('floor'),
+  directPay: q.get('directpay'),
+  // Popular tab: ?pinned=none|CODE,CODE (server pins) and ?pop=none (a new till with no sales history)
+  pinned: q.get('pinned'),
+  pop: q.get('pop'),
+  update: q.get('update') as 'available' | 'downloading' | 'downloaded' | 'none' | null,
+  channel: q.get('channel')
 }
 const OLIVE = opt.floor === 'olive'
 // ?currency=OMR: Omani outlet. Prices in rials (3 decimals), VAT 5% unless ?tax=0,
@@ -167,13 +180,15 @@ const config: Record<string, string> = {
   setup_complete: opt.setup ? '0' : '1', currency: OMR ? 'OMR' : 'QAR', erpnext_url: 'https://demo.example.com', pos_profile: OLIVE ? 'Garden Terrace' : 'Cocktail · Till 2', company: 'Harbour Lane Hospitality',
   // the bar checks start on the menu; the large floor uses the default (Tables, because it has tables)
   ...(OLIVE ? {} : { start_screen: 'menu' }),
+  pinned_items: JSON.stringify(opt.pinned === 'none' ? [] : opt.pinned ? opt.pinned.split(',') : [code('Club Sandwich'), 'BROWNIES', 'NOT-ON-THIS-MENU']),
   inactivity_timeout: q.get('idle') || '600', touch_keyboard_enabled: '0', last_sync_at: new Date(Date.now() - 4 * 60000).toISOString()
 }
 const receiptConfig: Record<string, string> = {
   restaurant_name: 'COCKTAIL BAR', restaurant_name_ar: 'كوكتيل بار', address_line_1: 'Corniche, Doha', address_line_1_ar: 'الكورنيش، الدوحة', phone: '+974 4400 1234',
   footer_message: 'Thank you, visit again', footer_message_ar: 'شكراً لزيارتكم', show_arabic: '1', show_arabic_items: '1', currency_symbol: OMR ? 'OMR' : 'QAR', currency_position: 'before', currency_decimals: OMR ? '' : '2',
   tax_enabled: OMR && opt.tax !== '0' ? '1' : '0', tax_rate: OMR && opt.tax !== '0' ? '5' : '0', tax_label: 'VAT', discount_enabled: '1', discount_permission: 'all_users', show_description_on_pos: '1',
-  waiter_order_auto_accept: opt.autoAccept ? '1' : '0', receipt_auto_print: '1', kot_copies: '1', receipt_copies: '1', show_cashier_name: '1', vat_number: '', cr_number: ''
+  waiter_order_auto_accept: opt.autoAccept ? '1' : '0', receipt_auto_print: '1', kot_copies: '1', receipt_copies: '1', show_cashier_name: '1', vat_number: '', cr_number: '',
+  ...(opt.directPay ? { direct_pay: opt.directPay } : {})
 }
 
 // ------------------------------------------------------------------ session + orders
@@ -258,6 +273,34 @@ histDefs.forEach(([type, table, method, qarTotal, sync, err], i) => {
   o.subtotal = total
   payments.push({ id: uid('pay'), order_id: o.id, payment_method: method, amount: total, reference: null })
 })
+// Popular tab: 7-day sales history of this till (hoursAgo, voided) feeding reports.popularItems, plus
+// completed orders rung up in the harness. Same weighting as the main-process query.
+const salesHistory: { item_code: string; item_name: string; qty: number; hoursAgo: number; voided?: boolean }[] = opt.pop === 'none' ? [] : [
+  ...[['Iced Spanish Latte', 34], ['Hot Latte', 28], ['Blue Lagoon Mojito', 22], ['Açai Bowl (L)', 19], ['Croissant Zaatar', 17], ['Cappuccino', 15], ['Orange Juice 12 oz', 12], ['Mango Tango 16 oz', 11]]
+    .map(([n, q], i) => ({ item_code: code(n as string), item_name: n as string, qty: q as number, hoursAgo: i % 3 === 2 ? 26 : 1 })),
+  { item_code: code('Club Sandwich'), item_name: 'Club Sandwich', qty: 6, hoursAgo: 50 },
+  // a big voided line must never make Popular
+  { item_code: code('Hot Mocha'), item_name: 'Hot Mocha', qty: 90, hoursAgo: 1, voided: true }
+]
+function popularItems(limit = 18) {
+  const now = Date.now()
+  const lines = [
+    ...salesHistory.map((l) => ({ ...l, at: now - l.hoursAgo * 3600000 })),
+    ...orderItems.filter((l) => orders.find((o) => o.id === l.order_id)?.status === 'Completed' && opt.pop !== 'none').map((l) => ({ ...l, voided: !!l.voided, at: Date.parse(orders.find((o) => o.id === l.order_id)!.created_at.replace(' ', 'T') + 'Z') || now }))
+  ]
+  const day = (t: number) => new Date(t).toLocaleDateString('en-CA')
+  const today = day(now), yesterday = day(now - 86400000), hour = new Date(now).getHours()
+  const score: Record<string, { item_code: string; item_name: string; score: number }> = {}
+  for (const l of lines) {
+    if (l.voided || now - l.at > 7 * 86400000) continue
+    const dh = Math.abs(new Date(l.at).getHours() - hour)
+    const w = l.qty * (Math.min(dh, 24 - dh) <= 2 ? 1 : 0.35) * (day(l.at) === today ? 1 : day(l.at) === yesterday ? 0.7 : 0.5)
+    const e = (score[l.item_code] ||= { item_code: l.item_code, item_name: l.item_name, score: 0 })
+    e.score += w
+  }
+  return Object.values(score).sort((a, b) => b.score - a.score).slice(0, limit)
+}
+
 const voided = makeOrder({ order_type: 'Dine In', table_name: 'T10', status: 'Void', void_reason: 'Guest changed their mind', created_at: ago(200), sync_status: 'synced' }, [lineFor('Hot Mocha', 1)])
 void voided
 for (const t of tables) if (t.current_order_id && !orders.find((o) => o.id === t.current_order_id && !['Completed', 'Void'].includes(o.status))) { t.status = 'Available'; t.current_order_id = null }
@@ -277,6 +320,8 @@ const woVisibleAt = opt.wo === 'now' ? 0 : opt.wo === 'later' ? Date.now() + 120
 
 // ------------------------------------------------------------------ sync
 let syncing = false
+/** What the next sync pulls as pinned_items (set from Playwright via __mock.setServerPinned) */
+let serverPinned: string[] | null = null
 let nextSyncAt = Date.now() + 95000
 let lastResult: any = { down: { success: true, counts: { items: items.length } }, up: { success: true, synced: 4, failed: 0, errors: [] } }
 
@@ -342,7 +387,15 @@ const impl: Record<string, Record<string, (...a: any[]) => any>> = {
     get: (orderId: string) => clone(liveItems(orderId)),
     update: (id: string, u: any) => { const i = orderItems.find((x) => x.id === id); if (!i) return false; if (u.qty !== undefined) i.qty = u.qty; if (u.amount !== undefined) i.amount = u.amount; if (u.specialInstructions !== undefined) i.special_instructions = u.specialInstructions; return true },
     remove: (id: string) => { const ix = orderItems.findIndex((x) => x.id === id); if (ix >= 0) orderItems.splice(ix, 1); return true },
-    void: (id: string, reason: string, by: string, remarks?: string, disp?: string) => { const i = orderItems.find((x) => x.id === id); if (i) Object.assign(i, { voided: 1, void_reason: reason, voided_by: by, void_remarks: remarks, void_disposition: disp }); return true }
+    void: (id: string, reason: string, by: string, remarks?: string, disp?: string) => { const i = orderItems.find((x) => x.id === id); if (i) Object.assign(i, { voided: 1, void_reason: reason, voided_by: by, void_remarks: remarks, void_disposition: disp }); return true },
+    // same as worker-queries markItemsNoKot: unsent live lines -> kot_printed = 1, no_kot = 1; one 'no_kot' log row
+    markNoKot: (orderId: string, actor: string) => {
+      const rows = liveItems(orderId).filter((i) => !i.kot_printed)
+      if (!rows.length) return 0
+      for (const i of rows) { i.kot_printed = 1; i.no_kot = 1 }
+      printLog.push({ id: uid('pl'), order_id: orderId, print_type: 'no_kot', source: 'manual', printer_name: null, actor_name: actor || null, status: 'success', printed_at: new Date().toISOString().slice(0, 19).replace('T', ' ') })
+      return rows.length
+    }
   },
   orderPayments: {
     add: (orderId: string, method: string, amount: number, reference?: string, by?: string) => { payments.push({ id: uid('pay'), order_id: orderId, payment_method: method, amount, reference: reference || null, collected_by_waiter: by || null }); return true },
@@ -383,6 +436,8 @@ const impl: Record<string, Record<string, (...a: any[]) => any>> = {
     kots: async (orderId: string, actor?: string, reprint?: boolean) => {
       await sleep(250)
       if (opt.printFail) { opt.printFail = false; return { success: false, errors: ['Kitchen printer offline'] } } // fails once, Retry works
+      // like print-engine printKots: nothing unsent (and not a reprint) prints nothing
+      if (!reprint && !liveItems(orderId).some((i) => !i.kot_printed)) return { success: true, printed: 0, errors: [] }
       const o = orders.find((x) => x.id === orderId); if (o) o.kot_printed = 1
       if (!reprint) for (const i of liveItems(orderId)) if (!i.kot_printed) { i.kot_printed = 1; i.sent_at = ago(0) }
       log(orderId, 'kot', reprint ? 'reprint' : 'manual', actor || 'Mariam')
@@ -421,12 +476,14 @@ const impl: Record<string, Record<string, (...a: any[]) => any>> = {
   reports: {
     todaySummary: () => ({ total_sales: 7842, order_count: 61, avg_order: 128.56, void_count: 3, discount_total: 214 }),
     bestSellingItems: () => [['Iced Spanish Latte', 34], ['Hot Latte', 28], ['Blue Lagoon Mojito', 22], ['Açai Bowl (L)', 19], ['Croissant Zaatar', 17], ['Cappuccino', 15], ['Orange Juice 12 oz', 12], ['Brownies', 11]].map(([n, q]) => { const it = items.find((i) => i.item_name === n)!; return { item_name: n, qty_sold: q, revenue: (q as number) * it.rate } }),
+    popularItems: (limit?: number) => popularItems(limit),
     categorySales: () => [], paymentBreakdown: () => [{ payment_method: 'Cash', total: 3214 }, { payment_method: 'Card', total: 4120 }], hourlySales: () => [], voidReport: () => [], waiterPerformance: () => [], allItemsSales: () => [], removedItems: () => []
   },
   sync: {
     run: async () => {
       syncing = true; await sleep(1500)
       for (const o of orders) if (o.status === 'Completed' && o.sync_status === 'pending') { o.sync_status = 'synced'; o.erpnext_docname = 'ACC-PSINV-2026-0' + (4200 + Math.floor(Math.random() * 99)) }
+      if (serverPinned) config.pinned_items = JSON.stringify(serverPinned)
       syncing = false; nextSyncAt = Date.now() + 120000; config.last_sync_at = new Date().toISOString()
       lastResult = { down: { success: true }, up: { success: true, synced: 1, failed: 0, errors: [] } }
       return clone(lastResult)
@@ -436,9 +493,69 @@ const impl: Record<string, Record<string, (...a: any[]) => any>> = {
   }
 }
 
+// ------------------------------------------------------------------ in-app updates
+// Not wrapped by the async proxy below: onState must return its unsubscribe synchronously.
+const UPDATE_NOTES = 'What\'s new in 2.18.0\n• Split bill evenly or by item, guest by guest\n• Hold saves without sending to the kitchen\n• Menu and tables reload after every sync\n\nFixes\n• Close shift counts baisa coins correctly'
+let updState: any = (() => {
+  const base = { channel: ['pilot', 'off'].includes(opt.channel || '') ? opt.channel : 'stable', currentVersion: '2.17.0' }
+  const found = { version: '2.18.0', notes: UPDATE_NOTES, date: '2026-10-22T09:00:00Z', lastCheckedAt: new Date().toISOString() }
+  switch (opt.update) {
+    case 'available': return { ...base, ...found, status: 'available' }
+    case 'downloading': return { ...base, ...found, status: 'downloading', percent: 42, transferred: 42 * 1.26e6, total: 126e6, bytesPerSecond: 3.4e6 }
+    case 'downloaded': return { ...base, ...found, status: 'downloaded', percent: 100 }
+    case 'none': return { ...base, status: 'not-available', lastCheckedAt: new Date().toISOString() }
+    default: return { ...base, status: base.channel === 'off' ? 'disabled' : 'idle' }
+  }
+})()
+const updListeners = new Set<(s: any) => void>()
+function pushUpd(patch: any, replace = false) {
+  updState = replace ? { channel: updState.channel, currentVersion: updState.currentVersion, ...patch } : { ...updState, ...patch }
+  ;(window as any).__mock && ((window as any).__mock.update = clone(updState))
+  for (const l of updListeners) l(clone(updState))
+}
+const updatesApi = {
+  getState: async () => { await sleep(20); return clone(updState) },
+  check: async () => {
+    if (updState.channel === 'off') return { ok: false, error: 'Updates are turned off on this till.', state: clone(updState) }
+    if (['downloading', 'downloaded'].includes(updState.status)) return { ok: true, state: clone(updState) }
+    pushUpd({ status: 'checking' })
+    await sleep(600)
+    if (opt.update === 'available' || updState.version) pushUpd({ status: 'available', lastCheckedAt: new Date().toISOString() })
+    else pushUpd({ status: 'not-available', lastCheckedAt: new Date().toISOString() }, true)
+    return { ok: true, state: clone(updState) }
+  },
+  download: async () => {
+    if (updState.status !== 'available') return { ok: false, error: 'There is no update to download. Check for updates first.', state: clone(updState) }
+    pushUpd({ status: 'downloading', percent: 0, transferred: 0, total: 126e6, bytesPerSecond: 0 })
+    let pct = 0
+    const tick = setInterval(() => {
+      pct = Math.min(100, pct + 10)
+      if (pct >= 100) { clearInterval(tick); pushUpd({ status: 'downloaded', percent: 100 }); return }
+      pushUpd({ percent: pct, transferred: pct * 1.26e6, bytesPerSecond: 4.2e6 })
+    }, 300)
+    return { ok: true, state: clone(updState) }
+  },
+  install: async () => {
+    await sleep(50)
+    if (updState.status !== 'downloaded') return { ok: false, error: 'The update has not finished downloading.', state: clone(updState) }
+    ;(window as any).__mock.installed = true
+    return { ok: true, state: clone(updState) }
+  },
+  setChannel: async (ch: string) => {
+    await sleep(20)
+    if (['downloading', 'downloaded'].includes(updState.status)) pushUpd({ channel: ch })
+    else pushUpd({ channel: ch, status: ch === 'off' ? 'disabled' : 'idle' }, true)
+    config.update_channel = ch
+    return { ok: true, state: clone(updState) }
+  },
+  pendingSync: async () => { await sleep(20); return orders.filter((o) => o.status === 'Completed' && o.sync_status !== 'synced').length },
+  onState: (cb: (s: any) => void) => { updListeners.add(cb); return () => { updListeners.delete(cb) } }
+}
+
 export function installMockApi() {
   const api = new Proxy({} as any, {
     get(_t, ns: string) {
+      if (ns === 'updates') return updatesApi
       const group = impl[ns] || {}
       return new Proxy({}, {
         get(_g, fn: string) {
@@ -453,6 +570,6 @@ export function installMockApi() {
     }
   })
   ;(window as any).api = api
-  ;(window as any).__mock = { orders, orderItems, payments, tables, opt, printLog, waiterOrders: () => waiterOrders }
+  ;(window as any).__mock = { orders, orderItems, payments, tables, opt, printLog, waiterOrders: () => waiterOrders, salesHistory, setServerPinned: (c: string[]) => { serverPinned = c }, update: clone(updState), installed: false, pushUpdate: pushUpd, guard: useSessionGuard }
   console.info('[mockApi] installed (dev browser harness)')
 }

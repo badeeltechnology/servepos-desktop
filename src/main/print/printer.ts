@@ -1,5 +1,5 @@
 import * as net from 'net'
-import { exec } from 'child_process'
+import { exec, spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import { writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -54,7 +54,150 @@ export async function sendToPrinter(printer: PrinterConfig, data: string | Buffe
   return { success: false, error: 'Unsupported printer connection type' }
 }
 
-function sendToUsbPrinter(printer: PrinterConfig, data: Buffer): Promise<{ success: boolean; error?: string }> {
+
+// ==================== Windows print worker ====================
+// Spawning PowerShell and compiling RawPrint with Add-Type costs 1-3 s on every print. One
+// PowerShell stays up for the life of the app with RawPrint compiled once; jobs go in over stdin
+// ("id<TAB>printer<TAB>base64"), results come back over stdout ("id<TAB>ok" / "id<TAB>err<TAB>msg").
+// It restarts after a crash; if it is down or a job fails to come back, the one-shot path is used.
+const RAWPRINT_ADDTYPE: string[] = [
+  'Add-Type -TypeDefinition @"',
+  'using System;',
+  'using System.Runtime.InteropServices;',
+  'public class RawPrint {',
+  '  [StructLayout(LayoutKind.Sequential)] public struct DOCINFOA {',
+  '    [MarshalAs(UnmanagedType.LPStr)] public string pDocName;',
+  '    [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;',
+  '    [MarshalAs(UnmanagedType.LPStr)] public string pDatatype;',
+  '  }',
+  '  [DllImport("winspool.drv",CharSet=CharSet.Ansi,SetLastError=true)]',
+  '  public static extern bool OpenPrinter(string p, out IntPtr h, IntPtr d);',
+  '  [DllImport("winspool.drv",SetLastError=true)]',
+  '  public static extern bool StartDocPrinter(IntPtr h, int l, ref DOCINFOA di);',
+  '  [DllImport("winspool.drv",SetLastError=true)]',
+  '  public static extern bool StartPagePrinter(IntPtr h);',
+  '  [DllImport("winspool.drv",SetLastError=true)]',
+  '  public static extern bool WritePrinter(IntPtr h, IntPtr b, int c, out int w);',
+  '  [DllImport("winspool.drv",SetLastError=true)]',
+  '  public static extern bool EndPagePrinter(IntPtr h);',
+  '  [DllImport("winspool.drv",SetLastError=true)]',
+  '  public static extern bool EndDocPrinter(IntPtr h);',
+  '  [DllImport("winspool.drv",SetLastError=true)]',
+  '  public static extern bool ClosePrinter(IntPtr h);',
+  '  public static bool Send(string name, byte[] data) {',
+  '    IntPtr h;',
+  '    if (!OpenPrinter(name, out h, IntPtr.Zero)) return false;',
+  '    var di = new DOCINFOA { pDocName = "ServePOS", pDatatype = "RAW" };',
+  '    StartDocPrinter(h, 1, ref di);',
+  '    StartPagePrinter(h);',
+  '    IntPtr ptr = Marshal.AllocCoTaskMem(data.Length);',
+  '    Marshal.Copy(data, 0, ptr, data.Length);',
+  '    int w;',
+  '    bool ok = WritePrinter(h, ptr, data.Length, out w);',
+  '    Marshal.FreeCoTaskMem(ptr);',
+  '    EndPagePrinter(h);',
+  '    EndDocPrinter(h);',
+  '    ClosePrinter(h);',
+  '    return ok && w == data.Length;',
+  '  }',
+  '}',
+  '"@'
+]
+
+const WORKER_LOOP = [
+  '$ErrorActionPreference = "Continue"',
+  '[Console]::Out.WriteLine("ready")',
+  'while ($true) {',
+  '  $line = [Console]::In.ReadLine()',
+  '  if ($line -eq $null) { break }',
+  '  $p = $line.Split([char]9)',
+  '  if ($p.Length -lt 3) { continue }',
+  '  try {',
+  '    $bytes = [Convert]::FromBase64String($p[2])',
+  '    if ([RawPrint]::Send($p[1], $bytes)) { [Console]::Out.WriteLine($p[0] + [char]9 + "ok") }',
+  '    else { [Console]::Out.WriteLine($p[0] + [char]9 + "err" + [char]9 + "WritePrinter failed for printer: " + $p[1]) }',
+  '  } catch { [Console]::Out.WriteLine($p[0] + [char]9 + "err" + [char]9 + $_.Exception.Message) }',
+  '  [Console]::Out.Flush()',
+  '}'
+]
+
+let worker: ChildProcessWithoutNullStreams | null = null
+let workerReady = false
+let workerStopping = false
+let workerRestarts = 0
+let jobSeq = 0
+let outBuf = ''
+const pending = new Map<string, { resolve: (r: { success: boolean; error?: string }) => void; timer: NodeJS.Timeout }>()
+
+export function startPrintWorker(): void {
+  if (process.platform !== 'win32' || worker) return
+  workerStopping = false
+  try {
+    const script = [...RAWPRINT_ADDTYPE, ...WORKER_LOOP].join('\r\n')
+    const psFile = join(tmpdir(), 'servepos-printworker.ps1')
+    writeFileSync(psFile, script)
+    const t0 = Date.now()
+    worker = spawn('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', psFile], { windowsHide: true })
+    worker.stdout.setEncoding('utf8')
+    worker.stdout.on('data', (chunk: string) => {
+      outBuf += chunk
+      let nl: number
+      while ((nl = outBuf.indexOf('\n')) >= 0) {
+        const line = outBuf.slice(0, nl).replace(/\r$/, '')
+        outBuf = outBuf.slice(nl + 1)
+        if (line === 'ready') { workerReady = true; console.log(`[Print] Windows print worker ready in ${Date.now() - t0} ms`); continue }
+        const [id, status, msg] = line.split('\t')
+        const job = pending.get(id)
+        if (!job) continue
+        clearTimeout(job.timer)
+        pending.delete(id)
+        job.resolve(status === 'ok' ? { success: true } : { success: false, error: msg || 'Print failed' })
+      }
+    })
+    worker.stderr.on('data', () => { /* errors come back per job on stdout */ })
+    worker.on('exit', () => {
+      worker = null
+      workerReady = false
+      for (const [, job] of pending) { clearTimeout(job.timer); job.resolve({ success: false, error: 'worker-exit' }) }
+      pending.clear()
+      if (!workerStopping && workerRestarts++ < 5) setTimeout(startPrintWorker, 1000)
+    })
+  } catch (e: any) {
+    console.warn('[Print] print worker could not start:', e?.message)
+    worker = null
+  }
+}
+
+export function stopPrintWorker(): void {
+  workerStopping = true
+  try { worker?.stdin.end(); worker?.kill() } catch {}
+  worker = null
+}
+
+/** Through the persistent worker; null when it is not available (caller uses the one-shot path). */
+function sendViaWorker(printerName: string, data: Buffer): Promise<{ success: boolean; error?: string }> | null {
+  if (!worker || !workerReady) return null
+  const id = String(++jobSeq)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { pending.delete(id); resolve({ success: false, error: 'worker-timeout' }) }, 15000)
+    pending.set(id, { resolve, timer })
+    worker!.stdin.write(`${id}\t${printerName}\t${data.toString('base64')}\n`)
+  })
+}
+
+async function sendToUsbPrinter(printer: PrinterConfig, data: Buffer): Promise<{ success: boolean; error?: string }> {
+  if (process.platform === 'win32' && printer.address) {
+    const viaWorker = sendViaWorker(printer.address, data)
+    if (viaWorker) {
+      const r = await viaWorker
+      // a real printer error is returned as is; a worker problem falls back to the one-shot path
+      if (r.success || (r.error !== 'worker-exit' && r.error !== 'worker-timeout')) return r
+    }
+  }
+  return sendToUsbPrinterOneShot(printer, data)
+}
+
+function sendToUsbPrinterOneShot(printer: PrinterConfig, data: Buffer): Promise<{ success: boolean; error?: string }> {
   return new Promise((resolve) => {
     try {
       const printerName = printer.address
@@ -75,47 +218,7 @@ function sendToUsbPrinter(printer: PrinterConfig, data: Buffer): Promise<{ succe
         const psFile = join(tmpdir(), 'servepos-rawprint-' + Date.now() + '.ps1')
         const filePath = tempFile.replace(/\\/g, '\\\\')
         const psScript = [
-          'Add-Type -TypeDefinition @"',
-          'using System;',
-          'using System.Runtime.InteropServices;',
-          'public class RawPrint {',
-          '  [StructLayout(LayoutKind.Sequential)] public struct DOCINFOA {',
-          '    [MarshalAs(UnmanagedType.LPStr)] public string pDocName;',
-          '    [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;',
-          '    [MarshalAs(UnmanagedType.LPStr)] public string pDatatype;',
-          '  }',
-          '  [DllImport("winspool.drv",CharSet=CharSet.Ansi,SetLastError=true)]',
-          '  public static extern bool OpenPrinter(string p, out IntPtr h, IntPtr d);',
-          '  [DllImport("winspool.drv",SetLastError=true)]',
-          '  public static extern bool StartDocPrinter(IntPtr h, int l, ref DOCINFOA di);',
-          '  [DllImport("winspool.drv",SetLastError=true)]',
-          '  public static extern bool StartPagePrinter(IntPtr h);',
-          '  [DllImport("winspool.drv",SetLastError=true)]',
-          '  public static extern bool WritePrinter(IntPtr h, IntPtr b, int c, out int w);',
-          '  [DllImport("winspool.drv",SetLastError=true)]',
-          '  public static extern bool EndPagePrinter(IntPtr h);',
-          '  [DllImport("winspool.drv",SetLastError=true)]',
-          '  public static extern bool EndDocPrinter(IntPtr h);',
-          '  [DllImport("winspool.drv",SetLastError=true)]',
-          '  public static extern bool ClosePrinter(IntPtr h);',
-          '  public static bool Send(string name, byte[] data) {',
-          '    IntPtr h;',
-          '    if (!OpenPrinter(name, out h, IntPtr.Zero)) return false;',
-          '    var di = new DOCINFOA { pDocName = "ServePOS", pDatatype = "RAW" };',
-          '    StartDocPrinter(h, 1, ref di);',
-          '    StartPagePrinter(h);',
-          '    IntPtr ptr = Marshal.AllocCoTaskMem(data.Length);',
-          '    Marshal.Copy(data, 0, ptr, data.Length);',
-          '    int w;',
-          '    bool ok = WritePrinter(h, ptr, data.Length, out w);',
-          '    Marshal.FreeCoTaskMem(ptr);',
-          '    EndPagePrinter(h);',
-          '    EndDocPrinter(h);',
-          '    ClosePrinter(h);',
-          '    return ok && w == data.Length;',
-          '  }',
-          '}',
-          '"@',
+          ...RAWPRINT_ADDTYPE,
           '$bytes = [System.IO.File]::ReadAllBytes(\'' + filePath + '\')',
           '$result = [RawPrint]::Send(\'' + printerName + '\', $bytes)',
           'if ($result) { exit 0 } else { Write-Error "WritePrinter failed for printer: ' + printerName + '"; exit 1 }'

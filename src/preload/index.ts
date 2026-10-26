@@ -1,4 +1,42 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+
+// In-app update types, shared with src/main/updater.ts (import type) and the renderer store.
+/** stable: full releases only. pilot: also pre-releases (for pilot outlets). off: never check. */
+export type UpdateChannel = 'stable' | 'pilot' | 'off'
+
+export type UpdateStatus =
+  | 'idle'          // nothing checked yet
+  | 'disabled'      // channel is off
+  | 'checking'
+  | 'available'     // a newer version exists, not downloaded
+  | 'not-available' // on the latest version for this channel
+  | 'downloading'
+  | 'downloaded'    // ready: restart to install
+  | 'error'
+
+export interface UpdateState {
+  status: UpdateStatus
+  channel: UpdateChannel
+  currentVersion: string
+  /** The newer version, once one is known (kept through downloading/downloaded). */
+  version?: string
+  /** Release notes as plain text. */
+  notes?: string
+  /** Release date (ISO). */
+  date?: string
+  percent?: number
+  bytesPerSecond?: number
+  total?: number
+  transferred?: number
+  error?: string
+  lastCheckedAt?: string
+}
+
+export interface UpdateActionResult {
+  ok: boolean
+  error?: string
+  state: UpdateState
+}
 
 const api = {
   // App
@@ -82,7 +120,9 @@ const api = {
     get: (orderId: string) => ipcRenderer.invoke('orderItems:get', orderId),
     update: (id: string, updates: any) => ipcRenderer.invoke('orderItems:update', id, updates),
     remove: (id: string) => ipcRenderer.invoke('orderItems:remove', id),
-    void: (id: string, reason: string, voidedBy: string, remarks?: string, disposition?: string) => ipcRenderer.invoke('orderItems:void', id, reason, voidedBy, remarks, disposition)
+    void: (id: string, reason: string, voidedBy: string, remarks?: string, disposition?: string) => ipcRenderer.invoke('orderItems:void', id, reason, voidedBy, remarks, disposition),
+    /** Direct pay (no KOT): unsent lines marked served without a KOT, plus a 'no_kot' print_log row (additive) */
+    markNoKot: (orderId: string, actorName: string): Promise<number> => ipcRenderer.invoke('orderItems:markNoKot', orderId, actorName)
   },
 
   // Order Payments
@@ -226,6 +266,7 @@ const api = {
   reports: {
     todaySummary: (date?: string) => ipcRenderer.invoke('reports:todaySummary', date),
     bestSellingItems: (date?: string, limit?: number) => ipcRenderer.invoke('reports:bestSellingItems', date, limit),
+    popularItems: (limit?: number) => ipcRenderer.invoke('reports:popularItems', limit),
     categorySales: (date?: string) => ipcRenderer.invoke('reports:categorySales', date),
     paymentBreakdown: (date?: string) => ipcRenderer.invoke('reports:paymentBreakdown', date),
     hourlySales: (date?: string) => ipcRenderer.invoke('reports:hourlySales', date),
@@ -233,6 +274,23 @@ const api = {
     waiterPerformance: (date?: string) => ipcRenderer.invoke('reports:waiterPerformance', date),
     allItemsSales: (date?: string) => ipcRenderer.invoke('reports:allItemsSales', date),
     removedItems: (date?: string) => ipcRenderer.invoke('reports:removedItems', date)
+  },
+
+  // In-app updates (see src/main/updater.ts)
+  updates: {
+    getState: (): Promise<UpdateState> => ipcRenderer.invoke('updates:getState'),
+    check: (): Promise<UpdateActionResult> => ipcRenderer.invoke('updates:check'),
+    download: (): Promise<UpdateActionResult> => ipcRenderer.invoke('updates:download'),
+    install: (): Promise<UpdateActionResult> => ipcRenderer.invoke('updates:install'),
+    setChannel: (ch: UpdateChannel): Promise<UpdateActionResult> => ipcRenderer.invoke('updates:setChannel', ch),
+    /** Completed sales not yet synced to ERPNext. */
+    pendingSync: (): Promise<number> => ipcRenderer.invoke('updates:pendingSync'),
+    /** Subscribe to state pushes; returns an unsubscribe function. */
+    onState: (cb: (s: UpdateState) => void): (() => void) => {
+      const h = (_e: IpcRendererEvent, s: UpdateState): void => cb(s)
+      ipcRenderer.on('updates:state', h)
+      return () => { ipcRenderer.removeListener('updates:state', h) }
+    }
   },
 
   // Sync

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../stores/auth'
 import { useStatus, isCashMethod } from '../stores/status'
-import { askConfirm, toast } from '../stores/ui'
+import { askConfirm, toast, useBusyWhileOpen } from '../stores/ui'
 import StatusBand from './StatusBand'
 import CashCount, { Counts, countTotal } from './CashCount'
 import VoidDialog from './VoidDialog'
@@ -23,6 +23,7 @@ interface Props {
 // "Finished counting, compare". Open orders and unsynced sales still block closing.
 
 export default function CloseShift({ sessionId, onClose, onCancel, onOpenOrder }: Props) {
+  useBusyWhileOpen('close-shift')
   const user = useAuthStore((s) => s.user)
   const cur = useStatus((s) => s.currency)
   const [session, setSession] = useState<any>(null)

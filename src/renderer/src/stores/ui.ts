@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { create } from 'zustand'
 
 // App-wide toasts + confirm, so any screen can report or ask without its own modal plumbing.
@@ -74,15 +75,38 @@ export const askConfirm = (o: ConfirmOptions) => useConfirm.getState().ask(o)
 
 // Session guard: the payment screen blocks the inactivity timeout, and the POS registers a
 // hook that puts the current order on hold before anyone is signed out.
+// `busy` marks other screens that must not be interrupted (close shift, void); the updater
+// refuses to restart while any of them, or the payment screen, is open.
+export type BusyReason = 'close-shift' | 'void'
 interface SessionGuardState {
   paymentOpen: boolean
+  busy: Partial<Record<BusyReason, number>>
   beforeSignOut: (() => Promise<void>) | null
   setPaymentOpen: (v: boolean) => void
+  setBusy: (reason: BusyReason, on: boolean) => void
   setBeforeSignOut: (fn: (() => Promise<void>) | null) => void
 }
 export const useSessionGuard = create<SessionGuardState>((set) => ({
   paymentOpen: false,
+  busy: {},
   beforeSignOut: null,
   setPaymentOpen: (paymentOpen) => set({ paymentOpen }),
+  // Counted, so two void dialogs (or a void inside close shift) clear correctly.
+  setBusy: (reason, on) => set((s) => ({ busy: { ...s.busy, [reason]: Math.max(0, (s.busy[reason] || 0) + (on ? 1 : -1)) } })),
   setBeforeSignOut: (beforeSignOut) => set({ beforeSignOut })
 }))
+/** Marks a screen busy while it is mounted. */
+export function useBusyWhileOpen(reason: BusyReason) {
+  useEffect(() => {
+    useSessionGuard.getState().setBusy(reason, true)
+    return () => useSessionGuard.getState().setBusy(reason, false)
+  }, [reason])
+}
+/** Why a restart would interrupt work right now, or null. */
+export function busyReason(): string | null {
+  const g = useSessionGuard.getState()
+  if (g.paymentOpen) return 'A payment screen is open. Finish or cancel the payment first.'
+  if (g.busy['close-shift']) return 'Close shift is open. Finish or cancel it first.'
+  if (g.busy.void) return 'A void is in progress. Finish or cancel it first.'
+  return null
+}

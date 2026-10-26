@@ -250,6 +250,7 @@ export function registerIpcHandlers(): void {
   handle('orderItems:update', async (_e, id: string, updates: any) => await db.updateOrderItem(id, updates))
   handle('orderItems:remove', async (_e, id: string) => await db.removeOrderItem(id))
   handle('orderItems:void', async (_e, id: string, reason: string, voidedBy: string, remarks?: string, disposition?: string) => await db.voidOrderItem(id, reason, voidedBy, remarks, disposition))
+  handle('orderItems:markNoKot', async (_e, orderId: string, actorName: string) => await db.markItemsNoKot(orderId, actorName))
 
   // ==================== Order Payments ====================
   handle('orderPayments:add', async (_e, orderId: string, method: string, amount: number, reference?: string, collectedByWaiter?: string) => await db.addOrderPayment(orderId, method, amount, reference, collectedByWaiter))
@@ -742,12 +743,44 @@ export function registerIpcHandlers(): void {
       `SELECT oi.item_name, SUM(oi.qty) as qty_sold, SUM(oi.amount) as revenue
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
-       WHERE o.status = 'Completed' AND date(o.created_at, 'localtime') = ?
+       WHERE o.status = 'Completed' AND COALESCE(oi.voided, 0) = 0 AND date(o.created_at, 'localtime') = ?
        GROUP BY oi.item_code
        ORDER BY qty_sold DESC
        LIMIT ?`
     )
     stmt.bind([filterDate, maxItems])
+    const rows: any[] = []
+    while (await stmt.step()) rows.push(stmt.getAsObject())
+    stmt.free()
+    return rows
+  })
+
+  // Popular tab ranking: last 7 days of completed sales on this till (voided lines excluded), weighted
+  // towards now: lines sold within ±2 h of the current hour count fully (else 0.35), and today counts
+  // 1.0, yesterday 0.7, older 0.5.
+  handle('reports:popularItems', async (_e, limit?: number) => {
+    const database = getDb()
+    const now = new Date()
+    const today = now.toLocaleDateString('en-CA')
+    const yesterday = new Date(now.getTime() - 86400000).toLocaleDateString('en-CA')
+    const since = new Date(now.getTime() - 6 * 86400000).toLocaleDateString('en-CA')
+    const hour = now.getHours()
+    const stmt = database.prepare(
+      `SELECT oi.item_code, MAX(oi.item_name) AS item_name,
+         SUM(oi.qty
+           * (CASE WHEN MIN(ABS(CAST(strftime('%H', o.created_at, 'localtime') AS INTEGER) - ?),
+                            24 - ABS(CAST(strftime('%H', o.created_at, 'localtime') AS INTEGER) - ?)) <= 2 THEN 1.0 ELSE 0.35 END)
+           * (CASE date(o.created_at, 'localtime') WHEN ? THEN 1.0 WHEN ? THEN 0.7 ELSE 0.5 END)) AS score
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       WHERE o.status = 'Completed' AND COALESCE(oi.voided, 0) = 0
+         AND date(o.created_at, 'localtime') >= ?
+       GROUP BY oi.item_code
+       HAVING score > 0
+       ORDER BY score DESC
+       LIMIT ?`
+    )
+    stmt.bind([hour, hour, today, yesterday, since, limit || 18])
     const rows: any[] = []
     while (await stmt.step()) rows.push(stmt.getAsObject())
     stmt.free()
