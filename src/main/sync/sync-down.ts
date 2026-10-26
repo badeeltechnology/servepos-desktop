@@ -27,6 +27,15 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       )
     }
     counts.item_groups = groups.length
+    // Remove groups the server no longer returns for this profile (full list every sync).
+    if (Array.isArray(groups) && groups.length > 0) {
+      const keep = new Set(groups.map((g: any) => g.name))
+      const localGroups: string[] = []
+      const gq = db.prepare('SELECT name FROM item_groups')
+      while (await gq.step()) localGroups.push((gq.getAsObject() as any).name)
+      gq.free()
+      for (const name of localGroups) if (!keep.has(name)) await db.run('DELETE FROM item_groups WHERE name = ?', [name])
+    }
 
     // Sync items
     const lastItemSync = getConfig('last_item_sync')
@@ -62,6 +71,51 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       )
     }
     counts.items = items.length
+
+    // The incremental item sync only returns enabled items modified since the last sync, so items that
+    // were disabled, deleted or hidden from this profile on the server were never removed here. Ask the
+    // server for the full list of item codes this profile may sell and reconcile (older servers that
+    // don't have the method keep the previous behaviour).
+    try {
+      const activeCodes: string[] | undefined = await client.getActiveItemCodes()
+      if (Array.isArray(activeCodes) && activeCodes.length > 0) {
+        const active = new Set(activeCodes)
+        const localCodes: string[] = []
+        const all = db.prepare('SELECT item_code FROM items')
+        while (await all.step()) localCodes.push((all.getAsObject() as any).item_code)
+        all.free()
+        const stale = localCodes.filter((c) => !active.has(c))
+        for (const code of stale) await db.run('DELETE FROM items WHERE item_code = ?', [code])
+        counts.items_removed = stale.length
+        if (stale.length) console.log(`[Sync] Removed ${stale.length} items no longer sold on this profile`)
+        // Items made visible without their Item record changing (availability rows) are missed by the
+        // incremental fetch: pull them in full.
+        const have = new Set(localCodes)
+        const missing = activeCodes.filter((c) => !have.has(c) && !items.some((i: any) => i.name === c))
+        if (missing.length) {
+          const fresh = (await client.getItems()).filter((i: any) => missing.includes(i.name))
+          for (const item of fresh) {
+            await db.run(
+              `INSERT OR REPLACE INTO items (item_code, item_name, item_name_ar, description, description_ar,
+               item_group, rate, stock_uom, image, is_available, is_visible, kitchen_station, preparation_time,
+               has_variants, variant_of, visible_profiles, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, datetime('now'))`,
+              [
+                item.name, item.item_name, item.servepos_item_name_ar || null, item.description || null,
+                item.servepos_description_ar || null, item.item_group, item.standard_rate || 0, item.stock_uom,
+                item.image || null,
+                item.servepos_is_available !== undefined ? (item.servepos_is_available ? 1 : 0) : 1,
+                item.servepos_kitchen_station || null, item.servepos_preparation_time || null,
+                item.has_variants ? 1 : 0, item.variant_of || null, item.servepos_visible_profiles || null
+              ]
+            )
+          }
+          counts.items_added = fresh.length
+        }
+      }
+    } catch (e: any) {
+      console.log('[Sync] Item reconcile skipped:', e?.message || e)
+    }
     await setConfig('last_item_sync', new Date().toISOString())
 
     // Sync payment methods and POS Profile details

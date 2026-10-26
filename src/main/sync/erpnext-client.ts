@@ -193,6 +193,12 @@ export class ERPNextClient {
     return this.callMethod('servepos.api.registry.get_items', args)
   }
 
+  /** Item codes this profile may sell right now (servepos.api.registry.get_active_item_codes). */
+  async getActiveItemCodes(posProfile?: string): Promise<string[]> {
+    const pos_profile = this.requireProfile(posProfile)
+    return this.callMethod('servepos.api.registry.get_active_item_codes', { pos_profile })
+  }
+
   async getItemGroups(posProfile?: string): Promise<any[]> {
     const pos_profile = this.requireProfile(posProfile)
     return this.callMethod('servepos.api.registry.get_item_groups', { pos_profile })
