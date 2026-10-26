@@ -5,6 +5,7 @@ import { askConfirm, toast } from '../stores/ui'
 import StatusBand from './StatusBand'
 import CashCount, { Counts, countTotal } from './CashCount'
 import VoidDialog from './VoidDialog'
+import { STAGE, stageOf } from './orderStatus'
 import { SubBar, BackButton, Btn, Cap, Field, money, roundMoney, getMoneyDecimals } from '../ui'
 import { timeOf } from '../ui/hosts'
 import { cn } from '../lib/utils'
@@ -14,12 +15,14 @@ interface Props {
   sessionId: string
   onClose: () => void
   onCancel: () => void
+  /** Leave close shift and open this order on the till (to take payment). */
+  onOpenOrder?: (orderId: string) => void
 }
 
 // Close shift, blind: count the drawer first; the expected cash appears only after
 // "Finished counting, compare". Open orders and unsynced sales still block closing.
 
-export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
+export default function CloseShift({ sessionId, onClose, onCancel, onOpenOrder }: Props) {
   const user = useAuthStore((s) => s.user)
   const cur = useStatus((s) => s.currency)
   const [session, setSession] = useState<any>(null)
@@ -40,6 +43,8 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
   const [revealed, setRevealed] = useState(false)
   const [voidOrder, setVoidOrder] = useState<any>(null)
   const [closing, setClosing] = useState(false)
+  // Seated tables: hand them to the next shift (default) instead of voiding live orders
+  const [handOver, setHandOver] = useState(true)
   const t = useT()
 
   useEffect(() => { loadData() }, [sessionId])
@@ -96,7 +101,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
   const openCount = allOpenOrders.length
   // Open orders still block closing. Unsynced sales do not: the shift closes locally and the
   // sales and the shift log go to ERPNext on the next sync (works offline).
-  const blocked = openCount > 0
+  const blocked = openCount > 0 && !handOver
   const canClose = revealed && !blocked && !loading && !closing
 
   async function handleClose() {
@@ -114,8 +119,8 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
       }
       const ok = await askConfirm({
         title: t('Close shift') + '?',
-        body: `Counted ${cur} ${money(counted)}${cashDiff === 0 ? ', drawer matches.' : `, ${cashDiff > 0 ? 'over' : 'short'} by ${money(Math.abs(cashDiff))}.`}${pending > 0 ? `\n${pending} sale${pending === 1 ? ' is' : 's are'} not in ERPNext yet. They stay on this till and sync automatically when the connection is back.` : ''}\nThis can’t be undone.`,
-        ok: t('Close shift'), cancel: 'Not yet'
+        body: `${openCount > 0 ? t('{n} open orders stay open and move to the next shift when it opens.', { n: openCount }) + '\n' : ''}Counted ${cur} ${money(counted)}${cashDiff === 0 ? ', drawer matches.' : `, ${cashDiff > 0 ? 'over' : 'short'} by ${money(Math.abs(cashDiff))}.`}${pending > 0 ? `\n${pending} sale${pending === 1 ? ' is' : 's are'} not in ERPNext yet. They stay on this till and sync automatically when the connection is back.` : ''}\nThis can’t be undone.`,
+        ok: openCount > 0 ? t('Close and hand over') : t('Close shift'), cancel: t('Not yet')
       })
       if (!ok) return
       await doClose()
@@ -133,7 +138,7 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
       for (const m of paymentMethods) closingBalances[m.mode_of_payment] = expected[m.mode_of_payment] || 0
       closingBalances[cashName] = roundMoney(counted)
       const closingBalance = Object.entries(closingBalances).map(([mode, amount]) => ({ mode, amount }))
-      await window.api.sessions.close(sessionId, closingBalance, remarks)
+      await window.api.sessions.close(sessionId, closingBalance, remarks, openCount > 0 ? { handOver: true } : undefined)
       // Print closing voucher
       try { await window.api.print.closeShift(sessionId) } catch {}
       onClose()
@@ -159,14 +164,48 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
       </SubBar>
 
       <div className="flex min-h-0 flex-1 gap-3 p-3">
-        <CashCount title={t('Count the cash in the drawer')} hint="The expected amount shows only after you finish counting" rowHeight={62}
-          counts={counts} onCounts={(c) => { setCounts(c) }} manual={manual} onManual={setManual} />
+        {revealed && openCount > 0 ? (
+          <section aria-label={t('Open orders')} className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-md bg-white shadow-tile">
+            <div className="flex flex-shrink-0 flex-col gap-2 border-b border-n-line px-4 py-3">
+              <span className="cond text-[26px] font-bold leading-none">{t('{n} orders still open', { n: openCount })}</span>
+              <div role="radiogroup" className="flex gap-2">
+                <button type="button" role="radio" aria-checked={handOver} onClick={() => setHandOver(true)}
+                  className={cn('press flex min-h-[56px] flex-1 flex-col justify-center rounded-md px-3 text-start', handOver ? 'bg-n-deep text-white' : 'border border-n-edge bg-white')}>
+                  <span className="text-[15px] font-bold">{t('Hand over to next shift')}</span>
+                  <span className="text-xs opacity-80">{t('Tables stay open; their payments count in the next drawer')}</span>
+                </button>
+                <button type="button" role="radio" aria-checked={!handOver} onClick={() => setHandOver(false)}
+                  className={cn('press flex min-h-[56px] flex-1 flex-col justify-center rounded-md px-3 text-start', !handOver ? 'bg-n-deep text-white' : 'border border-n-edge bg-white')}>
+                  <span className="text-[15px] font-bold">{t('Pay or void each one')}</span>
+                  <span className="text-xs opacity-80">{t('Close only when nothing is open')}</span>
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {allOpenOrders.map((o: any) => (
+                <div key={o.id} className="flex min-h-[56px] items-center gap-3 border-b border-n-line px-4 py-1.5">
+                  <span className="cond w-24 flex-shrink-0 truncate text-[24px] font-bold leading-none text-n-deep">{o.table_name || (o.order_type === 'Takeaway' ? 'TA' : o.order_type === 'Delivery' ? 'D' : '#') + ' ' + (o.order_number?.split('-').pop() || '')}</span>
+                  <span className="flex min-w-0 flex-1 flex-col text-[13px]">
+                    <span className="truncate font-semibold">{t(STAGE[stageOf(o)].label)}{o.waiter_name ? ` · ${o.waiter_name}` : ''}</span>
+                    <span className="truncate text-n-muted">#{o.order_number?.split('-').pop()} · {t('since {time}', { time: timeOf(o.created_at) })}{o.session_id !== sessionId ? ` · ${t('previous shift')}` : ''}</span>
+                  </span>
+                  <span className="cond num whitespace-nowrap text-xl font-bold">{money(o.grand_total)}</span>
+                  {onOpenOrder && <Btn size="md" variant="outline" onClick={() => onOpenOrder(o.id)}>{t('Open')}</Btn>}
+                  <Btn size="md" variant="dangerOutline" onClick={() => setVoidOrder(o)}>{t('Void')}</Btn>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <CashCount title={t('Count the cash in the drawer')} hint="The expected amount shows only after you finish counting" rowHeight={62}
+            counts={counts} onCounts={(c) => { setCounts(c) }} manual={manual} onManual={setManual} />
+        )}
 
         <aside className="flex w-[340px] flex-shrink-0 flex-col gap-3">
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
             <div className="flex flex-shrink-0 flex-col gap-1 rounded-md bg-n-deep p-4 text-white">
               <Cap className="text-n-mist">{t('Counted cash')}</Cap>
-              <span className="cond num text-5xl font-bold leading-none">{cur} {money(counted)}</span>
+              <span className="cond num whitespace-nowrap text-5xl font-bold leading-none">{cur} {money(counted)}</span>
               {revealed ? (
                 <div className="mt-2.5 flex flex-col gap-1 border-t border-n-steel pt-2.5 text-[13px]">
                   <span className="flex justify-between"><span>{t('Opening float')}</span><span className="num">{money(opening[cashName] || 0)}</span></span>
@@ -206,16 +245,10 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
               </div>
             )}
 
-            {openCount > 0 && (
+            {openCount > 0 && !revealed && (
               <div className="flex flex-shrink-0 flex-col gap-1.5 rounded-md bg-white px-4 py-3 text-[13px] shadow-[inset_4px_0_0_#F4A52A,0_1px_2px_rgba(60,45,20,.12)]">
-                <span className="font-semibold">{openCount} order{openCount === 1 ? '' : 's'} still open. Pay or void {openCount === 1 ? 'it' : 'them'} to close.</span>
-                {allOpenOrders.map((o: any) => (
-                  <span key={o.id} className="flex items-center gap-2">
-                    <span className="cond num text-[15px] font-bold">#{o.order_number?.split('-').pop()}</span>
-                    <span className="min-w-0 flex-1 truncate text-n-muted">{o.table_name || o.order_type} · {o.status}{o.session_id !== sessionId ? ' · previous shift' : ''}</span>
-                    <Btn size="sm" variant="dangerOutline" onClick={() => setVoidOrder(o)}>Void</Btn>
-                  </span>
-                ))}
+                <span className="font-semibold">{t('{n} orders still open', { n: openCount })}</span>
+                <span className="text-n-muted">{t('After counting you can hand them over to the next shift, or open, pay or void them.')}</span>
               </div>
             )}
 
@@ -232,8 +265,8 @@ export default function CloseShift({ sessionId, onClose, onCancel }: Props) {
           {error && <span className="text-sm font-semibold text-n-red">{error}</span>}
           <button type="button" onClick={handleClose} disabled={!canClose}
             className={cn('press flex h-16 flex-shrink-0 items-center justify-between whitespace-nowrap rounded-lg px-[18px] text-lg font-bold', canClose ? 'bg-n-amber text-n-ink' : 'bg-n-sand text-n-stone')}>
-            <span>{loading || closing ? (syncing ? t('Syncing…') : 'Closing…') : !revealed ? t('Count first') : blocked ? t('Clear the blockers') : t('Close shift')}</span>
-            <span className="text-[13px] font-medium">{canClose ? 'Prints the closing voucher' : ''}</span>
+            <span>{loading || closing ? (syncing ? t('Syncing…') : 'Closing…') : !revealed ? t('Count first') : blocked ? t('Pay or void the open orders') : openCount > 0 ? t('Close and hand over {n}', { n: openCount }) : t('Close shift')}</span>
+            <span className="text-[13px] font-medium">{canClose && openCount === 0 ? t('Prints the closing voucher') : ''}</span>
           </button>
         </aside>
       </div>

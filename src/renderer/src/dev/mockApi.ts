@@ -178,6 +178,7 @@ const receiptConfig: Record<string, string> = {
 
 // ------------------------------------------------------------------ session + orders
 let session: any = opt.shiftClosed ? null : { id: 'sess-1', user_id: 'u-mariam', user_name: 'Mariam', opened_at: ago(380), status: 'Open', opening_balance: JSON.stringify([{ mode: 'Cash', amount: cv(1000) }]) }
+const closedSessions = new Set<string>(['sess-0'])
 const lastSession = { id: 'sess-0', user_name: 'Joseph', opened_at: ago(60 * 24), closed_at: ago(60 * 9), status: 'Closed', opening_balance: JSON.stringify([{ mode: 'Cash', amount: cv(1000) }]), closing_balance: JSON.stringify([{ mode: 'Cash', amount: cv(7420) }]) }
 const orders: any[] = []
 const orderItems: any[] = []
@@ -203,7 +204,7 @@ function makeOrder(o: any, lines: any[]) {
     subtotal: 0, discount_amount: 0, discount_percent: 0, discount_reason: null, promo_name: null, voucher_code: null, tax_total: 0, grand_total: 0, tip_amount: 0,
     kot_printed: 1, sync_status: 'pending', sync_error: null, erpnext_docname: null, void_reason: null, order_notes: null, completed_at: null, ...o
   }
-  for (const l of lines) orderItems.push({ id: uid('oi'), order_id: id, discount_amount: 0, discount_percent: 0, voided: 0, ...l })
+  for (const l of lines) orderItems.push({ id: uid('oi'), order_id: id, discount_amount: 0, discount_percent: 0, voided: 0, sent_at: l.kot_printed ? order.created_at : null, ...l })
   const sub = lines.reduce((s, l) => s + l.amount, 0)
   order.subtotal = sub
   order.grand_total = order.grand_total || sub
@@ -216,10 +217,12 @@ function makeOrder(o: any, lines: any[]) {
 const M = (arr: [string, string, number][]) => JSON.stringify(arr.map(([group, name, price], i) => ({ id: `m${i}`, name, group, price })))
 
 if (!opt.empty) {
-  makeOrder({ table_name: 'T12', room: 'Terrace', guests: 4, waiter_id: 'Ahmed', waiter_name: 'Ahmed', created_at: ago(16) }, [
+  const t12 = makeOrder({ table_name: 'T12', room: 'Terrace', guests: 4, waiter_id: 'Ahmed', waiter_name: 'Ahmed', created_at: ago(16) }, [
     lineFor('Hot Latte', 1, { modifiers: M([['Milk', 'Oat', 3]]) }), lineFor('Iced Spanish Latte', 2), lineFor('Cappuccino', 1),
     lineFor('Classic Mint Mojito 16 oz', 2, { modifiers: M([['Ice', 'Less ice', 0]]) }), lineFor('Açai Bowl (L)', 1, { modifiers: M([['Toppings', 'Cashew nut', 3]]) }), lineFor('Croissant Cheese', 1)
   ])
+  // a second round, sent 10 minutes after the first
+  orderItems.filter((i) => i.order_id === t12.id).slice(-2).forEach((i) => { i.sent_at = ago(6) })
   makeOrder({ table_name: 'T8', room: 'Terrace', guests: 4, waiter_id: 'Ahmed', waiter_name: 'Ahmed', created_at: ago(41), order_notes: 'Nut allergy, seat 2' }, [lineFor('Mango Tango 16 oz', 2), lineFor('Club Sandwich', 1, { special_instructions: 'No mayo' }), lineFor('Açai Bowl (L)', 2)])
   makeOrder({ table_name: 'T7', room: 'Terrace', guests: 2, waiter_id: 'Ahmed', waiter_name: 'Ahmed', status: 'Preparing', created_at: ago(9) }, [lineFor('Cappuccino', 2)])
   makeOrder({ order_type: 'Takeaway', guests: 1, status: 'Ready to Serve', created_at: ago(14), order_notes: 'Fatima · 5550 1234' }, [lineFor('Iced Spanish Latte', 1), lineFor('Cookies', 1)])
@@ -281,7 +284,7 @@ let lastResult: any = { down: { success: true, counts: { items: items.length } }
 const ORDER_FIELDS: Record<string, string> = {
   status: 'status', kotPrinted: 'kot_printed', subtotal: 'subtotal', grandTotal: 'grand_total', discountAmount: 'discount_amount', discountPercent: 'discount_percent',
   discountReason: 'discount_reason', promoName: 'promo_name', orderNotes: 'order_notes', taxTotal: 'tax_total', voucherCode: 'voucher_code', tipAmount: 'tip_amount',
-  completedAt: 'completed_at', voidReason: 'void_reason', voidRemarks: 'void_remarks', voidedBy: 'voided_by', voidDisposition: 'void_disposition', tableName: 'table_name', room: 'room', guests: 'guests',
+  completedAt: 'completed_at', voidReason: 'void_reason', voidRemarks: 'void_remarks', voidedBy: 'voided_by', voidDisposition: 'void_disposition', tableName: 'table_name', room: 'room', guests: 'guests', invoicePrinted: 'invoice_printed',
   waiterId: 'waiter_id', waiterName: 'waiter_name', orderType: 'order_type'
 }
 function liveItems(orderId: string) { return orderItems.filter((i) => i.order_id === orderId && !i.voided) }
@@ -348,8 +351,16 @@ const impl: Record<string, Record<string, (...a: any[]) => any>> = {
   },
   sessions: {
     getActive: () => clone(session),
-    open: (d: any) => { session = { id: uid('sess'), user_id: d.userId, user_name: d.userName, opened_at: ago(0), status: 'Open', opening_balance: JSON.stringify(d.openingBalance) }; return session.id },
-    close: (id: string, closing: any) => { if (session?.id === id) { Object.assign(lastSession, { ...session, closing_balance: JSON.stringify(closing), closed_at: ago(0), status: 'Closed' }); session = null } return true },
+    open: (d: any) => {
+      if (session) throw new Error('A shift is already open. Close it first.')
+      session = { id: uid('sess'), user_id: d.userId, user_name: d.userName, opened_at: ago(0), status: 'Open', opening_balance: JSON.stringify(d.openingBalance) }
+      // same as worker-queries openSession: handed-over orders join the new shift
+      for (const o of activeOrders()) if (closedSessions.has(o.session_id)) o.session_id = session.id
+      return session.id
+    },
+    close: (id: string, closing: any, _remarks?: string, opts?: { handOver?: boolean }) => {
+      if (activeOrders().length && !opts?.handOver) throw new Error(`Cannot close shift: ${activeOrders().length} order(s) still open or on hold. Supervisor must complete or void them first.`)
+      if (session?.id === id) { closedSessions.add(id); Object.assign(lastSession, { ...session, closing_balance: JSON.stringify(closing), closed_at: ago(0), status: 'Closed' }); session = null } return true },
     autoClose: () => true,
     getOrders: (sid: string) => clone(orders.filter((o) => o.session_id === sid)),
     getOpenOrders: (sid: string) => clone(activeOrders().filter((o) => o.session_id === sid)),
@@ -370,7 +381,7 @@ const impl: Record<string, Record<string, (...a: any[]) => any>> = {
       await sleep(250)
       if (opt.printFail) { opt.printFail = false; return { success: false, errors: ['Kitchen printer offline'] } } // fails once, Retry works
       const o = orders.find((x) => x.id === orderId); if (o) o.kot_printed = 1
-      for (const i of liveItems(orderId)) i.kot_printed = 1
+      if (!reprint) for (const i of liveItems(orderId)) if (!i.kot_printed) { i.kot_printed = 1; i.sent_at = ago(0) }
       log(orderId, 'kot', reprint ? 'reprint' : 'manual', actor || 'Mariam')
       return { success: true, errors: [] }
     },

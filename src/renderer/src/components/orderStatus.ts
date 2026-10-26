@@ -13,7 +13,10 @@ export interface ActiveOrderRow {
   grand_total: number
   created_at: string
   kot_printed?: number
+  invoice_printed?: number
   order_notes?: string | null
+  cashier_id?: string | null
+  session_id?: string | null
 }
 
 export type Stage = 'draft' | 'kitchen' | 'ready' | 'hold' | 'invoiced'
@@ -26,10 +29,13 @@ export const STAGE: Record<Stage, { label: string; color: string }> = {
   invoiced: { label: 'Bill printed', color: '#7C5CBF' }
 }
 
-export function stageOf(o: { status: string; kot_printed?: number }): Stage {
-  if (o.status === 'Hold') return 'hold'
+/** One name per state, everywhere (rail, floor, open orders, close shift):
+ *  anything the kitchen never got is "Not sent", held or not; a printed bill is "Bill printed". */
+export function stageOf(o: { status: string; kot_printed?: number; invoice_printed?: number }): Stage {
+  if ((o.status === 'Hold' || o.status === 'Open') && !o.kot_printed) return 'draft'
   if (o.status === 'Ready to Serve') return 'ready'
-  if (o.status === 'Invoiced') return 'invoiced'
+  if (o.status === 'Invoiced' || o.invoice_printed) return 'invoiced'
+  if (o.status === 'Hold') return 'hold'
   if (o.status === 'Preparing') return 'kitchen'
   return o.kot_printed ? 'kitchen' : 'draft'
 }
@@ -43,4 +49,23 @@ export function orderLabel(o: { table_name: string | null; order_type: string; o
 
 export function typeShort(t: string) {
   return t === 'Dine In' ? 'Dine in' : t
+}
+
+export interface Round<L> { key: string; n: number; sentAt: string | null; sent: boolean; lines: L[] }
+/** Group ticket lines into kitchen rounds: one per send time (to the minute), oldest first; lines the
+ *  kitchen never got come last as "not sent yet". Lines sent before sent_at existed form round 1. */
+export function groupRounds<L>(lines: L[], get: (l: L) => { sent: boolean; sentAt?: string | null }): Round<L>[] {
+  const sent = new Map<string, L[]>()
+  const unsent: L[] = []
+  for (const l of lines) {
+    const g = get(l)
+    if (!g.sent) { unsent.push(l); continue }
+    const k = g.sentAt ? String(g.sentAt).replace('T', ' ').slice(0, 16) : ''
+    if (!sent.has(k)) sent.set(k, [])
+    sent.get(k)!.push(l)
+  }
+  const keys = Array.from(sent.keys()).sort() // '' (unknown, oldest) sorts first
+  const rounds: Round<L>[] = keys.map((k, i) => ({ key: k || 'sent', n: i + 1, sentAt: k || null, sent: true, lines: sent.get(k)! }))
+  if (unsent.length) rounds.push({ key: 'new', n: rounds.length + 1, sentAt: null, sent: false, lines: unsent })
+  return rounds
 }

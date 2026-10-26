@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Btn, Dialog, Stepper, money } from '../ui'
+import { useEffect, useState } from 'react'
+import { Btn, Dialog, Stepper, money, staffColor, initial } from '../ui'
 import { useStatus } from '../stores/status'
 import { useT } from '../stores/i18n'
 import { TileInfo } from './FloorGrid'
@@ -96,6 +96,29 @@ export function TableActions({ info, onOpen, onMove, onPrintBill, onCancel }: { 
         <Btn size="xl" variant="outline" onClick={onPrintBill}>{t('Print bill')}</Btn>
         <Btn size="lg" variant="plain" onClick={onCancel}>{t('Cancel')}</Btn>
       </div>
+    </Dialog>
+  )
+}
+
+/** Waiter for the order, one tap. Saved on an open order straight away. */
+export function WaiterPick({ current, onPick, onCancel }: { current: string | null; onPick: (id: string | null, name: string | null) => void; onCancel: () => void }) {
+  const t = useT()
+  const [waiters, setWaiters] = useState<{ name: string; waiter_name: string }[] | null>(null)
+  useEffect(() => { window.api.waiters.list().then((l: any) => setWaiters((l || []).filter((w: any) => w.is_active !== 0))).catch(() => setWaiters([])) }, [])
+  return (
+    <Dialog onClose={onCancel} className="w-[min(560px,calc(100vw-32px))] rounded-lg" label={t('Waiter')}>
+      <div className="px-5 pb-1 pt-4"><span className="cond text-[30px] font-bold text-n-deep">{t('Who is serving?')}</span></div>
+      <div className="grid max-h-[60vh] grid-cols-3 gap-2 overflow-y-auto px-5 py-3">
+        <button type="button" onClick={() => onPick(null, null)} className={`press flex h-16 items-center justify-center rounded-md text-[15px] font-semibold ${!current ? 'bg-n-deep text-white' : 'border border-n-edge bg-white text-n-muted'}`}>{t('No waiter')}</button>
+        {(waiters || []).map((w) => (
+          <button key={w.name} type="button" onClick={() => onPick(w.name, w.waiter_name)}
+            className={`press flex h-16 items-center gap-2.5 rounded-md px-3 text-start text-[15px] font-semibold ${current === w.name ? 'bg-n-deep text-white' : 'border border-n-edge bg-white text-n-ink'}`}>
+            <span className="cond flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-base font-bold text-white" style={{ background: staffColor(w.waiter_name) }}>{initial(w.waiter_name)}</span>
+            <span className="truncate">{w.waiter_name}</span>
+          </button>
+        ))}
+      </div>
+      <div className="flex px-5 pb-4 pt-1"><Btn size="lg" variant="outline" onClick={onCancel}>{t('Cancel')}</Btn></div>
     </Dialog>
   )
 }

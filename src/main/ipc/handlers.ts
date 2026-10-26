@@ -268,8 +268,8 @@ export function registerIpcHandlers(): void {
     await saveDatabaseSync() // Critical — must persist shift open
     return result
   })
-  handle('sessions:close', async (_e, sessionId: string, closingBalance: any[], remarks?: string) => {
-    const result = await db.closeSession(sessionId, closingBalance, remarks)
+  handle('sessions:close', async (_e, sessionId: string, closingBalance: any[], remarks?: string, opts?: { handOver?: boolean }) => {
+    const result = await db.closeSession(sessionId, closingBalance, remarks, opts)
     await saveDatabaseSync() // Extra explicit save — critical operation must persist
     return result
   })

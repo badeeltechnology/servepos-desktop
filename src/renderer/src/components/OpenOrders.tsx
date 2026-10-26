@@ -10,9 +10,12 @@ import { useT } from '../stores/i18n'
 
 // Every open order on one board: tabs by type, chips by stage, late ones first. Tap to open.
 
-type Tab = 'All' | 'Dine In' | 'Takeaway' | 'Delivery' | 'Waiter'
+export type OpenTab = 'All' | 'Dine In' | 'TA' | 'Takeaway' | 'Delivery' | 'Waiter'
+type Tab = OpenTab
+const inOpenTab = (o: ActiveOrderRow, k: Tab) => k === 'All' || (k === 'Waiter' ? !!o.waiter_name : k === 'TA' ? o.order_type !== 'Dine In' : o.order_type === k)
 
-export default function OpenOrders({ orders, activeOrderId, activeLabel, isSupervisor, waiterPending, onWaiter, onBack, onOpen, onVoid, onRefresh }: {
+export default function OpenOrders({ orders, activeOrderId, activeLabel, isSupervisor, waiterPending, onWaiter, onBack, onOpen, onVoid, onRefresh, initialTab = 'All' }: {
+  initialTab?: Tab
   orders: ActiveOrderRow[]
   activeOrderId: string | null
   activeLabel: string | null
@@ -28,7 +31,7 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
   const t = useT()
   const { wide, large } = useTier()
   const cur = useStatus((s) => s.currency)
-  const [tab, setTab] = useState<Tab>('All')
+  const [tab, setTab] = useState<Tab>(initialTab)
   const [chip, setChip] = useState<Stage | null>(null)
   const [query, setQuery] = useState('')
   const [finding, setFinding] = useState(false)
@@ -36,7 +39,7 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
   const [voidFor, setVoidFor] = useState<ActiveOrderRow | null>(null)
   const findRef = useRef<HTMLInputElement>(null)
 
-  const inTab = useMemo(() => orders.filter((o) => tab === 'All' || (tab === 'Waiter' ? !!o.waiter_name : o.order_type === tab)), [orders, tab])
+  const inTab = useMemo(() => orders.filter((o) => inOpenTab(o, tab)), [orders, tab])
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
     return inTab
@@ -51,7 +54,7 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
       })
   }, [inTab, chip, query])
 
-  const tabs: [Tab, string][] = [['All', t('All')], ['Dine In', t('Dine in')], ['Takeaway', t('Takeaway')], ['Delivery', t('Delivery')], ['Waiter', t('With waiter')]]
+  const tabs: [Tab, string][] = [['All', t('All')], ['Dine In', t('Dine in')], ['TA', t('Takeaway & delivery')], ['Waiter', t('With waiter')]]
   const cols = large ? 6 : wide ? 5 : 4
 
   return (
@@ -63,7 +66,7 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
         <div className="flex gap-0.5 overflow-x-auto">
           {tabs.map(([k, l]) => (
             <RailTab key={k} active={tab === k} onClick={() => setTab(k)}>
-              {l} <span className="cond num text-[17px] font-bold">{k === 'All' ? orders.length : orders.filter((o) => (k === 'Waiter' ? !!o.waiter_name : o.order_type === k)).length}</span>
+              {l} <span className="cond num text-[17px] font-bold">{orders.filter((o) => inOpenTab(o, k)).length}</span>
             </RailTab>
           ))}
         </div>
@@ -106,7 +109,7 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
           const sub = o.order_type === 'Dine In'
             ? [o.room, o.guests ? `${o.guests} guest${o.guests === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || 'Dine in'
             : [typeShort(o.order_type), o.order_notes].filter(Boolean).join(' · ')
-          const who = o.waiter_name || (st === 'hold' ? o.cashier_name : null)
+          const who = o.waiter_name // the badge is always the waiter (none when there is no waiter)
           return (
             <div key={o.id} className="relative">
               <button type="button" onClick={() => onOpen(o.id)}
@@ -115,13 +118,13 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
                 <span className="w-[7px] flex-shrink-0" style={{ background: STAGE[st].color }} />
                 <span className="flex min-w-0 flex-1 flex-col px-2.5 py-2">
                   <span className="flex items-baseline justify-between gap-1.5">
-                    <span className="cond whitespace-nowrap text-[28px] font-bold leading-none">{orderLabel(o)}</span>
+                    <span className="cond min-w-0 truncate text-[28px] font-bold leading-none">{orderLabel(o)}</span>
                     <span className={cn('cond num text-lg font-bold', late ? 'rounded bg-n-red px-1.5 py-px text-white' : age >= 20 ? 'text-[#B56A00]' : 'text-n-muted')}>{ageLabel(age)}</span>
                   </span>
                   <span className="mt-[3px] truncate text-xs text-n-muted">{sub}</span>
                   <span className="mt-auto flex items-center gap-1.5 text-xs">
                     <Dot color={STAGE[st].color} size={9} square />
-                    <span className="font-semibold">{late && st === 'kitchen' ? t('Late') : t(STAGE[st].label)}</span>
+                    <span className="font-semibold">{t(STAGE[st].label)}</span>
                     <span className="flex-1" />
                     <span className="num text-sm font-semibold">{o.grand_total ? `${cur} ${money(o.grand_total)}` : ''}</span>
                   </span>
@@ -130,7 +133,7 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
                   <span className="absolute bottom-8 right-2 flex h-[22px] w-[22px] items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: staffColor(who) }} title={who}>{initial(who)}</span>
                 )}
               </button>
-              {isSupervisor && st === 'hold' && (
+              {isSupervisor && o.status === 'Hold' && (
                 <button type="button" aria-label={`More for ${orderLabel(o)}`} onClick={() => setMenuFor(o)}
                   className="absolute right-1 top-9 flex h-8 w-8 items-center justify-center rounded-full text-n-muted hover:bg-n-cream">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>

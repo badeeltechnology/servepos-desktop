@@ -22,6 +22,7 @@ export interface CartItem {
   specialInstructions: string
   amount: number // computed: (rate * qty) - discounts + modifierTotal
   kotPrinted?: boolean // line already went to the kitchen (order_items.kot_printed)
+  sentAt?: string | null // when it went (order_items.sent_at, SQLite UTC); groups the ticket into rounds
 }
 
 type NewItem = Omit<CartItem, 'id' | 'amount' | 'discountAmount' | 'discountPercent' | 'modifierTotal' | 'specialInstructions' | 'modifiers'> & { modifiers?: CartModifier[]; specialInstructions?: string }
@@ -48,7 +49,7 @@ interface CartState {
   /** Record DB row ids for lines just saved (cart id → order_items id). */
   setDbIds: (map: Record<string, string>) => void
   /** Mark lines as sent to the kitchen by their DB row id. */
-  setKotPrinted: (dbIds: string[]) => void
+  setKotPrinted: (dbIds: string[], sentAt?: Record<string, string | null>) => void
   updateItemQty: (id: string, qty: number) => void
   removeItem: (id: string) => void
   updateItemModifiers: (id: string, modifiers: CartModifier[]) => void
@@ -113,20 +114,22 @@ export const useCartStore = create<CartState>((set, get) => ({
       modifierTotal,
       specialInstructions: item.specialInstructions || '',
       amount: calcItemAmount({ rate: item.rate, qty: item.qty, discountPercent: 0, discountAmount: 0, modifiers }),
-      kotPrinted: !!item.kotPrinted
+      kotPrinted: !!item.kotPrinted,
+      sentAt: (item as any).sentAt ?? null
     }
     set((state) => ({ items: [...state.items, newItem] }))
     return id
   },
 
   addOrMerge: (item) => {
-    const plain = (!item.modifiers || item.modifiers.length === 0) && !item.specialInstructions
-    if (plain) {
-      const hit = get().items.find((l) => l.itemCode === item.itemCode && !l.dbId && !l.kotPrinted && l.modifiers.length === 0 && !l.specialInstructions && l.discountPercent === 0 && l.discountAmount === 0 && l.rate === item.rate)
-      if (hit) {
-        get().updateItemQty(hit.id, hit.qty + item.qty)
-        return hit.id
-      }
+    // Same item, same modifiers (any order), same note, on a line not saved or sent yet: add to its qty
+    const key = (mods: CartModifier[] = []) => mods.map((m) => `${m.group}:${m.name}:${m.price}`).sort().join('|')
+    const k = key(item.modifiers)
+    const note = (item.specialInstructions || '').trim()
+    const hit = get().items.find((l) => l.itemCode === item.itemCode && !l.dbId && !l.kotPrinted && key(l.modifiers) === k && (l.specialInstructions || '').trim() === note && l.discountPercent === 0 && l.discountAmount === 0 && l.rate === item.rate)
+    if (hit) {
+      get().updateItemQty(hit.id, hit.qty + item.qty)
+      return hit.id
     }
     return get().addItem(item)
   },
@@ -135,9 +138,9 @@ export const useCartStore = create<CartState>((set, get) => ({
     set((state) => ({ items: state.items.map((i) => (map[i.id] ? { ...i, dbId: map[i.id] } : i)) }))
   },
 
-  setKotPrinted: (dbIds) => {
+  setKotPrinted: (dbIds, sentAt) => {
     const ids = new Set(dbIds)
-    set((state) => ({ items: state.items.map((i) => (i.dbId && ids.has(i.dbId) ? { ...i, kotPrinted: true } : i)) }))
+    set((state) => ({ items: state.items.map((i) => (i.dbId && ids.has(i.dbId) ? { ...i, kotPrinted: true, sentAt: i.sentAt || sentAt?.[i.dbId] || null } : i)) }))
   },
 
   updateItemQty: (id, qty) => {

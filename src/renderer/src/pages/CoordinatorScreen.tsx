@@ -17,11 +17,12 @@ type SortKey = 'priority' | 'newest' | 'oldest' | 'elapsed_desc' | 'table' | 'st
 type GroupBy = 'none' | 'waiter' | 'status'
 type TextSize = 'sm' | 'md' | 'lg'
 
+// Work in progress first (oldest first across New and Preparing); Ready and billed tickets go to the end
 const STATUS_PRIORITY: Record<string, number> = {
-  'Ready to Serve': 0,
-  'Preparing': 1,
-  'Open': 2,
-  'Hold': 2,
+  'Open': 0,
+  'Hold': 0,
+  'Preparing': 0,
+  'Ready to Serve': 2,
   'Invoiced': 3
 }
 
@@ -277,7 +278,7 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
     }
     sorted.sort((a, b) => {
       switch (sort) {
-        case 'newest': return getTime(b.created_at) - getTime(a.created_at)
+        case 'newest': return getTime(b.created_at) - getTime(a.created_at) || 0
         case 'oldest': return getTime(a.created_at) - getTime(b.created_at)
         case 'elapsed_desc': return getTime(a.created_at) - getTime(b.created_at)
         case 'table': return (a.table_name || '').localeCompare(b.table_name || '', undefined, { numeric: true })
@@ -287,9 +288,8 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
           const pa = STATUS_PRIORITY[a.status] ?? 9
           const pb = STATUS_PRIORITY[b.status] ?? 9
           if (pa !== pb) return pa - pb
-          // Within same status: urgent (older) first for Ready, newest for others
-          if (a.status === 'Ready to Serve') return getTime(a.created_at) - getTime(b.created_at)
-          return getTime(b.created_at) - getTime(a.created_at)
+          // Kitchens work oldest first, in every lane
+          return getTime(a.created_at) - getTime(b.created_at)
         }
       }
     })
@@ -586,8 +586,9 @@ function Ticket({ order, items, ticks, tickKey, textSize, loading, onTick, onAdv
   const isNew = order.status === 'Open' || order.status === 'Hold'
   const isReady = order.status === 'Ready to Serve'
   const late = !isReady && order.status !== 'Invoiced' && elapsed >= 30
-  const warn = !late && elapsed >= 15
-  const urgent = isReady && elapsed > 10
+  const warn = !late && !isReady && order.status !== 'Invoiced' && elapsed >= 15
+  // The clock stops at Ready: it measures the kitchen, not how long the guests have been sitting
+  const urgent = false
   const max = textSize === 'lg' ? 3 : textSize === 'md' ? 4 : 6
   const shown = items.slice(0, max)
   const more = items.length - shown.length
@@ -605,7 +606,7 @@ function Ticket({ order, items, ticks, tickKey, textSize, loading, onTick, onAdv
           </span>
           <span className="truncate text-[13px] text-n-muted">{sub}</span>
         </span>
-        <span className={cn('cond num flex h-[34px] min-w-[54px] items-center justify-center rounded px-2 text-[22px] font-bold', late || urgent ? 'bg-n-red text-white' : warn ? 'text-[#B56A00]' : 'text-n-muted')}>{formatElapsed(elapsed)}</span>
+        <span className={cn('cond num flex h-[34px] min-w-[54px] items-center justify-center rounded px-2 text-[22px] font-bold', late || urgent ? 'bg-n-red text-white' : warn ? 'text-[#B56A00]' : 'text-n-muted')}>{isReady ? 'Ready' : order.status === 'Invoiced' ? 'Billed' : formatElapsed(elapsed)}</span>
       </button>
       {order.order_notes && (
         <div className={cn('mx-3 mb-1 rounded-md px-2 py-1 text-[13px] font-semibold', ALLERGY.test(order.order_notes) ? 'bg-n-red text-white' : 'line-clamp-2 bg-[#FBEFD9] text-[#8A5A00]')}>{order.order_notes}</div>
@@ -615,13 +616,13 @@ function Ticket({ order, items, ticks, tickKey, textSize, loading, onTick, onAdv
           const k = tickKey(order, it)
           const done = !!ticks[k] || isReady || order.status === 'Invoiced'
           return (
-            <button key={it.key} type="button" aria-pressed={done} onClick={() => onTick(k)} className="flex min-h-[40px] items-start gap-2.5 rounded-md px-1.5 py-[7px] text-start">
+            <button key={it.key} type="button" aria-pressed={done} onClick={() => onTick(k)} className="flex min-h-[40px] flex-shrink-0 items-start gap-2.5 rounded-md px-1.5 py-[7px] text-start">
               <span className={cn('flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-md', done ? 'bg-n-green' : 'border-2 border-[#B9B2A4]')}>
                 {done && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10" /></svg>}
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-px">
-                <span className={cn('font-semibold leading-tight', TEXT[textSize], done && 'text-n-stone line-through')}>
-                  <span className="cond num mr-1.5 inline-block rounded px-1 text-white" style={{ background: itemColor(it.code, it.name) }}>{it.qty}</span>{it.name}
+                <span className={cn('break-words font-semibold leading-snug', TEXT[textSize], done && 'text-n-stone line-through')}>
+                  <span className="cond num me-1.5 inline-block rounded px-1 leading-snug text-white" style={{ background: itemColor(it.code, it.name) }}>{it.qty}</span>{it.name}
                 </span>
                 {it.mods && <span className="text-[13px] font-semibold text-n-red">{it.mods}</span>}
                 {it.note && <span className={cn('text-[13px] font-semibold', ALLERGY.test(it.note) ? 'rounded bg-n-red px-1.5 text-white' : 'text-[#2E6DA4]')}>{it.note}</span>}
@@ -635,7 +636,7 @@ function Ticket({ order, items, ticks, tickKey, textSize, loading, onTick, onAdv
       <div className="flex gap-1.5 px-2.5 pb-2.5 pt-2">
         {isNew && <button type="button" disabled={loading} onClick={() => onAdvance('Preparing')} className="press h-[52px] flex-1 rounded-md bg-n-deep text-base font-bold text-white disabled:opacity-50">Start</button>}
         {(isNew || order.status === 'Preparing') && (
-          <button type="button" disabled={loading} onClick={() => onAdvance('Ready to Serve')} className={cn('press h-[52px] flex-1 rounded-md text-base font-bold disabled:opacity-50', isNew ? 'border-2 border-n-green bg-white text-n-green' : 'bg-n-green text-white')}>Mark ready</button>
+          <button type="button" disabled={loading} onClick={() => onAdvance('Ready to Serve')} className={cn('press h-[52px] flex-1 whitespace-nowrap rounded-md px-3 text-base font-bold disabled:opacity-50', isNew ? 'border-2 border-n-green bg-white text-n-green' : 'bg-n-green text-white')}>Mark ready</button>
         )}
         {isReady && <span className="flex h-[52px] flex-1 items-center justify-center rounded-md border-2 border-n-green bg-white text-[15px] font-bold text-n-green">Waiting for waiter</span>}
         {order.status === 'Invoiced' && <span className="flex h-[52px] flex-1 items-center justify-center rounded-md border-2 border-[#7C5CBF] bg-white text-[15px] font-bold text-[#7C5CBF]">Awaiting payment</span>}

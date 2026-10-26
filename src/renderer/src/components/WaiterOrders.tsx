@@ -45,13 +45,21 @@ export function chime() {
   } catch { /* no audio device */ }
 }
 
-export function useWaiterOrders({ autoAccept, onNew, onAccepted }: { autoAccept: boolean; onNew: () => void; onAccepted: () => void }): WaiterOrdersState {
+/** "B5 round 2" / "C12" / "Takeaway": how a waiter order is named in toasts. */
+export function woLabel(wo: any) {
+  const place = wo?.table || wo?.order_type || 'Waiter order'
+  const round = Number(wo?.round_no) > 1 ? ` round ${wo.round_no}` : ''
+  return `${place}${round}`
+}
+
+export function useWaiterOrders({ autoAccept, onNew, onAccepted }: { autoAccept: boolean; onNew: (fresh: any[]) => void; onAccepted: () => void }): WaiterOrdersState {
   const [orders, setOrders] = useState<any[]>([])
   const [deadlines, setDeadlines] = useState<Record<string, number>>({})
   const [processing, setProcessing] = useState<string | null>(null)
   const seen = useRef<Set<string>>(new Set())
   const handled = useRef<Set<string>>(new Set())
   const paused = useRef<Set<string>>(new Set())
+  const listRef = useRef<any[]>([])
   const auto = useRef(autoAccept)
   const cb = useRef({ onNew, onAccepted })
   auto.current = autoAccept
@@ -61,6 +69,7 @@ export function useWaiterOrders({ autoAccept, onNew, onAccepted }: { autoAccept:
     try {
       const list: any[] = (await window.api.waiterOrders.getPending()) || []
       const visible = list.filter((o) => !handled.current.has(o.name))
+      listRef.current = list
       setOrders((prev) => (JSON.stringify(prev) === JSON.stringify(visible) ? prev : visible))
       useStatus.getState().set({ waiterPending: visible.length })
       return visible
@@ -76,7 +85,7 @@ export function useWaiterOrders({ autoAccept, onNew, onAccepted }: { autoAccept:
     if (fresh.length) {
       fresh.forEach((o) => seen.current.add(o.name))
       chime()
-      cb.current.onNew()
+      cb.current.onNew(fresh)
     }
   }, [refresh])
 
@@ -85,10 +94,12 @@ export function useWaiterOrders({ autoAccept, onNew, onAccepted }: { autoAccept:
     handled.current.add(name)
     setDeadlines((d) => { const n = { ...d }; delete n[name]; return n })
     setProcessing(name)
+    const wo = listRef.current.find((o) => o.name === name)
     try {
       const res = await window.api.waiterOrders.accept(name)
       if (res?.success) {
-        const msg = res.kotPrinted ? `Order #${res.orderNumber} accepted — KOT printed` : `Order #${res.orderNumber} accepted${res.kotError ? ` (KOT failed: ${res.kotError})` : ''}`
+        const what = `${woLabel(wo)}${wo?.waiter_name ? ` (${wo.waiter_name})` : ''}`
+        const msg = res.kotPrinted ? `Waiter app: ${what} sent to the kitchen` : `Waiter app: ${what} accepted${res.kotError ? `, but the KOT failed: ${res.kotError}` : ''}`
         res.kotPrinted ? toast.success(msg) : toast.error(msg)
         cb.current.onAccepted()
       } else {
@@ -189,7 +200,7 @@ export default function WaiterOrders({ state, autoAccept, onClose }: { state: Wa
                 <div className="flex items-center gap-2.5 border-b border-n-line px-3.5 pb-2 pt-3">
                   <span className="cond flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-[22px] font-bold text-white" style={{ background: staffColor(wo.waiter_name) }}>{initial(wo.waiter_name)}</span>
                   <span className="flex min-w-0 flex-1 flex-col leading-tight">
-                    <span className="flex items-baseline gap-2"><span className="cond text-[26px] font-bold">{String(wo.name).replace(/^WO-\d{4}-0*/, 'WO-')}</span><span className="truncate text-sm font-semibold">{where}</span></span>
+                    <span className="flex items-baseline gap-2"><span className="cond truncate text-[30px] font-bold leading-none">{wo.table || wo.order_type}</span><span className="truncate text-sm font-semibold text-n-muted">{[wo.room, String(wo.name).replace(/^WO-\d{4}-0*/, 'WO-')].filter(Boolean).join(' · ')}</span></span>
                     <span className="truncate text-xs text-n-muted">{[wo.waiter_name, wo.guests ? `${wo.guests} guests` : null, wo.order_type].filter(Boolean).join(' · ')}</span>
                   </span>
                   {(wo.created || wo.creation) && <span className="cond num text-xl font-bold text-n-muted">{ageLabel(age)}</span>}

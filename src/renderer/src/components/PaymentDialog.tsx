@@ -225,7 +225,7 @@ export default function PaymentDialog(props: Props) {
 
       <div className="flex min-h-0 flex-1 gap-3 p-3">
         {/* Receipt, as it will print */}
-        <aside aria-label="Receipt" className="hidden w-[250px] flex-shrink-0 flex-col gap-px overflow-hidden bg-white px-3.5 pb-3 pt-3.5 font-mono text-xs leading-normal shadow-tile min-[900px]:flex">
+        <aside aria-label="Receipt" className="hidden w-[250px] flex-shrink-0 flex-col gap-px overflow-hidden bg-white px-3.5 pb-3 pt-3.5 font-mono text-xs leading-normal shadow-tile min-[1100px]:flex">
           <div className="text-center text-[13px] font-semibold">{rc.restaurant_name || 'RECEIPT'}</div>
           {rc.address_line_1 && <div className="text-center">{rc.address_line_1}</div>}
           <div className="my-1.5 border-t border-dashed border-[#B9B2A4]" />

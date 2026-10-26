@@ -675,6 +675,14 @@ export function openSession(data: {
      data.openingBalance.reduce((s, b) => s + b.amount, 0),
      JSON.stringify(data.openingBalance)]
   )
+  // Orders handed over by a closed shift (still open) now belong to this shift, so their
+  // payments count in this drawer. Orders of an open shift are never touched.
+  executeSync(
+    `UPDATE orders SET session_id = ?
+     WHERE status IN ('Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced')
+       AND session_id IN (SELECT id FROM sessions WHERE status = 'Closed')`,
+    [id]
+  )
   return id
 }
 
@@ -698,14 +706,18 @@ export function getSessionPendingSyncOrders(sessionId: string): any[] {
   )
 }
 
-export function closeSession(sessionId: string, closingBalance: { mode: string; amount: number }[], remarks?: string): any {
+export function closeSession(sessionId: string, closingBalance: { mode: string; amount: number }[], remarks?: string, opts?: { handOver?: boolean }): any {
   const session = queryOne('SELECT * FROM sessions WHERE id = ?', [sessionId])
   if (!session) throw new Error('Session not found')
   if (session.status !== 'Open') throw new Error('Session is not open')
 
-  // Check for open/hold orders (all orders, not just current session)
+  // Check for open/hold orders (all orders, not just current session).
+  // Hand-over (opt-in, newer tills only): seated tables stay open and move to the next shift
+  // when it opens (see openSession). Only completed orders count towards this drawer.
   const openOrders = getAllOpenOrders()
-  if (openOrders.length > 0) {
+  if (openOrders.length > 0 && opts?.handOver) {
+    remarks = [remarks, `Handed over ${openOrders.length} open order(s) to the next shift`].filter(Boolean).join(' · ')
+  } else if (openOrders.length > 0) {
     throw new Error(`Cannot close shift: ${openOrders.length} order(s) still open or on hold. Supervisor must complete or void them first.`)
   }
 

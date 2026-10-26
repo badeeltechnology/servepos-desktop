@@ -1,4 +1,4 @@
-import { useT } from '../stores/i18n'
+import { useT, useLang } from '../stores/i18n'
 import { ReactNode, useState } from 'react'
 import { useStatus } from '../stores/status'
 import { useAppStore } from '../stores/app'
@@ -25,6 +25,7 @@ export default function StatusBand({ userName, onUser, onWaiter, showWaiter = tr
   const online = useAppStore((s) => s.isOnline)
   const [running, setRunning] = useState(false)
   const t = useT()
+  const { lang, setLang } = useLang()
 
   const erpOk = sync?.lastResult ? !(sync.lastResult.down && sync.lastResult.down.success === false) && !(sync.lastResult.up && sync.lastResult.up.success === false) : true
   const erpTone = !erpConfigured ? 'off' : !online ? 'bad' : erpOk ? 'ok' : 'warn'
@@ -69,6 +70,12 @@ export default function StatusBand({ userName, onUser, onWaiter, showWaiter = tr
         <Lamp tone={waiterPending > 0 ? 'ok' : 'off'} strong={waiterPending > 0} label={waiterPending > 0 ? t('Waiter app · {n} new', { n: waiterPending }) : t('Waiter app')} onClick={onWaiter} />
       )}
       {right}
+      {onUser && (
+        <button type="button" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} title="Language" aria-label={lang === 'ar' ? 'English' : 'العربية'}
+          className="flex h-8 min-w-[40px] items-center justify-center rounded-full border border-n-steel px-2.5 text-[13px] font-semibold text-white">
+          {lang === 'ar' ? 'EN' : 'ع'}
+        </button>
+      )}
       <Clock className="cond num text-[17px] font-semibold text-white" />
       {userName && (
         onUser ? (

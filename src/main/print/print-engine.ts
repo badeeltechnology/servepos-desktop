@@ -395,7 +395,7 @@ export async function printKots(orderId: string, source: 'auto' | 'manual' | 're
   await db.run('UPDATE orders SET kot_printed = 1 WHERE id = ?', [orderId])
   if (source !== 'reprint') {
     for (const item of items) {
-      await db.run('UPDATE order_items SET kot_printed = 1 WHERE id = ?', [item.id])
+      await db.run("UPDATE order_items SET kot_printed = 1, sent_at = COALESCE(sent_at, datetime('now')) WHERE id = ?", [item.id])
     }
   }
   await saveDatabase()

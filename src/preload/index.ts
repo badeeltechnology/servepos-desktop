@@ -120,7 +120,7 @@ const api = {
   sessions: {
     getActive: () => ipcRenderer.invoke('sessions:getActive'),
     open: (data: any) => ipcRenderer.invoke('sessions:open', data),
-    close: (sessionId: string, closingBalance: any[], remarks?: string) => ipcRenderer.invoke('sessions:close', sessionId, closingBalance, remarks),
+    close: (sessionId: string, closingBalance: any[], remarks?: string, opts?: { handOver?: boolean }) => ipcRenderer.invoke('sessions:close', sessionId, closingBalance, remarks, opts),
     autoClose: () => ipcRenderer.invoke('sessions:autoClose'),
     getOrders: (sessionId: string) => ipcRenderer.invoke('sessions:getOrders', sessionId),
     getOpenOrders: (sessionId: string) => ipcRenderer.invoke('sessions:getOpenOrders', sessionId),

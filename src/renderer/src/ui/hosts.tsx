@@ -9,21 +9,21 @@ export function ToastHost() {
   const { toasts, dismiss } = useToast()
   useT()
   useEffect(() => {
-    const timers = toasts.filter((x) => !x.sticky).map((x) => setTimeout(() => dismiss(x.id), x.type === 'error' ? 6000 : 4000))
+    const timers = toasts.filter((x) => !x.sticky).map((x) => setTimeout(() => dismiss(x.id), x.type === 'error' || x.action ? 7000 : 4000))
     return () => timers.forEach(clearTimeout)
   }, [toasts, dismiss])
   if (!toasts.length) return null
   return (
-    <div className="pointer-events-none fixed left-1/2 top-[52px] z-[10050] flex max-w-[80vw] -translate-x-1/2 flex-col items-center gap-2">
+    <div className="pointer-events-none fixed top-[104px] z-[10050] flex -translate-x-1/2 flex-col items-center gap-2" style={{ left: document.documentElement.dir === 'rtl' ? 'calc(50% + 190px)' : 'calc(50% - 190px)', maxWidth: 'min(620px, calc(100vw - 440px))' }}>
       {toasts.map((x) => (
         <div role={x.type === 'error' ? 'alert' : 'status'} key={x.id}
           className={cn('pointer-events-auto flex animate-rise items-center gap-2.5 rounded-md py-2 pl-5 pr-2 text-sm font-semibold shadow-pop',
             x.type === 'success' ? 'bg-n-green text-white' : x.type === 'info' ? 'bg-n-deep text-white' : 'bg-n-red text-white')}>
-          {x.type === 'info' && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
+          {x.type === 'info' && !x.action && /…$/.test(x.message) && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
           <span className="py-1">{x.message}</span>
           {x.action && (
             <button type="button" onClick={async () => { dismiss(x.id); await x.action!.run() }}
-              className="press h-10 rounded-md bg-white px-3 text-sm font-bold text-n-red">{t(x.action.label)}</button>
+              className={cn('press h-10 rounded-md px-3 text-sm font-bold', x.type === 'error' ? 'bg-white text-n-red' : 'bg-n-amber text-n-ink')}>{t(x.action.label)}</button>
           )}
           <button type="button" aria-label="Dismiss" onClick={() => dismiss(x.id)} className="h-10 w-9 text-lg leading-none text-white/80">×</button>
         </div>

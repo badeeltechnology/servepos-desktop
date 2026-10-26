@@ -5,14 +5,16 @@ import { useStatus } from '../stores/status'
 import { itemColor } from '../stores/menu'
 import { toast } from '../stores/ui'
 import TablePicker from './TablePicker'
-import { GuestsPick } from './FloorDialogs'
+import { GuestsPick, WaiterPick } from './FloorDialogs'
 import { useFloor } from '../stores/floor'
 import VoidDialog, { VoidResult } from './VoidDialog'
 import { roundMoney } from '../ui/currency'
 import { Btn, Dialog, Sheet, Option, Stepper, Cap, Field, Keypad, PinDots, Chevron, money, amountKey, pinKey, staffColor, initial } from '../ui'
-import { timeOf } from '../ui/hosts'
+import { timeOf, minutesSince, ageLabel, useTick } from '../ui/hosts'
 import { cn } from '../lib/utils'
-import { useT } from '../stores/i18n'
+import { useT, useLang } from '../stores/i18n'
+import { useMenu } from '../stores/menu'
+import { groupRounds, STAGE, Stage } from './orderStatus'
 
 // The ticket: who/where at the top, what went to the kitchen (Sent) apart from what hasn't (New),
 // a tray of actions on the tapped line, and Send / Hold / Pay at the bottom.
@@ -20,7 +22,15 @@ import { useT } from '../stores/i18n'
 type RemovedItem = { dbId?: string; itemName: string; qty: number; rate: number; amount: number }
 
 interface CartProps {
-  onPlaceOrder: () => void
+  /** Send; `stay` keeps the till on this ticket instead of going back to the floor */
+  onPlaceOrder: (opts?: { stay?: boolean }) => void
+  /** Dine-in at a table on a till with a floor: offer "Send & floor" (default) and "Send" (stay) */
+  floorAfterSend?: boolean
+  onPrintBill?: () => void
+  /** Stage of the saved order, for the header ("In kitchen", "Bill printed"…) */
+  stage?: Stage | null
+  /** Config quick_sale_kot = 0: a takeaway / delivery paid at once prints no KOT */
+  quickSaleNoKot?: boolean
   onUpdateOnly?: () => void
   onPay: () => void
   onHold: () => void
@@ -43,7 +53,8 @@ interface CartProps {
   onPartialVoid?: (orderId: string, item: RemovedItem, voidQty: number, reason: string, remarks?: string, disposition?: string) => Promise<void> | void
 }
 
-export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewOrder, onMoveTable, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, orderNumber, orderCreatedAt, sentAt, processing, onAutoVoid, onItemRemoved, onPartialVoid }: CartProps) {
+export default function Cart({ onPlaceOrder, floorAfterSend, onPrintBill, stage, quickSaleNoKot, onUpdateOnly, onPay, onHold, onNewOrder, onMoveTable, taxRate, taxLabel = 'VAT', isOrderPlaced = false, activeOrderId, orderNumber, orderCreatedAt, sentAt, processing, onAutoVoid, onItemRemoved, onPartialVoid }: CartProps) {
+  useTick(30000)
   const [discountEnabled, setDiscountEnabled] = useState(false)
   const [discountPermission, setDiscountPermission] = useState<'supervisor_only' | 'all_users'>('supervisor_only')
   const [defaultMaxPct, setDefaultMaxPct] = useState(0)
@@ -79,6 +90,9 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
   const [sheet, setSheet] = useState<null | 'order' | 'offers'>(null)
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [showGuests, setShowGuests] = useState(false)
+  const [showWaiters, setShowWaiters] = useState(false)
+  const uiAr = useLang((s) => s.lang) === 'ar'
+  const byCode = useMenu((s) => s.byCode)
   // Send / Hold / Pay waiting for a table (dine-in ticket without one)
   const [pending, setPending] = useState<null | 'send' | 'hold' | 'pay'>(null)
   const floorRooms = useFloor((s) => s.rooms)
@@ -99,6 +113,11 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
   const sentSum = sum(sentLines)
   const newSum = sum(newLines)
   const itemCount = items.reduce((s, l) => s + l.qty, 0)
+  const rounds = groupRounds(items, (l) => ({ sent: !!l.kotPrinted, sentAt: l.sentAt || (l.kotPrinted ? orderCreatedAt : null) }))
+  void sentLines; void sentSum; void sentAt; void sentOpen
+  const ctxBtn = 'press flex h-11 min-w-0 flex-col items-start justify-center rounded-md border border-n-edge bg-white px-2 text-start leading-tight'
+  const ctxCap = 'text-[10px] font-bold uppercase tracking-[.08em] text-n-muted'
+  const ctxVal = 'w-full truncate text-[13.5px] font-semibold text-n-ink'
 
   // Deselect when the line disappears
   useEffect(() => { if (selected && !items.find((i) => i.id === selected)) setSelected(null) }, [items, selected])
@@ -180,20 +199,24 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
 
   function lineRow(l: CartItem) {
     const sel = selected === l.id
-    const mods = [...l.modifiers.map((m) => m.name), l.specialInstructions ? `“${l.specialInstructions}”` : ''].filter(Boolean).join(', ')
+    const mods = l.modifiers.map((m) => m.name).join(' · ')
     const disc = l.discountPercent > 0 ? `−${l.discountPercent}%` : l.discountAmount > 0 ? `−${money(l.discountAmount)}` : ''
+    const name = (uiAr && byCode[l.itemCode]?.item_name_ar) || l.itemName
     return (
       <div key={l.id} className={cn(sel && 'bg-n-ice shadow-[inset_3px_0_0_#0E6E86]')}>
         <button type="button" onClick={() => setSelected(sel ? null : l.id)} aria-expanded={sel}
-          className="flex min-h-[36px] w-full items-center gap-2.5 px-3 py-1 text-start text-n-ink">
-          <span className="cond num inline-flex h-[22px] min-w-[22px] flex-shrink-0 items-center justify-center rounded px-[5px] text-[15px] font-bold text-white" style={{ background: itemColor(l.itemCode, l.itemName) }}>{l.qty}</span>
-          <span className={cn('min-w-0 flex-1 text-sm', sel ? 'whitespace-normal' : 'truncate')}>
-            {l.itemName}
-            {mods && <span className="text-n-muted"> · {mods}</span>}
-            {disc && <span className="font-semibold text-n-green"> {disc}</span>}
-            {l.dbId && !l.kotPrinted && <span className="text-xs font-semibold text-n-muted"> · saved</span>}
+          className="flex min-h-[40px] w-full items-start gap-2.5 px-3 py-1.5 text-start text-n-ink">
+          <span className="cond num mt-px inline-flex h-[22px] min-w-[22px] flex-shrink-0 items-center justify-center rounded px-[5px] text-[15px] font-bold text-white" style={{ background: itemColor(l.itemCode, l.itemName) }}>{l.qty}</span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className={cn('text-sm leading-snug', !sel && 'line-clamp-2')}>
+              {name}
+              {disc && <span className="font-semibold text-n-green"> {disc}</span>}
+              {l.dbId && !l.kotPrinted && <span className="text-xs font-semibold text-n-muted"> · {t('saved')}</span>}
+            </span>
+            {mods && <span className="text-[12.5px] leading-snug text-n-muted">{mods}</span>}
+            {l.specialInstructions && <span className="text-[12.5px] font-medium leading-snug text-n-teal">“{l.specialInstructions}”</span>}
           </span>
-          <span className="num text-sm font-medium">{money(l.amount)}</span>
+          <span className="num text-sm font-medium" dir="ltr">{money(l.amount)}</span>
         </button>
         {sel && (
           l.kotPrinted ? (
@@ -237,92 +260,102 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
 
   return (
     <aside aria-label="Current order" className="relative flex h-full flex-col bg-white shadow-[-1px_0_0_#D8D1C3]">
-      {/* Who and where: the order's identity, big, and every part of it tappable */}
-      <div className="flex flex-shrink-0 flex-col gap-1 border-b border-n-line px-3 pb-1.5 pt-2">
-        <div className="flex items-center gap-2">
-          {isDine && tableName ? (
-            <button type="button" onClick={() => setShowTablePicker(true)} aria-label={t('Table {name}, change table', { name: tableName })}
-              className="cond min-w-0 truncate text-start text-[40px] font-bold leading-[.9] text-n-deep">
-              {tableName}
-            </button>
-          ) : needsTable ? (
+      {/* Who and where: the order's identity, big; table, guests, waiter and type are 44px buttons */}
+      <div className="flex flex-shrink-0 flex-col gap-1.5 border-b border-n-line px-3 pb-2 pt-2" onClick={() => typeMenu && setTypeMenu(false)}>
+        <div className="flex items-center gap-2.5">
+          {needsTable ? (
             <button type="button" onClick={() => setShowTablePicker(true)}
               className="press flex h-12 items-center gap-2 rounded-md bg-n-amber px-4 text-base font-bold text-n-ink">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M6 12v8M18 12v8" /></svg>
               {t('Choose table')}
             </button>
-          ) : isDine ? (
-            <button type="button" onClick={() => setSheet('order')} className="cond min-w-0 truncate text-start text-[40px] font-bold leading-[.9] text-n-deep">
-              {shortNo ? `#${shortNo}` : t('New')}
-            </button>
           ) : (
-            <button type="button" onClick={() => setSheet('order')} className="cond flex min-w-0 items-baseline gap-2 text-start leading-[.9] text-n-deep">
-              <span className="text-[34px] font-bold">{t(orderType)}</span>
-              {orderType === 'Delivery' && notes
-                ? <span className="truncate text-[24px] font-semibold text-n-teal">· {notes}</span>
-                : shortNo && <span className="num text-[34px] font-bold text-n-teal">#{shortNo}</span>}
+            <button type="button" onClick={() => (isDine && floorHasTables ? setShowTablePicker(true) : setSheet('order'))}
+              aria-label={isDine && tableName ? t('Table {name}, change table', { name: tableName }) : undefined}
+              className="cond flex min-w-0 items-baseline gap-2 text-start leading-[.9] text-n-deep">
+              {isDine ? <span className="truncate text-[42px] font-bold">{tableName || (shortNo ? `#${shortNo}` : t('New'))}</span> : (
+                <>
+                  <span className="text-[34px] font-bold">{t(orderType)}</span>
+                  {orderType === 'Delivery' && notes
+                    ? <span className="truncate text-[24px] font-semibold text-n-teal">· {notes}</span>
+                    : shortNo && <span className="num text-[34px] font-bold text-n-teal">#{shortNo}</span>}
+                </>
+              )}
             </button>
           )}
-          <span className="flex-1" />
-          {isDine && typeChip}
-          <button type="button" aria-label="More actions" onClick={() => setSheet('order')}
+          <span className="flex min-w-0 flex-1 flex-col text-[12.5px] leading-tight text-n-muted">
+            <span className="truncate">{isDine && roomName ? roomName : t(isDine ? 'Dine in' : orderType)}{orderCreatedAt ? ` · ${t('seated {time}', { time: timeOf(orderCreatedAt) })} (${ageLabel(minutesSince(orderCreatedAt))})` : ''}</span>
+            {stage ? (
+              <span className="flex items-center gap-1 truncate font-semibold" style={{ color: stage === 'kitchen' ? '#8A5A00' : STAGE[stage].color }}>
+                <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: STAGE[stage].color }} />{t(STAGE[stage].label)}{stage !== 'draft' && newLines.length > 0 ? ` · ${t('round {n} being taken', { n: rounds.filter((r) => r.sent).length + 1 })}` : ''}
+              </span>
+            ) : items.length > 0 ? <span className="font-semibold text-n-teal">{t('Not sent')}</span> : null}
+          </span>
+          <button type="button" aria-label="More actions" onClick={() => { setTypeMenu(false); setSheet('order') }}
             className="press flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md border border-n-line bg-white">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="#1B1F24" aria-hidden="true"><circle cx="5" cy="12" r="2.2" /><circle cx="12" cy="12" r="2.2" /><circle cx="19" cy="12" r="2.2" /></svg>
           </button>
         </div>
-        <div className="flex min-w-0 items-center gap-0.5 text-n-muted">
-          {isDine ? (
-            <>
-              {(roomName || floorHasTables) && <button type="button" className={cn(subBtn, 'font-semibold text-n-ink')} onClick={() => setShowTablePicker(true)}>{roomName || t('No table')}</button>}
-              {(roomName || floorHasTables) && <span aria-hidden="true">·</span>}
-              <button type="button" className={subBtn} onClick={() => setShowGuests(true)}>{guests} {t(guests === 1 ? 'guest' : 'guests')}</button>
-            </>
-          ) : (
-            orderType === 'Delivery' && notes
-              ? shortNo && <span className="px-1 text-[13px]">#{shortNo}</span>
-              : <button type="button" className={subBtn} onClick={() => setSheet('order')}>{notes || t('Add a name or note')}</button>
+        <div className="grid grid-cols-[1.25fr_.8fr_1fr_1fr] gap-1.5">
+          {isDine && (
+            <button type="button" className={ctxBtn} onClick={() => { setTypeMenu(false); setShowTablePicker(true) }}>
+              <span className={ctxCap}>{t('Table')}</span><span className={ctxVal}>{tableName || t('Choose')}</span>
+            </button>
           )}
-          <span aria-hidden="true">·</span>
-          <button type="button" className={cn(subBtn, waiterName && 'text-n-ink')} onClick={() => setSheet('order')}>{waiterName || t('No waiter')}</button>
-          {since && <><span aria-hidden="true">·</span><span className="min-w-0 truncate px-1 text-[13px]">{since}</span></>}
-          {!isDine && <span className="min-w-1 flex-1" />}
-          {!isDine && typeChip}
+          {!isDine && (
+            <button type="button" className={ctxBtn} onClick={() => { setTypeMenu(false); setSheet('order') }}>
+              <span className={ctxCap}>{t(orderType === 'Delivery' ? 'Reference' : 'Name')}</span><span className={ctxVal}>{notes || t('Add')}</span>
+            </button>
+          )}
+          <button type="button" className={ctxBtn} onClick={() => { setTypeMenu(false); setShowGuests(true) }}>
+            <span className={ctxCap}>{t('Guests')}</span><span className={ctxVal}>{guests}</span>
+          </button>
+          <button type="button" className={ctxBtn} onClick={() => { setTypeMenu(false); setShowWaiters(true) }}>
+            <span className={ctxCap}>{t('Waiter')}</span><span className={ctxVal}>{waiterName || t('None')}</span>
+          </button>
+          <span className="relative min-w-0">
+            <button type="button" className={cn(ctxBtn, 'w-full')} onClick={(e) => { e.stopPropagation(); setTypeMenu(!typeMenu) }} aria-haspopup="menu">
+              <span className={ctxCap}>{t('Type')}</span><span className={ctxVal}>{t(isDine ? 'Dine in' : orderType)}</span>
+            </button>
+            {typeMenu && (
+              <span role="menu" className="absolute end-0 top-full z-30 mt-1 flex w-40 flex-col overflow-hidden rounded-md bg-white shadow-pop">
+                {(['Dine In', 'Takeaway', 'Delivery'] as const).map((tp) => (
+                  <button key={tp} role="menuitem" type="button" onClick={(e) => { e.stopPropagation(); setOrderType(tp); if (tp !== 'Dine In') cart.setTable(null); setTypeMenu(false) }}
+                    className={cn('h-12 px-3 text-start text-sm', orderType === tp ? 'bg-n-ice font-semibold text-n-deep' : 'text-n-ink')}>
+                    {t(tp === 'Dine In' ? 'Dine in' : tp)}
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
         </div>
       </div>
 
-      {/* Lines */}
+      {/* Lines, one block per kitchen round */}
       <div className="scroll-none min-h-0 flex-1 overflow-y-auto pb-0.5 pt-1" onClick={() => typeMenu && setTypeMenu(false)}>
         {items.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
             <span className="cond text-2xl font-bold text-n-ink">{t('Nothing on the ticket')}</span>
             <span className="text-sm text-n-muted">{t('Tap the menu to add items, or open an order from the rail.')}</span>
           </div>
-        ) : (
-          <>
-            {sentLines.length > 0 && (
-              <>
-                <button type="button" onClick={() => setSentOpen(!sentOpen)} aria-expanded={sentOpen}
-                  className="flex h-[30px] w-full items-center gap-2 px-3 text-start">
-                  <Cap className="text-n-muted">{sentAt ? t('Sent {time}', { time: sentAt }) : t('Sent')}</Cap>
-                  <span className="h-px flex-1 bg-n-line" />
-                  <span className="num text-xs text-n-muted">{sentSum.qty} {t(sentSum.qty === 1 ? 'item' : 'items')} · {money(sentSum.amt)}</span>
-                  <Chevron dir={sentOpen ? 'down' : 'right'} size={14} strokeWidth={2.5} className="text-n-muted" />
-                </button>
-                {sentOpen && sentLines.map(lineRow)}
-              </>
-            )}
-            {newLines.length > 0 && (
-              <>
-                <div className="flex h-[30px] items-center gap-2 px-3">
-                  <Cap className="text-n-teal">{t('New')}</Cap>
-                  <span className="h-px flex-1 bg-[#CFE0E5]" />
-                  <span className="num text-xs text-n-teal">{newSum.qty} {t(newSum.qty === 1 ? 'item' : 'items')} · {money(newSum.amt)}</span>
-                </div>
-                {newLines.map(lineRow)}
-              </>
-            )}
-          </>
-        )}
+        ) : rounds.map((r) => {
+          const s2 = sum(r.lines)
+          const only = rounds.length === 1
+          return (
+            <div key={r.key}>
+              <div className="flex h-[28px] items-center gap-2 px-3">
+                <Cap className={r.sent ? 'text-n-muted' : 'text-n-teal'}>
+                  {r.sent
+                    ? (only && !r.sentAt ? t('Sent') : r.sentAt ? t('Round {n} · sent {time}', { n: r.n, time: timeOf(r.sentAt) }) : t('Round {n} · sent', { n: r.n }))
+                    : (r.n === 1 ? t('New') : t('Round {n} · not sent yet', { n: r.n }))}
+                </Cap>
+                <span className={cn('h-px flex-1', r.sent ? 'bg-n-line' : 'bg-[#CFE0E5]')} />
+                <span className={cn('num text-xs', r.sent ? 'text-n-muted' : 'text-n-teal')}>{s2.qty} {t(s2.qty === 1 ? 'item' : 'items')} · {money(s2.amt)}</span>
+              </div>
+              {r.lines.map(lineRow)}
+            </div>
+          )
+        })}
       </div>
 
       {/* Offers and totals */}
@@ -349,21 +382,43 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
         <span>{t('Subtotal')}</span><span className="num font-semibold text-n-ink">{money(subtotal)}</span>
       </div>
 
-      {/* Send / Hold / Pay */}
-      <div className="flex flex-shrink-0 gap-2 bg-white px-2.5 pb-2.5 pt-2">
-        <button type="button" onClick={() => guarded('send', onPlaceOrder)} disabled={processing || newLines.length === 0}
-          className={cn('press h-16 flex-1 whitespace-nowrap rounded-lg text-base font-bold', newLines.length ? 'bg-n-teal text-white' : 'border-[1.5px] border-n-edge bg-white text-n-muted')}>
-          {processing ? t('Sending…') : newLines.length ? t('Send {n}', { n: newSum.qty }) : items.length ? t('Sent') : t('Send')}
-        </button>
-        <button type="button" onClick={() => guarded('hold', onHold)} disabled={processing || items.length === 0}
-          className="press h-16 w-16 flex-shrink-0 rounded-lg border-[1.5px] border-n-edge bg-white text-[15px] font-semibold text-n-ink disabled:text-n-stone">
-          {t('Hold')}
-        </button>
-        <button type="button" onClick={() => guarded('pay', onPay)} disabled={processing || items.length === 0}
-          className="press flex h-16 flex-[1.7] items-center justify-between gap-2 whitespace-nowrap rounded-lg bg-n-amber px-3.5 leading-none text-n-ink disabled:bg-n-sand disabled:text-n-stone">
-          <span className="text-base font-bold">{t('Pay')}</span>
-          <span className="cond num text-2xl font-bold">{cur} {money(grandTotal)}</span>
-        </button>
+      {/* Send / Hold, then Print bill / Pay */}
+      <div className="flex flex-shrink-0 flex-col gap-1.5 bg-white px-2.5 pb-2.5 pt-1.5">
+        <div className="flex gap-1.5">
+          {floorAfterSend ? (
+            <>
+              <button type="button" onClick={() => guarded('send', () => onPlaceOrder())} disabled={processing || newLines.length === 0}
+                className={cn('press flex h-[54px] flex-[1.4] flex-col items-center justify-center whitespace-nowrap rounded-lg leading-tight', newLines.length ? 'bg-n-teal text-white' : 'border-[1.5px] border-n-edge bg-white text-n-muted')}>
+                <span className="text-base font-bold">{processing ? t('Sending…') : t('Send & floor')}</span>
+                {newLines.length > 0 && !processing && <span className="text-[11.5px] opacity-85">{t('{n} to kitchen', { n: newSum.qty })}</span>}
+              </button>
+              <button type="button" onClick={() => guarded('send', () => onPlaceOrder({ stay: true }))} disabled={processing || newLines.length === 0}
+                className="press flex h-[54px] flex-1 flex-col items-center justify-center whitespace-nowrap rounded-lg border-[1.5px] border-n-teal bg-white leading-tight text-n-teal disabled:border-n-edge disabled:text-n-stone">
+                <span className="text-base font-bold">{t('Send')}</span><span className="text-[11.5px]">{t('stay here')}</span>
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={() => guarded('send', () => onPlaceOrder())} disabled={processing || newLines.length === 0}
+              className={cn('press h-[54px] flex-1 whitespace-nowrap rounded-lg text-base font-bold', newLines.length ? 'bg-n-teal text-white' : 'border-[1.5px] border-n-edge bg-white text-n-muted')}>
+              {processing ? t('Sending…') : newLines.length ? t('Send {n}', { n: newSum.qty }) : items.length ? t('Sent') : t('Send')}
+            </button>
+          )}
+          <button type="button" onClick={() => guarded('hold', onHold)} disabled={processing || items.length === 0}
+            className="press h-[54px] w-[76px] flex-shrink-0 rounded-lg border-[1.5px] border-n-edge bg-white text-[15px] font-semibold text-n-ink disabled:text-n-stone">
+            {t('Hold')}
+          </button>
+        </div>
+        <div className="flex gap-1.5">
+          <button type="button" onClick={onPrintBill} disabled={processing || !activeOrderId || !onPrintBill}
+            className="press h-[54px] flex-[.8] whitespace-nowrap rounded-lg border-[1.5px] border-n-edge bg-white text-[15px] font-semibold text-n-ink disabled:text-n-stone">
+            {stage === 'invoiced' ? t('Reprint bill') : t('Print bill')}
+          </button>
+          <button type="button" onClick={() => guarded('pay', onPay)} disabled={processing || items.length === 0}
+            className="press flex h-[54px] min-w-0 flex-[1.4] items-center justify-between gap-2 whitespace-nowrap rounded-lg bg-n-amber px-3 leading-none text-n-ink disabled:bg-n-sand disabled:text-n-stone">
+            <span className="text-base font-bold">{newLines.length && !(quickSaleNoKot && !activeOrderId && orderType !== 'Dine In') ? t('Send & pay') : t('Pay')}</span>
+            <span className="cond num truncate text-[22px] font-bold" dir="ltr">{money(grandTotal)}</span>
+          </button>
+        </div>
       </div>
 
       {/* Sheets and dialogs */}
@@ -380,6 +435,14 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
           hint={pending === 'send' ? t('Pick the table, then the order goes to the kitchen') : pending === 'hold' ? t('Pick the table to hold this order on') : pending === 'pay' ? t('Pick the table, or make it Takeaway for a quick sale') : null}
           onTakeaway={pending && !activeOrderId ? () => { const k = pending; setShowTablePicker(false); setPending(null); setOrderType('Takeaway'); runPending(k) } : undefined}
           onCancel={() => { setShowTablePicker(false); setPending(null) }} />
+      )}
+      {showWaiters && (
+        <WaiterPick current={cart.waiterId} onCancel={() => setShowWaiters(false)}
+          onPick={(id, name) => {
+            setShowWaiters(false)
+            cart.setWaiter(id, name)
+            if (activeOrderId) window.api.orders.update(activeOrderId, { waiterId: id, waiterName: name }).catch(() => {})
+          }} />
       )}
       {showGuests && (
         <GuestsPick table={tableName || t(orderType === 'Dine In' ? 'Dine in' : orderType)} initial={guests} onCancel={() => setShowGuests(false)}
@@ -432,10 +495,11 @@ export default function Cart({ onPlaceOrder, onUpdateOnly, onPay, onHold, onNewO
 
 // ------------------------------------------------------------------ order options
 function SheetHeader({ title, onClose }: { title: string; onClose: () => void }) {
+  const t = useT()
   return (
     <div className="flex h-14 flex-shrink-0 items-center gap-3 bg-n-deep px-4 text-white">
       <span className="cond flex-1 text-2xl font-bold">{title}</span>
-      <Btn variant="ghostDark" onClick={onClose}>Done</Btn>
+      <Btn variant="ghostDark" onClick={onClose}>{t('Done')}</Btn>
     </div>
   )
 }
@@ -453,6 +517,7 @@ function OrderSheet({ onClose, activeOrderId, canUpdateOnly, onUpdateOnly, onNew
 }) {
   const { orderType, setOrderType, tableName, setTable, guests, setGuests, waiterId, setWaiter, orderNotes, setOrderNotes, orderDiscountPercent, orderDiscountAmount, promoName } = useCartStore()
   const user = useAuthStore((s) => s.user)
+  const t = useT()
   const [waiters, setWaiters] = useState<{ name: string; waiter_name: string }[]>([])
   useEffect(() => { window.api.waiters.list().then((l: any) => setWaiters(l || [])).catch(() => {}) }, [])
 
@@ -477,34 +542,40 @@ function OrderSheet({ onClose, activeOrderId, canUpdateOnly, onUpdateOnly, onNew
     } catch (e: any) { toast.error(`Print failed: ${e?.message || e}`) }
   }
 
+  // On an open order, guests / waiter / note are saved straight away (review F02)
+  const save = (patch: Record<string, any>) => { if (activeOrderId) window.api.orders.update(activeOrderId, patch).catch(() => {}) }
+  const guestsTo = (n: number) => { setGuests(n); save({ guests: n }) }
+  const waiterTo = (id: string | null, name: string | null) => { setWaiter(id, name); save({ waiterId: id, waiterName: name }) }
+  const close = () => { save({ orderNotes: useCartStore.getState().orderNotes || null }); onClose() }
+
   return (
-    <Sheet onClose={onClose} className="w-[420px] max-w-[92vw]" label="Order details">
-      <SheetHeader title="Order details" onClose={onClose} />
+    <Sheet onClose={close} className="w-[420px] max-w-[92vw]" label="Order details">
+      <SheetHeader title={t('Order details')} onClose={close} />
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-        <Section title="Order type">
+        <Section title={t('Order type')}>
           <div className="grid grid-cols-3 gap-1.5">
-            {(['Dine In', 'Takeaway', 'Delivery'] as const).map((t) => (
-              <Option key={t} active={orderType === t} onClick={() => { setOrderType(t); if (t !== 'Dine In') setTable(null) }} className="justify-center">{t === 'Dine In' ? 'Dine in' : t}</Option>
+            {(['Dine In', 'Takeaway', 'Delivery'] as const).map((tp) => (
+              <Option key={tp} active={orderType === tp} onClick={() => { setOrderType(tp); if (tp !== 'Dine In') setTable(null) }} className="justify-center">{t(tp === 'Dine In' ? 'Dine in' : tp)}</Option>
             ))}
           </div>
         </Section>
         {orderType === 'Dine In' && (
-          <Section title="Table and guests">
+          <Section title={t('Table and guests')}>
             <div className="flex items-center gap-2">
               <Option onClick={onPickTable} className="flex-1">
-                <span>{tableName ? `Table ${tableName}` : 'Choose a table'}</span>
+                <span>{tableName ? t('Table {name}', { name: tableName }) : t('Choose a table')}</span>
                 <Chevron dir="right" className="text-n-muted" />
               </Option>
-              <Stepper value={guests} onDec={() => setGuests(Math.max(1, guests - 1))} onInc={() => setGuests(guests + 1)} decLabel="One guest less" incLabel="One guest more" />
+              <Stepper value={guests} onDec={() => guestsTo(Math.max(1, guests - 1))} onInc={() => guestsTo(guests + 1)} decLabel="One guest less" incLabel="One guest more" />
             </div>
           </Section>
         )}
         {waiters.length > 0 && (
-          <Section title="Waiter">
+          <Section title={t('Waiter')}>
             <div className="grid grid-cols-3 gap-1.5">
-              <Option active={!waiterId} onClick={() => setWaiter(null, null)} className="justify-center text-n-muted">None</Option>
+              <Option active={!waiterId} onClick={() => waiterTo(null, null)} className="justify-center text-n-muted">{t('None')}</Option>
               {waiters.map((w) => (
-                <Option key={w.name} active={waiterId === w.name} onClick={() => setWaiter(w.name, w.waiter_name)} className="justify-start">
+                <Option key={w.name} active={waiterId === w.name} onClick={() => waiterTo(w.name, w.waiter_name)} className="justify-start">
                   <span className="cond flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white" style={{ background: staffColor(w.waiter_name) }}>{initial(w.waiter_name)}</span>
                   <span className="min-w-0 flex-1 truncate">{w.waiter_name}</span>
                 </Option>
@@ -512,23 +583,23 @@ function OrderSheet({ onClose, activeOrderId, canUpdateOnly, onUpdateOnly, onNew
             </div>
           </Section>
         )}
-        <Section title="Order note" hint="prints on the KOT">
-          <Field data-keyboard="full" value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} placeholder="Allergies, timing, name for takeaway…" />
+        <Section title={t('Order note')} hint={t('prints on the KOT')}>
+          <Field data-keyboard="full" value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} placeholder={t('Allergies, timing, name for takeaway…')} />
         </Section>
         {activeOrderId && (
-          <Section title="Print">
+          <Section title={t('Print')}>
             <div className="grid grid-cols-2 gap-1.5">
-              <Option onClick={() => print('both')}>KOT + waiter copy</Option>
-              <Option onClick={() => print('kot')}>Reprint KOT</Option>
-              <Option onClick={() => print('waiter')}>Waiter copy</Option>
-              <Option onClick={() => print('invoice')}>Invoice</Option>
+              <Option onClick={() => print('both')}>{t('KOT + waiter copy')}</Option>
+              <Option onClick={() => print('kot')}>{t('Reprint KOT')}</Option>
+              <Option onClick={() => print('waiter')}>{t('Waiter copy')}</Option>
+              <Option onClick={() => print('invoice')}>{t('Print bill')}</Option>
             </div>
           </Section>
         )}
-        <Section title="Order">
+        <Section title={t('Order')}>
           <div className="grid grid-cols-2 gap-1.5">
-            {canUpdateOnly && <Option onClick={onUpdateOnly}>Save without KOT</Option>}
-            <Option onClick={onNewOrder}>New order</Option>
+            {canUpdateOnly && <Option onClick={onUpdateOnly}>{t('Save without KOT')}</Option>}
+            <Option onClick={onNewOrder}>{t('New order')}</Option>
           </div>
         </Section>
       </div>

@@ -4,7 +4,7 @@ import { useMenu, MenuItem, groupColor } from '../stores/menu'
 import ModifierModal from './ModifierModal'
 import { Btn, Dialog, Option, SearchIcon, useTier, money, C } from '../ui'
 import { cn } from '../lib/utils'
-import { useT } from '../stores/i18n'
+import { useT, useLang } from '../stores/i18n'
 
 // Menu side of the till: the category shelf (folder tabs) and the item grid, with an inline
 // search keyboard. Tapping a tile adds one; items with variants or modifiers open a chooser.
@@ -56,9 +56,11 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
   const searchRef = useRef<HTMLInputElement>(null)
   const { wide, large } = useTier()
   const t = useT()
+  const uiLang = useLang((s) => s.lang)
+  // Arabic interface: item names follow (once per switch; the EN / AR / Both toggle still works)
+  useEffect(() => { if (uiLang === 'ar') setLang((l) => (l === 'en' ? 'ar' : l)); else setLang((l) => (l === 'ar' ? 'en' : l)) }, [uiLang])
 
   const addOrMerge = useCartStore((s) => s.addOrMerge)
-  const addItem = useCartStore((s) => s.addItem)
   const cartItems = useCartStore((s) => s.items)
   const tableName = useCartStore((s) => s.tableName)
   const orderType = useCartStore((s) => s.orderType)
@@ -140,19 +142,16 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
     return item.item_name
   }
 
+  // Identical item + modifiers + note on an unsent line adds to its qty (3 × Cappuccino, not 3 lines)
   function doAddItem(item: MenuItem, modifiers?: CartModifier[], instructions?: string, qty = 1) {
-    const base = { itemCode: item.item_code, itemName: item.item_name, qty, rate: item.rate }
-    if (modifiers && (modifiers.length > 0 || instructions)) addItem({ ...base, modifiers, specialInstructions: instructions })
-    else addOrMerge(base)
+    addOrMerge({ itemCode: item.item_code, itemName: item.item_name, qty, rate: item.rate, modifiers: modifiers || [], specialInstructions: instructions || '' })
   }
 
+  // Adding to an order the kitchen already has needs no confirm: the line lands under
+  // "Not sent yet" and goes out with the next Send (review F16).
   function addWithConfirm(item: MenuItem, modifiers?: CartModifier[], instructions?: string, qty = 1) {
-    if (isOrderPlaced) {
-      setConfirmItem(item)
-      setConfirmModifiers({ modifiers: modifiers || [], instructions: instructions || '', qty })
-    } else {
-      doAddItem(item, modifiers, instructions, qty)
-    }
+    void isOrderPlaced
+    doAddItem(item, modifiers, instructions, qty)
   }
 
   function confirmAddItem() {
@@ -210,8 +209,8 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
   }
   function pressEnd() { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null } }
 
-  const cols = large ? 6 : wide ? 5 : 4
-  const title = search ? t('{n} results', { n: filteredItems.length }) : active === ALL ? t('All items') : active === POPULAR ? t('Popular') : active
+  const cols = large ? 6 : wide ? 5 : 3
+  const title = search ? t('{n} results', { n: filteredItems.length }) : active === ALL ? t('All items') : active === POPULAR ? t('Popular') : (uiLang === 'ar' && visibleGroups.find((g) => g.name === active)?.name_ar) || active
   const activeGroup = visibleGroups.find((g) => g.name === active)
   const target = tableName || (orderType === 'Dine In' ? 'the order' : orderType)
 
@@ -229,11 +228,11 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
           const on = !search && active === c.key
           return (
             <button key={c.key} type="button" aria-pressed={on} onClick={() => pickCategory(c.key)}
-              className={cn('flex min-h-[48px] w-full flex-shrink-0 items-center gap-2.5 rounded-l-md py-1 text-start', on ? '-mr-2 bg-n-cream pr-[18px] text-n-ink' : 'bg-transparent pr-2.5 text-white')}>
+              className={cn('flex min-h-[40px] w-full flex-shrink-0 items-center gap-2.5 rounded-l-md py-0.5 text-start', on ? '-mr-2 bg-n-cream pr-[18px] text-n-ink' : 'bg-transparent pr-2.5 text-white')}>
               <span className="w-1.5 flex-shrink-0 self-stretch rounded-r-[3px]" style={{ background: c.color, height: on ? undefined : 22, alignSelf: on ? 'stretch' : 'center' }} />
               <span className="flex min-w-0 flex-col">
-                <span className="text-sm font-semibold leading-[1.15]">{c.label}</span>
-                {lang !== 'en' && c.ar && <span dir="rtl" className={cn('truncate text-xs leading-tight', on ? 'text-n-muted' : 'text-n-mist')}>{c.ar}</span>}
+                <span className="text-[13.5px] font-semibold leading-[1.15]">{uiLang === 'ar' && c.ar ? c.ar : c.label}</span>
+                {lang !== 'en' && uiLang !== 'ar' && c.ar && <span dir="rtl" className={cn('truncate text-xs leading-tight', on ? 'text-n-muted' : 'text-n-mist')}>{c.ar}</span>}
               </span>
             </button>
           )
@@ -245,7 +244,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
         <div className="flex flex-shrink-0 items-center gap-2.5 px-3 pb-1.5 pt-2.5">
           <span className="cond min-w-0 truncate text-2xl font-bold tracking-[.02em] text-n-ink">
             {title}
-            {!search && lang !== 'en' && activeGroup?.name_ar && <span dir="rtl" className="ml-2 font-sans text-base font-medium text-n-muted">{activeGroup.name_ar}</span>}
+            {!search && lang !== 'en' && activeGroup?.name_ar && <span dir="rtl" className="ms-2 font-sans text-base font-medium text-n-muted"> {activeGroup.name_ar}</span>}
           </span>
           <span className="flex-1" />
           {/* EN / AR / Both */}
@@ -283,7 +282,7 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
               <span className="text-sm">{search ? 'Try fewer letters, or the Arabic name' : loaded ? 'Sync items from ERPNext to fill the menu' : ''}</span>
             </div>
           ) : viewMode === 'grid' ? (
-            <div className="grid content-start gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: 72, gridAutoFlow: 'dense' }}>
+            <div className="grid content-start gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: 86, gridAutoFlow: 'dense' }}>
               {filteredItems.map((item) => {
                 const c = groupColor(item.item_group)
                 const big = !search && popularSet.has(item.item_name)
@@ -292,20 +291,20 @@ function ItemGrid({ isOrderPlaced }: { isOrderPlaced?: boolean }) {
                   <button key={item.item_code} type="button"
                     onClick={() => { if (longPressed.current) { longPressed.current = false; return } handleItemClick(item) }}
                     onPointerDown={() => pressStart(item)} onPointerUp={pressEnd} onPointerLeave={pressEnd}
-                    className="press relative flex h-[72px] items-center gap-2.5 rounded-md bg-white py-[9px] pl-3 pr-2.5 text-start text-n-ink"
+                    className="press relative flex h-[86px] items-center gap-2.5 rounded-md bg-white py-[9px] pl-3 pr-2.5 text-start text-n-ink"
                     style={{ boxShadow: `inset 4px 0 0 ${c}, 0 1px 2px rgba(60,45,20,.12)`, gridColumn: big ? 'span 2' : undefined, outline: qty ? `2px solid ${C.deep}` : undefined, outlineOffset: -2 }}>
                     {big && (item.image
                       ? <ItemImage item={item} className="h-[46px] w-[46px] flex-shrink-0 rounded-full object-cover" />
                       : <span className="cond flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-full text-2xl font-bold text-white" style={{ background: c }}>{item.item_name.replace(/^(Hot|Iced) /, '').charAt(0)}</span>)}
                     <span className="flex h-full min-w-0 flex-1 flex-col justify-between">
-                      <span dir={lang === 'ar' ? 'rtl' : 'ltr'} className={cn('flex-shrink-0 font-semibold leading-[1.2]', big ? 'text-[15px]' : 'text-[13.5px]', lang === 'both' ? 'line-clamp-1' : 'line-clamp-2', lang === 'ar' && 'text-right')}>{itemName(item)}</span>
+                      <span dir={lang === 'ar' ? 'rtl' : 'ltr'} className={cn('flex-shrink-0 font-semibold leading-[1.2]', big ? 'text-[15px]' : 'text-[13.5px]', lang === 'both' ? 'line-clamp-2' : 'line-clamp-3', qty > 0 && 'pe-6', lang === 'ar' && 'text-right')}>{itemName(item)}</span>
                       {lang === 'both' && item.item_name_ar && <span dir="rtl" className="flex-shrink-0 truncate text-right text-xs leading-tight text-n-muted">{item.item_name_ar}</span>}
                       <span className="flex flex-shrink-0 items-baseline gap-1.5 leading-none">
                         <span className={cn('cond num font-semibold', big ? 'text-[19px]' : 'text-[17px]')}>{money(item.rate)}</span>
                         {!!item.has_variants && <span className="text-xs text-n-muted">{t('choose')}</span>}
                       </span>
                     </span>
-                    {qty > 0 && <span className="cond num absolute right-1.5 top-1.5 flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-n-deep px-[5px] text-sm font-bold text-white">{qty}</span>}
+                    {qty > 0 && <span className="cond num absolute end-1.5 top-1.5 flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-n-deep px-[5px] text-sm font-bold text-white">{qty}</span>}
                   </button>
                 )
               })}

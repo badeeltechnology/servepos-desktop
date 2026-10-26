@@ -154,7 +154,8 @@ export default function Login() {
   return (
     <div className="flex h-screen overflow-hidden bg-n-deep text-white">
       <section className="flex w-[380px] flex-shrink-0 flex-col px-9 pb-7 pt-9 max-[1100px]:w-[330px] max-[1100px]:px-7">
-        <span className="cond break-words text-[64px] font-bold uppercase leading-[.9] tracking-[.02em] max-[1100px]:text-[54px]">
+        <span className="cond font-bold uppercase leading-[.9] tracking-[.02em] [overflow-wrap:normal]"
+          style={{ fontSize: Math.min(window.innerWidth <= 1100 ? 54 : 64, Math.floor((window.innerWidth <= 1100 ? 270 : 305) / (Math.max(...words.map((w) => w.length)) * 0.5))) }}>
           {words.length > 1 ? <>{words[0]}<br />{words.slice(1).join(' ')}</> : brand.name}
         </span>
         <span className="mt-2.5 text-[15px] text-n-mist">{[rc.address_line_1, brand.sub].filter(Boolean).join(' · ')}</span>

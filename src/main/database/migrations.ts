@@ -528,6 +528,12 @@ export function runMigrations(): void {
     }
   }
 
+  // Additive: when each line went to the kitchen, so the till can show rounds ("Round 2 · sent 14:12").
+  // Nullable; older lines and older app versions simply leave it empty.
+  if (!hasColumn('order_items', 'sent_at')) {
+    database.run('ALTER TABLE order_items ADD COLUMN sent_at TEXT')
+  }
+
   // Migration 12 recreated the orders table and may have dropped columns added earlier.
   const ordersCols: [string, string][] = [
     ['waiter_id', 'TEXT'],
