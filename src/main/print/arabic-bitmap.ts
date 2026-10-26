@@ -157,6 +157,12 @@ function packedToRaster(bytes: number[], width: number, height: number): Buffer 
  * Process template output: replace Arabic text lines with bitmap images,
  * encode everything else as raw bytes (latin1 to preserve ESC/POS commands).
  */
+/** Thermal printers use code page 437, where accented Latin letters print as other symbols ("Açai" came out
+ *  as "Aτai"). Print them without their accents; ESC/POS control bytes are untouched. */
+function plainLatin(line: string): string {
+  return /[\u00C0-\u024F]/.test(line) ? line.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').replace(/æ/g, 'ae').replace(/Æ/g, 'AE').replace(/ø/g, 'o').replace(/Ø/g, 'O') : line
+}
+
 export async function processForPrinter(templateOutput: string, paperWidth: number): Promise<Buffer> {
   const dotsWidth = getPrinterDotsWidth(paperWidth)
   const lines = templateOutput.split('\x0A')
@@ -179,7 +185,7 @@ export async function processForPrinter(templateOutput: string, paperWidth: numb
       jobs.push({ text: plainText.trim(), bold: line.includes('\x1BE\x01'), doubleSize: line.includes('\x1D!\x11'), align: currentAlign })
     } else {
       // Use latin1 encoding to preserve ESC/POS command bytes (especially > 0x7F)
-      parts.push(Buffer.from(line + '\x0A', 'latin1'))
+      parts.push(Buffer.from(plainLatin(line) + '\x0A', 'latin1'))
     }
   }
 

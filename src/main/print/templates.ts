@@ -40,6 +40,18 @@ function formatLine(left: string, right: string, width?: number): string {
   return left + ' '.repeat(space) + right
 }
 
+/** "1 x 49.00", or "1 x (49.00 + 5.00)" when options add to the price, so the line total adds up on paper. */
+function qtyRateText(item: { qty: number; rate: number; amount: number; modifiers?: { price: number }[] }, decimals: number): string {
+  const extra = (item.modifiers || []).reduce((sum, m) => sum + (m.price || 0), 0)
+  if (extra > 0) return `   ${item.qty} x (${item.rate.toFixed(decimals)} + ${extra.toFixed(decimals)})`
+  return `   ${item.qty} x ${item.rate.toFixed(decimals)}`
+}
+
+/** An option under its item. Its price is shown inline, not in the amount column, where it read as an extra charge. */
+function modifierText(indent: string, mod: { name: string; price?: number }, decimals: number): string {
+  return (mod.price || 0) > 0 ? `${indent}+ ${mod.name} (${(mod.price as number).toFixed(decimals)})` : `${indent}+ ${mod.name}`
+}
+
 function getSeparatorLine(): string {
   const w = getLineWidth()
   return '='.repeat(w)
@@ -177,12 +189,7 @@ function generateReceiptClassic(data: ReceiptData, config: Record<string, string
 
     if (item.modifiers) {
       for (const mod of item.modifiers) {
-        const modLine = `     + ${mod.name}`
-        if (mod.price > 0) {
-          lines.push(formatLine(modLine, mod.price.toFixed(decimals)))
-        } else {
-          lines.push(modLine)
-        }
+        lines.push(modifierText('     ', mod, decimals))
       }
     }
     if (item.specialInstructions) {
@@ -306,8 +313,7 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
     }
 
     // Qty x Rate = Amount on next line, right-aligned amount
-    const qtyLine = `   ${item.qty} x ${item.rate.toFixed(decimals)}`
-    lines.push(formatLine(qtyLine, item.amount.toFixed(decimals)))
+    lines.push(formatLine(qtyRateText(item, decimals), item.amount.toFixed(decimals)))
 
     // Descriptions
     if (showDescEn && item.description) {
@@ -328,11 +334,7 @@ function generateReceiptModern(data: ReceiptData, config: Record<string, string>
     // Modifiers
     if (item.modifiers) {
       for (const mod of item.modifiers) {
-        if (mod.price > 0) {
-          lines.push(formatLine(`   + ${mod.name}`, `+${mod.price.toFixed(decimals)}`))
-        } else {
-          lines.push(`   + ${mod.name}`)
-        }
+        lines.push(modifierText('   ', mod, decimals))
       }
     }
     if (item.specialInstructions) {
@@ -464,11 +466,7 @@ export function generateWaiterCopy(data: WaiterCopyData): string {
 
     if (item.modifiers) {
       for (const mod of item.modifiers) {
-        if (mod.price > 0) {
-          lines.push(formatLine(`     + ${mod.name}`, `+${mod.price.toFixed(decimals)}`))
-        } else {
-          lines.push(`     + ${mod.name}`)
-        }
+        lines.push(modifierText('     ', mod, decimals))
       }
     }
     if (item.specialInstructions) {
@@ -753,11 +751,7 @@ function generateInvoiceClassic(data: ReceiptData, config: Record<string, string
     }
     if (item.modifiers) {
       for (const mod of item.modifiers) {
-        if (mod.price > 0) {
-          lines.push(formatLine(`     + ${mod.name}`, mod.price.toFixed(decimals)))
-        } else {
-          lines.push(`     + ${mod.name}`)
-        }
+        lines.push(modifierText('     ', mod, decimals))
       }
     }
     if (item.specialInstructions) {
@@ -850,7 +844,7 @@ function generateInvoiceModern(data: ReceiptData, config: Record<string, string>
     if (showArabicItems && item.itemNameAr) {
       lines.push(`   ${item.itemNameAr}`)
     }
-    lines.push(formatLine(`   ${item.qty} x ${item.rate.toFixed(decimals)}`, item.amount.toFixed(decimals)))
+    lines.push(formatLine(qtyRateText(item, decimals), item.amount.toFixed(decimals)))
     if (showDescEn && item.description) {
       const maxLen = 29
       for (let i = 0; i < item.description.length; i += maxLen) {
@@ -865,11 +859,7 @@ function generateInvoiceModern(data: ReceiptData, config: Record<string, string>
     }
     if (item.modifiers) {
       for (const mod of item.modifiers) {
-        if (mod.price > 0) {
-          lines.push(formatLine(`   + ${mod.name}`, `+${mod.price.toFixed(decimals)}`))
-        } else {
-          lines.push(`   + ${mod.name}`)
-        }
+        lines.push(modifierText('   ', mod, decimals))
       }
     }
     if (item.specialInstructions) {
