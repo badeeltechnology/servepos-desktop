@@ -66,8 +66,16 @@ jobs:
         run: npm run test:database
         timeout-minutes: 3
 
-      - name: Package for Windows
+      - name: Package for Windows (one installer for 32 and 64 bit, used by auto-update)
         run: npx electron-builder --win --config electron-builder.yml --publish never
+
+      - name: Package separate 64-bit and 32-bit installers
+        shell: bash
+        run: |
+          cp dist/latest.yml latest.yml.keep
+          npx electron-builder --win nsis --x64 --config electron-builder.yml --publish never -c.nsis.artifactName='${name}-${version}-x64-setup.${ext}'
+          npx electron-builder --win nsis --ia32 --config electron-builder.yml --publish never -c.nsis.artifactName='${name}-${version}-ia32-setup.${ext}'
+          mv latest.yml.keep dist/latest.yml
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
