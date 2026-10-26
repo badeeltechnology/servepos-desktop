@@ -1,98 +1,54 @@
-import { useState, useEffect } from 'react'
-import { Btn, Dialog, Chip, Dot } from '../ui'
-import { cn } from '../lib/utils'
+import { useEffect, useState } from 'react'
+import { Btn, Dialog } from '../ui'
+import { useFloor } from '../stores/floor'
+import { useT } from '../stores/i18n'
+import FloorGrid from './FloorGrid'
+import { ActiveOrderRow } from './orderStatus'
 
-interface Table {
-  name: string
-  table_name: string
-  room: string | null
-  capacity: number
-  status: string
-  current_order_id: string | null
-}
-
-interface Room {
-  name: string
-  room_name: string
-}
+// Choose (or change) the table for a ticket. Same floor as the Tables screen: room tabs, search,
+// big tiles. Occupied tables show their bill but cannot be picked (there is no merge in the POS API).
 
 interface Props {
   onSelect: (tableName: string, room: string | null) => void
   onCancel: () => void
   currentTable?: string | null
-  /** Tap an occupied table to open the order sitting on it */
-  onOpenOrder?: (orderId: string) => void
-  activeOrderId?: string | null
+  /** Shown under the title, e.g. "Send needs a table" */
+  hint?: string | null
+  /** Offer "Takeaway instead" (dine-in ticket without a table) */
+  onTakeaway?: () => void
+  title?: string
 }
 
-const STATUS: Record<string, { dot: string; tile: string; label: string }> = {
-  Available: { dot: '#2E8B57', tile: 'bg-white text-n-ink border border-n-edge', label: 'Free' },
-  Occupied: { dot: '#C83E2E', tile: 'bg-[#F6E3DF] text-n-red border border-[#E9C3BB]', label: 'Occupied' },
-  Reserved: { dot: '#F4A52A', tile: 'bg-[#FBEFD9] text-[#8A5A00] border border-[#F1D7A5]', label: 'Reserved' },
-  Blocked: { dot: '#9A958A', tile: 'bg-n-sand text-n-stone border border-transparent', label: 'Blocked' }
-}
-
-export default function TablePicker({ onSelect, onCancel, currentTable, onOpenOrder, activeOrderId }: Props) {
-  const [tables, setTables] = useState<Table[]>([])
-  const [rooms, setRooms] = useState<Room[]>([])
-  const [activeRoom, setActiveRoom] = useState<string | null>(null)
+export default function TablePicker({ onSelect, onCancel, currentTable, hint, onTakeaway, title }: Props) {
+  const t = useT()
+  const [orders, setOrders] = useState<ActiveOrderRow[]>([])
+  const tables = useFloor((s) => s.tables)
 
   useEffect(() => {
-    loadData()
+    useFloor.getState().load()
+    window.api.orders.getActive().then((l: any) => setOrders(l || [])).catch(() => {})
   }, [])
 
-  async function loadData() {
-    const [t, r] = await Promise.all([window.api.tables.get(), window.api.rooms.get()])
-    setTables(t)
-    setRooms(r)
-  }
-
-  const filteredTables = activeRoom ? tables.filter((t) => t.room === activeRoom) : tables
-  const free = filteredTables.filter((t) => t.status === 'Available').length
+  const free = tables.filter((x) => x.status === 'Available').length
 
   return (
-    <Dialog onClose={onCancel} className="h-[min(640px,calc(100vh-32px))] w-[min(900px,calc(100vw-32px))]" label="Choose a table">
-      <div className="flex h-14 flex-shrink-0 items-center gap-3 bg-n-deep px-4 text-white">
-        <span className="cond text-2xl font-bold">Choose a table</span>
-        <span className="text-[13px] text-n-mist">{free} free of {filteredTables.length}</span>
-        <span className="flex-1" />
-        <span className="hidden items-center gap-3 text-xs text-n-frost min-[900px]:flex">
-          {Object.entries(STATUS).map(([k, s]) => <span key={k} className="flex items-center gap-1.5"><Dot color={s.dot} size={8} />{s.label}</span>)}
+    <Dialog onClose={onCancel} className="h-[calc(100vh-32px)] w-[calc(100vw-32px)] max-w-[1200px]" label={title || t('Choose a table')}>
+      <div className="flex h-16 flex-shrink-0 items-center gap-3 bg-n-deep px-4 text-white">
+        <span className="flex min-w-0 flex-col">
+          <span className="cond text-[26px] font-bold leading-none">{title || t('Choose a table')}</span>
+          {hint && <span className="mt-0.5 truncate text-[13px] text-n-amber">{hint}</span>}
         </span>
+        <span className="text-[13px] text-n-mist">{t('{n} free of {total}', { n: free, total: tables.length })}</span>
+        <span className="flex-1" />
+        {onTakeaway && (
+          <Btn size="lg" variant="ghostDark" onClick={onTakeaway}>{t('Takeaway instead')}</Btn>
+        )}
+        <Btn size="lg" variant="ghostDark" onClick={onCancel}>{t('Cancel')}</Btn>
       </div>
-
-      <div className="flex flex-shrink-0 gap-1.5 overflow-x-auto px-4 pb-1 pt-3">
-        <Chip active={!activeRoom} onClick={() => setActiveRoom(null)}>All rooms</Chip>
-        {rooms.map((r) => (
-          <Chip key={r.name} active={activeRoom === r.name} onClick={() => setActiveRoom(r.name)}>
-            {r.room_name} <span className="num opacity-60">{tables.filter((t) => t.room === r.name).length}</span>
-          </Chip>
-        ))}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(92px, 1fr))' }}>
-          {filteredTables.map((table) => {
-            const isAvailable = table.status === 'Available'
-            const isCurrent = table.name === currentTable
-            const canOpen = !isAvailable && !isCurrent && !!table.current_order_id && !!onOpenOrder && table.current_order_id !== activeOrderId
-            const s = STATUS[table.status] || STATUS.Available
-            return (
-              <button key={table.name} type="button"
-                onClick={() => { if (isAvailable) onSelect(table.name, table.room); else if (canOpen) onOpenOrder!(table.current_order_id!) }}
-                disabled={!isAvailable && !isCurrent && !canOpen}
-                className={cn('press relative flex h-[72px] flex-col items-center justify-center gap-0.5 rounded-md', isCurrent ? 'border-[3px] border-n-amber bg-white text-n-deep' : s.tile, isAvailable || canOpen ? '' : 'cursor-not-allowed')}>
-                <span className="cond text-[26px] font-bold leading-none">{table.table_name}</span>
-                <span className="text-xs opacity-80">{isCurrent ? 'this order' : isAvailable ? `${table.capacity} seats` : canOpen ? 'Open its order' : s.label}</span>
-              </button>
-            )
-          })}
-        </div>
-        {filteredTables.length === 0 && <p className="py-12 text-center text-n-muted">No tables in this room</p>}
-      </div>
-
-      <div className="flex flex-shrink-0 gap-2 bg-white px-4 py-3">
-        <Btn size="lg" variant="outline" onClick={onCancel}>Cancel</Btn>
+      <div className="flex min-h-0 flex-1 flex-col bg-n-cream">
+        <FloorGrid mode="pick" orders={orders} currentTable={currentTable}
+          onFree={(tb) => onSelect(tb.name, tb.room)}
+          onOccupied={(i) => { if (i.table.name === currentTable) onCancel() }} />
       </div>
     </Dialog>
   )

@@ -18,11 +18,15 @@ import CoordinatorScreen from './CoordinatorScreen'
 import OpenShift from '../components/OpenShift'
 import CloseShift from '../components/CloseShift'
 import { ActiveOrderRow, orderLabel } from '../components/orderStatus'
+import FloorGrid, { TileInfo } from '../components/FloorGrid'
+import TablePicker from '../components/TablePicker'
+import { GuestsPick, NewOrderChooser, TableActions } from '../components/FloorDialogs'
+import { useFloor, hasTables, FloorTable } from '../stores/floor'
 import { useTier, roundMoney } from '../ui'
 import { timeOf } from '../ui/hosts'
 import { cn } from '../lib/utils'
 
-type View = 'till' | 'orders' | 'history' | 'closeShift'
+type View = 'till' | 'tables' | 'orders' | 'history' | 'closeShift'
 
 export default function POS() {
   const { user, logout: rawLogout } = useAuthStore()
@@ -49,11 +53,37 @@ export default function POS() {
   const [showWaiterOrders, setShowWaiterOrders] = useState(false)
   const [autoAccept, setAutoAccept] = useState<boolean | null>(null) // null until config is read
   const { wide, large } = useTier()
+  // Floor: the Tables screen is home when the till has tables (config start_screen = tables | menu)
+  const [homeTables, setHomeTables] = useState(false)
+  const homeRef = useRef(false)
+  homeRef.current = homeTables
+  const [askGuests, setAskGuests] = useState(true)
+  const [guestsFor, setGuestsFor] = useState<FloorTable | null>(null)
+  const [chooser, setChooser] = useState(false)
+  const [actionsFor, setActionsFor] = useState<TileInfo | null>(null)
+  const [moveFor, setMoveFor] = useState<TileInfo | null>(null)
+  const floorTables = useFloor((s) => s.tables)
 
   // KOT already printed and nothing new on the ticket (adding now asks first)
   const isOrderPlaced = !!activeOrderId && cart.items.length > 0 && cart.items.every((i) => i.kotPrinted)
 
-  useEffect(() => { loadTaxConfig(); checkSession(); useMenu.getState().load().catch(() => {}) }, [])
+  useEffect(() => { loadTaxConfig(); checkSession(); useMenu.getState().load().catch(() => {}); loadFloorPrefs() }, [])
+
+  async function loadFloorPrefs() {
+    await useFloor.getState().load()
+    let start: string | null = null
+    let ask: string | null = null
+    try { start = await window.api.config.get('start_screen') } catch {}
+    try { ask = await window.api.config.get('ask_guests') } catch {}
+    const home = hasTables() && start !== 'menu'
+    setHomeTables(home)
+    setAskGuests(ask !== '0')
+    if (home && !activeRef.current && useCartStore.getState().items.length === 0) setView((v) => (v === 'till' ? 'tables' : v))
+  }
+  /** Where the till goes after an order is finished or held. */
+  function goHome() {
+    setView(homeRef.current && hasTables() ? 'tables' : 'till')
+  }
 
   // Sync status + waiter orders + invoice auto-print (3s), open orders (5s), pending-sync count (15s)
   const waiter = useWaiterOrders({
@@ -80,6 +110,7 @@ export default function POS() {
       const list = await window.api.orders.getActive()
       setActiveOrders((prev) => (JSON.stringify(prev) === JSON.stringify(list || []) ? prev : list || []))
     } catch {}
+    useFloor.getState().load()
   }, [])
   useEffect(() => {
     loadActiveOrders()
@@ -417,7 +448,7 @@ export default function POS() {
 
       resetTicket()
       loadActiveOrders()
-      if (!opts?.silent) toast.success(`On hold: ${orderLabel(order)} · ${order.order_number}`)
+      if (!opts?.silent) { toast.success(`On hold: ${orderLabel(order)} · ${order.order_number}`); goHome() }
     } catch (err: any) {
       toast.error(`Hold failed: ${err.message}`)
     } finally {
@@ -522,8 +553,64 @@ export default function POS() {
   const handleNewOrder = useCallback(async () => {
     if (!(await leaveCurrent('start a new one'))) return
     resetTicket()
-    setView('till')
+    setChooser(true)
   }, [activeOrderId, handleHoldOrder])
+
+  function startNew(type: 'Dine In' | 'Takeaway' | 'Delivery') {
+    setChooser(false)
+    resetTicket()
+    useCartStore.getState().setOrderType(type)
+    setView(type === 'Dine In' && hasTables() ? 'tables' : 'till')
+  }
+
+  // ==================== FLOOR ====================
+
+  /** Free table tapped: guests (optional), then a new dine-in ticket bound to it. */
+  async function onFreeTable(tb: FloorTable) {
+    const c = useCartStore.getState()
+    // A dine-in ticket still waiting for its table takes this one instead of being discarded
+    const adopt = !activeOrderId && c.items.length > 0 && c.orderType === 'Dine In' && !c.tableName
+    if (!adopt) {
+      if (!(await leaveCurrent(`start ${tb.table_name}`))) return
+      resetTicket()
+    }
+    if (askGuests) setGuestsFor(tb)
+    else seat(tb, null)
+  }
+  function seat(tb: FloorTable, guests: number | null) {
+    setGuestsFor(null)
+    const c = useCartStore.getState()
+    c.setOrderType('Dine In')
+    c.setTable(tb.name, tb.room)
+    if (guests) c.setGuests(guests)
+    setView('till')
+  }
+  function onOccupiedTable(i: TileInfo) {
+    if (i.order) handleResumeOrder(i.order.id)
+    else toast.info(`${i.table.table_name} is in use on another till`)
+  }
+
+  /** Move an open order to another table: the order row, then both tables. */
+  async function moveOrderTable(orderId: string, from: string | null, to: string, room: string | null) {
+    try {
+      await window.api.orders.update(orderId, { tableName: to, room })
+      if (from && from !== to) await window.api.tables.updateStatus(from, 'Available').catch(() => {})
+      await window.api.tables.updateStatus(to, 'Occupied', orderId)
+      if (activeRef.current === orderId) useCartStore.getState().setTable(to, room)
+      toast.success(from ? `Moved ${from} to ${to}` : `Order now on ${to}`)
+    } catch (e: any) {
+      toast.error(`Move failed: ${e?.message || e}`)
+    }
+    loadActiveOrders()
+  }
+
+  async function printBill(orderId: string) {
+    try {
+      const r = await window.api.print.invoice(orderId)
+      r?.success === false ? toast.error('Bill print failed, check the printer') : toast.success('Bill printed')
+    } catch (e: any) { toast.error(`Print failed: ${e?.message || e}`) }
+    loadActiveOrders()
+  }
 
   /** Void a whole order (held/open), same writes as before. */
   async function voidWholeOrder(orderId: string, reason: string, remarks: string, disposition: string, voidedBy: string) {
@@ -631,7 +718,20 @@ export default function POS() {
         />
       ) : (
         <>
-          <OrdersBar orders={activeOrders} recent={recent} activeOrderId={activeOrderId} onSelectOrder={handleResumeOrder} onNewOrder={handleNewOrder} onAllOpen={() => setView('orders')} />
+          <OrdersBar orders={activeOrders} recent={recent} activeOrderId={view === 'tables' ? null : activeOrderId} onSelectOrder={handleResumeOrder} onNewOrder={handleNewOrder} onAllOpen={() => setView('orders')}
+            onTables={floorTables.length ? () => setView(view === 'tables' ? 'till' : 'tables') : undefined} tablesActive={view === 'tables'} />
+          {view === 'tables' ? (
+            <main aria-label="Tables" className="flex min-h-0 flex-1 flex-col bg-n-cream">
+              <FloorGrid orders={activeOrders} onFree={onFreeTable} onOccupied={onOccupiedTable} onLongPress={setActionsFor} currentTable={activeOrderId ? cart.tableName : null} />
+              {cart.items.length > 0 && (
+                <button type="button" onClick={() => setView('till')}
+                  className="press flex h-14 flex-shrink-0 items-center justify-center gap-2 bg-n-deep text-[15px] font-semibold text-white">
+                  {t('Back to the ticket')} · <span className="cond text-xl font-bold">{cart.tableName || t(cart.orderType === 'Dine In' ? 'Dine in' : cart.orderType)}</span>
+                  <span className="num opacity-75">{cart.items.reduce((n, i) => n + i.qty, 0)} {t('items')}</span>
+                </button>
+              )}
+            </main>
+          ) : (
           <div className="flex min-h-0 flex-1">
             <ItemGrid isOrderPlaced={isOrderPlaced} />
             <div className="flex-shrink-0" style={{ width: large ? 420 : wide ? 370 : 336 }}>
@@ -642,6 +742,7 @@ export default function POS() {
                 onHold={() => handleHoldOrder()}
                 onNewOrder={handleNewOrder}
                 onOpenOrder={handleResumeOrder}
+                onMoveTable={activeOrderId ? (to, room) => moveOrderTable(activeOrderId, useCartStore.getState().tableName, to, room) : undefined}
                 taxRate={taxRate}
                 taxLabel={taxLabel}
                 isOrderPlaced={isOrderPlaced}
@@ -695,6 +796,7 @@ export default function POS() {
               />
             </div>
           </div>
+          )}
         </>
       )}
 
@@ -714,8 +816,23 @@ export default function POS() {
           processing={processing}
           onComplete={handlePaymentComplete}
           onCancel={() => setShowPayment(false)}
-          onDone={() => setShowPayment(false)}
+          onDone={() => { setShowPayment(false); goHome() }}
         />
+      )}
+
+      {/* Floor dialogs */}
+      {guestsFor && <GuestsPick table={guestsFor.table_name} onPick={(n) => seat(guestsFor, n)} onCancel={() => setGuestsFor(null)} />}
+      {chooser && <NewOrderChooser hasTables={floorTables.length > 0} onPick={startNew} onCancel={() => setChooser(false)} />}
+      {actionsFor && (
+        <TableActions info={actionsFor} onCancel={() => setActionsFor(null)}
+          onOpen={() => { const id = actionsFor.order!.id; setActionsFor(null); handleResumeOrder(id) }}
+          onMove={() => { setMoveFor(actionsFor); setActionsFor(null) }}
+          onPrintBill={() => { const id = actionsFor.order!.id; setActionsFor(null); printBill(id) }} />
+      )}
+      {moveFor && (
+        <TablePicker title={t('Move {table} to…', { table: moveFor.table.table_name })} currentTable={moveFor.table.name}
+          onCancel={() => setMoveFor(null)}
+          onSelect={(to, room) => { const m = moveFor; setMoveFor(null); moveOrderTable(m.order!.id, m.table.name, to, room) }} />
       )}
 
       {/* Waiter-app orders drawer */}

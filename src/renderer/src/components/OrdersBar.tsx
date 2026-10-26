@@ -14,14 +14,17 @@ interface Props {
   onSelectOrder: (orderId: string) => void
   onNewOrder: () => void
   onAllOpen: () => void
+  /** Floor view; shown when the till has tables */
+  onTables?: () => void
+  tablesActive?: boolean
 }
 
-export default function OrdersBar({ orders, recent, activeOrderId, onSelectOrder, onNewOrder, onAllOpen }: Props) {
+export default function OrdersBar({ orders, recent, activeOrderId, onSelectOrder, onNewOrder, onAllOpen, onTables, tablesActive }: Props) {
   useTick(30000)
   const t = useT()
   const { w, wide } = useTier()
-  const chipW = wide ? 126 : 118
-  const room = Math.max(0, w - 16 - 120 - 120 - 12)
+  const chipW = wide ? 136 : 124
+  const room = Math.max(0, w - 16 - 120 - 120 - (onTables ? 116 : 0) - 12)
   const max = Math.max(1, Math.floor(room / (chipW + 6)))
 
   const shown = useMemo(() => {
@@ -45,7 +48,7 @@ export default function OrdersBar({ orders, recent, activeOrderId, onSelectOrder
             className={cn('press flex h-11 flex-shrink-0 items-center gap-2 overflow-hidden rounded-md pr-2 text-start', active ? 'bg-white text-n-deep' : 'bg-n-deep text-white')}
             style={{ width: chipW }}>
             <span className="h-full w-[5px] flex-shrink-0" style={{ background: STAGE[st].color }} />
-            <span className="cond whitespace-nowrap text-[19px] font-bold leading-none">{orderLabel(o)}</span>
+            <span className="cond min-w-0 max-w-[62%] truncate text-[24px] font-bold leading-none tracking-[-.01em]">{orderLabel(o)}</span>
             <span className="flex min-w-0 flex-col leading-[1.1]">
               <span className={cn('num text-xs font-bold', late && (active ? 'text-n-red' : 'text-n-coral'))}>{ageLabel(age)}</span>
               <span className="truncate text-xs opacity-75">{late && st === 'kitchen' ? t('Late') : t(STAGE[st].label)}</span>
@@ -54,6 +57,13 @@ export default function OrdersBar({ orders, recent, activeOrderId, onSelectOrder
         )
       })}
       <span className="flex-1" />
+      {onTables && (
+        <button type="button" onClick={onTables} aria-pressed={!!tablesActive}
+          className={cn('press flex h-11 items-center gap-2 whitespace-nowrap rounded-md px-3.5 text-sm font-semibold', tablesActive ? 'bg-n-amber text-n-ink' : 'bg-white text-n-deep')}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+          {t('Tables')}
+        </button>
+      )}
       <button type="button" onClick={onAllOpen}
         className="press flex h-11 items-center gap-2 whitespace-nowrap rounded-md bg-white px-3.5 text-sm font-semibold text-n-deep">
         {t('All open')} <span className="cond num text-lg font-bold">{orders.length}</span>
