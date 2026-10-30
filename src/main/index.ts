@@ -36,6 +36,10 @@ function createWindow(): void {
     }
   })
 
+  // Closing the till window destroys it while the app is still finishing sync in the background.
+  // Drop the reference so nothing calls into a destroyed window.
+  mainWindow.on('closed', () => { mainWindow = null })
+
   mainWindow.on('ready-to-show', () => {
     mainWindow?.maximize()
     mainWindow?.show()
@@ -55,8 +59,18 @@ function createWindow(): void {
 
 const ownsInstance = app.requestSingleInstanceLock()
 if (!ownsInstance) app.quit()
+let reopenRequested = false
+// Someone launched ServePOS again while this process is still running.
 app.on('second-instance', () => {
-  if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus() }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+    return
+  }
+  // The window was closed and the app is still saving and syncing before it exits:
+  // restart once that finishes instead of crashing on the closed window.
+  if (shuttingDown) { reopenRequested = true; return }
+  if (app.isReady()) createWindow()
 })
 
 if (ownsInstance) app.whenReady().then(async () => {
@@ -143,11 +157,15 @@ app.on('before-quit', event => {
       stopPrintWorker()
       await closeDatabase()
       shutdownComplete = true
+      if (reopenRequested) app.relaunch()
       app.quit()
     } catch (error: any) {
       shuttingDown = false
+      reopenRequested = false
       resumeIpcHandlers()
       dialog.showErrorBox('Unable to close database safely', error.message)
+      // Do not leave a running app with no window: bring the till back.
+      if (!mainWindow || mainWindow.isDestroyed()) createWindow()
     }
   })()
 })
