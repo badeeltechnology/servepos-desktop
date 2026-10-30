@@ -113,5 +113,6 @@ jobs:
           draft: false
           prerelease: false
           body: "ServePOS Desktop ${{ github.ref_name }}"
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+          # action-gh-release v2 reads the token input only; the GITHUB_TOKEN env var is ignored,
+          # so the default token (no access to servepos-releases) was used and every release failed.
+          token: ${{ secrets.RELEASE_PAT }}
