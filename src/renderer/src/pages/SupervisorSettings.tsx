@@ -601,7 +601,8 @@ function ItemVisibility() {
       window.api.modifiers.getGroups()
     ])
     setGroups(g)
-    setItems(i)
+    // Items the outlet no longer sells stay on the till for reports and reprints; keep them out of this list.
+    setItems(i.filter((x: any) => x.is_available !== 0))
     setModifierGroups(mg)
   }
 

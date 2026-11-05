@@ -80,18 +80,43 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
       const activeCodes: string[] | undefined = await client.getActiveItemCodes()
       if (Array.isArray(activeCodes) && activeCodes.length > 0) {
         const active = new Set(activeCodes)
-        const localCodes: string[] = []
-        const all = db.prepare('SELECT item_code FROM items')
-        while (await all.step()) localCodes.push((all.getAsObject() as any).item_code)
+        const all = db.prepare('SELECT item_code, is_available FROM items')
+        const localRows: { item_code: string; is_available: number }[] = []
+        while (await all.step()) localRows.push(all.getAsObject() as any)
         all.free()
-        const stale = localCodes.filter((c) => !active.has(c))
-        for (const code of stale) await db.run('DELETE FROM items WHERE item_code = ?', [code])
-        counts.items_removed = stale.length
-        if (stale.length) console.log(`[Sync] Removed ${stale.length} items no longer sold on this profile`)
+        const localCodes = localRows.map((r) => r.item_code)
+        // Items this outlet no longer sells are hidden, not deleted: today's sales, reprints, open orders
+        // and the category report still need their group, Arabic name and kitchen station. They leave the
+        // menu because every menu query requires is_available = 1. (Deleting also failed outright for
+        // items with option groups or BOMs, which stopped every other removal.)
+        let hidden = 0
+        let restored = 0
+        const restoredCodes = new Set<string>()
+        for (const r of localRows) {
+          try {
+            if (!active.has(r.item_code) && r.is_available !== 0) {
+              await db.run('UPDATE items SET is_available = 0 WHERE item_code = ?', [r.item_code])
+              hidden++
+            } else if (active.has(r.item_code) && r.is_available === 0) {
+              // Sold here again: the server only lists available items, so bring it back.
+              await db.run('UPDATE items SET is_available = 1 WHERE item_code = ?', [r.item_code])
+              restored++
+              restoredCodes.add(r.item_code)
+            }
+          } catch (e: any) {
+            console.log(`[Sync] Could not update item ${r.item_code}:`, e?.message || e)
+          }
+        }
+        counts.items_removed = hidden
+        counts.items_restored = restored
+        if (hidden || restored) console.log(`[Sync] Items no longer sold here: ${hidden} hidden, ${restored} back on the menu`)
         // Items made visible without their Item record changing (availability rows) are missed by the
-        // incremental fetch: pull them in full.
+        // incremental fetch: pull them in full. Items back on the menu are refreshed too, since their
+        // price or name may have changed while they were hidden.
         const have = new Set(localCodes)
-        const missing = activeCodes.filter((c) => !have.has(c) && !items.some((i: any) => i.name === c))
+        const missing = activeCodes.filter(
+          (c) => (!have.has(c) || restoredCodes.has(c)) && !items.some((i: any) => i.name === c)
+        )
         if (missing.length) {
           const fresh = (await client.getItems()).filter((i: any) => missing.includes(i.name))
           for (const item of fresh) {
@@ -99,12 +124,14 @@ export async function syncDown(): Promise<{ success: boolean; error?: string; co
               `INSERT OR REPLACE INTO items (item_code, item_name, item_name_ar, description, description_ar,
                item_group, rate, stock_uom, image, is_available, is_visible, kitchen_station, preparation_time,
                has_variants, variant_of, visible_profiles, synced_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, datetime('now'))`,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT is_visible FROM items WHERE item_code = ?), 1),
+               ?, ?, ?, ?, ?, datetime('now'))`,
               [
                 item.name, item.item_name, item.servepos_item_name_ar || null, item.description || null,
                 item.servepos_description_ar || null, item.item_group, item.standard_rate || 0, item.stock_uom,
                 item.image || null,
                 item.servepos_is_available !== undefined ? (item.servepos_is_available ? 1 : 0) : 1,
+                item.name,
                 item.servepos_kitchen_station || null, item.servepos_preparation_time || null,
                 item.has_variants ? 1 : 0, item.variant_of || null, item.servepos_visible_profiles || null
               ]

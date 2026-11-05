@@ -232,3 +232,35 @@ test('reset archives the live database and legacy copies before starting fresh',
   await db.request('open',directory)
   assert.equal((await query(db,'getOrders')).length,0)
 })
+
+test('items an outlet stops selling are hidden but keep their details for sales, reprints and reports',async t=>{
+  // Same statements as the item reconcile in sync-down.ts.
+  const directory=fixture(t),db=client(t)
+  await db.request('open',directory)
+  await db.run("INSERT INTO items(item_code,item_name,item_name_ar,item_group,rate,kitchen_station) VALUES ('COFFEE','Coffee','قهوة','Coffee',15,'Bar'),('SODA','Soda',NULL,'Drinks',5,NULL)")
+  await db.run("INSERT INTO modifier_groups(id,group_name) VALUES ('milk','Milk')")
+  await db.run("INSERT INTO item_modifier_groups(id,item_code,modifier_group_id) VALUES ('img1','COFFEE','milk')")
+  await db.run("INSERT INTO boms(bom_name,item_code) VALUES ('BOM-COFFEE','COFFEE')")
+  // Deleting is refused while option groups or a BOM point at the item: why the old reconcile stopped.
+  await assert.rejects(db.run("DELETE FROM items WHERE item_code='COFFEE'"),/FOREIGN KEY/)
+  // A sale of the item today
+  await db.run("INSERT INTO users(id,name,pin_hash,role) VALUES ('c','Cashier','x','cashier')")
+  await db.run("INSERT INTO orders(id,order_number,order_type,status,cashier_id,grand_total) VALUES ('o1','T-1','Takeaway','Completed','c',15)")
+  await db.run("INSERT INTO order_items(id,order_id,item_code,item_name,qty,rate,amount) VALUES ('l1','o1','COFFEE','Coffee',1,15,15)")
+
+  for (const code of ['COFFEE','SODA']) await db.run('UPDATE items SET is_available = 0 WHERE item_code = ?',[code])
+  assert.equal((await query(db,'getItems')).length,0,'gone from the menu')
+  assert.equal((await query(db,'getItems','Coffee')).length,0,'gone from its category')
+  const kept=(await db.all("SELECT item_name_ar,item_group,kitchen_station FROM items WHERE item_code='COFFEE'"))[0]
+  assert.deepEqual({...kept},{item_name_ar:'قهوة',item_group:'Coffee',kitchen_station:'Bar'},'details kept for reprints and KOT routing')
+  const report=await db.all("SELECT COALESCE(i.item_group,'Uncategorized') g, SUM(oi.amount) a FROM order_items oi LEFT JOIN items i ON i.item_code=oi.item_code GROUP BY g")
+  assert.deepEqual(report.map(r=>({...r})),[{g:'Coffee',a:15}],'category report still knows the group')
+
+  // Back on the menu: refreshed in place (REPLACE) while option groups still point at it
+  await db.run('UPDATE items SET is_available = 1 WHERE item_code = ?',['COFFEE'])
+  await db.run(`INSERT OR REPLACE INTO items (item_code,item_name,item_group,rate,is_available,is_visible)
+    VALUES ('COFFEE','Coffee','Coffee',16,1,COALESCE((SELECT is_visible FROM items WHERE item_code='COFFEE'),1))`)
+  const menu=await query(db,'getItems')
+  assert.deepEqual(menu.map(i=>[i.item_code,i.rate]),[['COFFEE',16]])
+  assert.equal((await db.all('SELECT COUNT(*) n FROM item_modifier_groups'))[0].n,1)
+})
