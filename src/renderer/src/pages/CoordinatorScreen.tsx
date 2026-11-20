@@ -510,7 +510,7 @@ export default function CoordinatorScreen({ onBack }: { onBack?: () => void } = 
           {filtered.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-1 text-n-muted">
               <span className="cond text-3xl font-bold text-n-ink">{filtersActive || filter !== 'all' ? 'No orders match' : 'All clear'}</span>
-              <span className="text-sm">{filtersActive || filter !== 'all' ? 'Change the filters to see more.' : 'New orders appear here as soon as the till sends them.'}</span>
+              <span className="text-sm">{filtersActive || filter !== 'all' ? 'Change the filters to see more.' : 'New orders appear here as soon as the POS sends them.'}</span>
             </div>
           ) : groups ? (
             <div className="flex flex-col gap-3">

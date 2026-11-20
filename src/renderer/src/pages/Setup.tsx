@@ -176,7 +176,7 @@ export default function Setup({ onComplete }: SetupProps) {
       {/* Sidebar - Steps */}
       <div className="flex w-72 flex-shrink-0 flex-col bg-n-deep p-8 text-white max-[1100px]:w-60 max-[1100px]:p-6">
         <h1 className="cond mb-1 text-5xl font-bold leading-none tracking-[.02em]">ServePOS</h1>
-        <p className="mb-8 text-sm text-n-mist">First-time setup for this till</p>
+        <p className="mb-8 text-sm text-n-mist">First-time setup for this POS</p>
 
         <nav className="space-y-2">
           {steps.map((s, i) => (

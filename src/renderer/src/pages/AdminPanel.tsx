@@ -754,7 +754,7 @@ function SupervisorManagement() {
   async function handleDelete(id: string) {
     if (supervisors.length <= 1) { setError('Cannot delete the last supervisor'); return }
     const sup = supervisors.find((x: any) => x.id === id)
-    if (!(await askConfirm({ title: `Delete supervisor${sup?.name ? ` ${sup.name}` : ''}?`, body: 'They can no longer sign in or approve voids on this till.', ok: 'Delete supervisor', danger: true }))) return
+    if (!(await askConfirm({ title: `Delete supervisor${sup?.name ? ` ${sup.name}` : ''}?`, body: 'They can no longer sign in or approve voids on this POS.', ok: 'Delete supervisor', danger: true }))) return
     try {
       await window.api.users.delete(id)
       setSuccess('Supervisor deleted')
@@ -1009,7 +1009,7 @@ function SystemSettings() {
         </p>
         <button
           onClick={async () => {
-            if (!(await askConfirm({ title: 'Clear all transactions?', body: 'Every order, payment and shift on this till is deleted. Items, printers, users and settings are kept.\nThis cannot be undone.', ok: 'Clear transactions', danger: true, typeToConfirm: 'CLEAR' }))) return
+            if (!(await askConfirm({ title: 'Clear all transactions?', body: 'Every order, payment and shift on this POS is deleted. Items, printers, users and settings are kept.\nThis cannot be undone.', ok: 'Clear transactions', danger: true, typeToConfirm: 'CLEAR' }))) return
             const result = await window.api.app.clearTransactions()
             toast.success(`Cleared ${result.orders} orders and ${result.sessions} sessions.`)
           }}

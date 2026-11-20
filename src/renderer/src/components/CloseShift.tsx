@@ -120,7 +120,7 @@ export default function CloseShift({ sessionId, onClose, onCancel, onOpenOrder }
       }
       const ok = await askConfirm({
         title: t('Close shift') + '?',
-        body: `${openCount > 0 ? t('{n} open orders stay open and move to the next shift when it opens.', { n: openCount }) + '\n' : ''}Counted ${cur} ${money(counted)}${cashDiff === 0 ? ', drawer matches.' : `, ${cashDiff > 0 ? 'over' : 'short'} by ${money(Math.abs(cashDiff))}.`}${pending > 0 ? `\n${pending} sale${pending === 1 ? ' is' : 's are'} not in ERPNext yet. They stay on this till and sync automatically when the connection is back.` : ''}\nThis can’t be undone.`,
+        body: `${openCount > 0 ? t('{n} open orders stay open and move to the next shift when it opens.', { n: openCount }) + '\n' : ''}Counted ${cur} ${money(counted)}${cashDiff === 0 ? ', drawer matches.' : `, ${cashDiff > 0 ? 'over' : 'short'} by ${money(Math.abs(cashDiff))}.`}${pending > 0 ? `\n${pending} sale${pending === 1 ? ' is' : 's are'} not in ERPNext yet. They stay on this POS and sync automatically when the connection is back.` : ''}\nThis can’t be undone.`,
         ok: openCount > 0 ? t('Close and hand over') : t('Close shift'), cancel: t('Not yet')
       })
       if (!ok) return

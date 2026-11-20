@@ -714,7 +714,7 @@ export default function POS() {
   /** Seated table tapped: show its details beside the floor (double-tap or Open order goes in). */
   function onOccupiedTable(i: TileInfo) {
     if (i.order) setSelTable(selTable === i.table.name ? null : i.table.name)
-    else toast.info(`${i.table.table_name} is in use on another till`)
+    else toast.info(`${i.table.table_name} is in use on another POS`)
   }
 
   async function newOfType(type: 'Takeaway' | 'Delivery') {

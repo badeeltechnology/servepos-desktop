@@ -11,7 +11,7 @@ import { useUpdates, fmtBytes, type UpdateChannel } from '../stores/updates'
 const CHANNELS: { key: UpdateChannel; label: string; hint: string }[] = [
   { key: 'stable', label: 'Stable', hint: 'Full releases only. Right for most outlets.' },
   { key: 'pilot', label: 'Pilot', hint: 'Gets new versions first, before other outlets. For the pilot outlet only.' },
-  { key: 'off', label: 'Off', hint: 'Never checks. Keeps this till on its current version.' }
+  { key: 'off', label: 'Off', hint: 'Never checks. Keeps this POS on its current version.' }
 ]
 
 function when(iso?: string) {
@@ -50,7 +50,7 @@ export default function UpdatesPanel({ compact = false }: { compact?: boolean })
     setGuard(null)
     const ok = await askConfirm({
       title: `Restart to install v${s.version}?`,
-      body: 'ServePOS closes, installs the update and opens again. The till is unavailable for about a minute.',
+      body: 'ServePOS closes, installs the update and opens again. The POS is unavailable for about a minute.',
       ok: 'Restart now'
     })
     if (!ok) return
@@ -69,14 +69,14 @@ export default function UpdatesPanel({ compact = false }: { compact?: boolean })
 
   const statusLine = (() => {
     switch (s.status) {
-      case 'disabled': return 'Updates are off on this till.'
+      case 'disabled': return 'Updates are off on this POS.'
       case 'checking': return 'Checking for updates…'
       case 'not-available': return `You're on the latest version${s.lastCheckedAt ? ` · checked ${when(s.lastCheckedAt)}` : ''}.`
       case 'available': return `Version ${s.version} is available.`
       case 'downloading': return `Downloading version ${s.version}…`
       case 'downloaded': return `Version ${s.version} is downloaded and ready to install.`
       case 'error': return 'The last check did not finish.'
-      default: return off ? 'Updates are off on this till.' : 'Not checked yet. ServePOS checks a minute after start, then every 6 hours.'
+      default: return off ? 'Updates are off on this POS.' : 'Not checked yet. ServePOS checks a minute after start, then every 6 hours.'
     }
   })()
 
@@ -86,7 +86,7 @@ export default function UpdatesPanel({ compact = false }: { compact?: boolean })
 
       <Card className="flex items-center justify-between gap-4 p-5">
         <span className="flex flex-col">
-          <Cap className="text-n-muted">This till</Cap>
+          <Cap className="text-n-muted">This POS</Cap>
           <span className="cond text-[26px] font-bold leading-tight text-n-deep">ServePOS v{s.currentVersion}</span>
           <span className="text-sm text-n-muted" role="status">{statusLine}</span>
         </span>
@@ -137,7 +137,7 @@ export default function UpdatesPanel({ compact = false }: { compact?: boolean })
           {s.status === 'downloaded' && !guard && (
             <span className="flex items-center gap-3">
               <Btn size="lg" variant="amber" disabled={pending === 'install'} onClick={() => restart()}>Restart to install</Btn>
-              <span className="text-[13px] text-n-muted">Pick a quiet moment: the till is unavailable for about a minute.</span>
+              <span className="text-[13px] text-n-muted">Pick a quiet moment: the POS is unavailable for about a minute.</span>
             </span>
           )}
 
@@ -151,7 +151,7 @@ export default function UpdatesPanel({ compact = false }: { compact?: boolean })
             <div className="flex flex-col gap-2.5 rounded-md border border-n-amber bg-white p-3" role="alert">
               <span className="text-sm text-n-ink">
                 {'unsynced' in guard
-                  ? <><b>{guard.unsynced} sale{guard.unsynced === 1 ? '' : 's'} not synced to ERPNext yet.</b> They stay saved on this till and sync after the restart, but syncing first is safer.</>
+                  ? <><b>{guard.unsynced} sale{guard.unsynced === 1 ? '' : 's'} not synced to ERPNext yet.</b> They stay saved on this POS and sync after the restart, but syncing first is safer.</>
                   : <b>Syncing sales…</b>}
               </span>
               <span className="flex gap-2">

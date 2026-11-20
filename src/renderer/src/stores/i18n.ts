@@ -9,7 +9,7 @@ const KEY = 'pos_ui_lang'
 
 const AR: Record<string, string> = {
   // sign in
-  'Who is on the till': 'من على الكاشير',
+  'Who is on the POS': 'من على الكاشير',
   'Enter your PIN': 'أدخل الرقم السري',
   '{name}, enter your PIN': '{name}، أدخل رقمك السري',
   'Sign in': 'دخول',
@@ -24,8 +24,8 @@ const AR: Record<string, string> = {
   'ERPNext not set up': 'ERPNext غير مُعد',
   '{n} printers set up': '{n} طابعات مُعدة',
   'No printer set up': 'لا توجد طابعة',
-  'A shift is open on this till': 'توجد وردية مفتوحة',
-  'No shift open on this till': 'لا توجد وردية مفتوحة',
+  'A shift is open on this POS': 'توجد وردية مفتوحة',
+  'No shift open on this POS': 'لا توجد وردية مفتوحة',
   'Checking the shift…': 'جارٍ فحص الوردية…',
   'Staff appear here once they are added in Supervisor tools.': 'يظهر الموظفون هنا بعد إضافتهم من أدوات المشرف.',
   // status band
@@ -60,7 +60,7 @@ const AR: Record<string, string> = {
   'No open orders': 'لا توجد طلبات مفتوحة',
   'No orders match': 'لا توجد طلبات مطابقة',
   'Void order': 'إلغاء الطلب',
-  'Open on the till': 'فتح على الكاشير',
+  'Open on the POS': 'فتح على الكاشير',
   'Print invoice': 'طباعة الفاتورة',
   // menu
   'Popular': 'الأكثر طلباً',

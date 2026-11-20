@@ -28,7 +28,7 @@ export default function TopTabs({ current, floorCount, ticket, taCount, allCount
     on ? 'bg-white text-n-deep' : 'border-[1.5px] border-n-steel bg-transparent text-white')
   const count = 'cond num text-xl font-bold leading-none'
   return (
-    <nav aria-label="Till" className="scroll-none flex h-14 flex-shrink-0 items-center gap-1.5 overflow-x-auto bg-n-rail px-2">
+    <nav aria-label="POS" className="scroll-none flex h-14 flex-shrink-0 items-center gap-1.5 overflow-x-auto bg-n-rail px-2">
       {hasTables && (
         <button type="button" aria-pressed={current === 'floor'} onClick={() => onTab('floor')} className={tab(current === 'floor')}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></svg>

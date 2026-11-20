@@ -96,7 +96,7 @@ export default function OpenShift({ userName, userId, onOpen, onSignOut }: Props
           </div>
           {last && (
             <div className="flex flex-col gap-2 rounded-md bg-white px-4 py-3.5 text-[13px] shadow-tile">
-              <span className="font-semibold">Last shift on this till</span>
+              <span className="font-semibold">Last shift on this POS</span>
               <span className="text-n-muted">Closed by {last.user_name || 'someone'}, {new Date(String(last.closed_at).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(last.closed_at) ? '' : 'Z')).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</span>
               {lastFloat !== null && <span className="flex justify-between"><span>Cash counted at close</span><span className="num font-semibold">{cur} {money(lastFloat)}</span></span>}
             </div>

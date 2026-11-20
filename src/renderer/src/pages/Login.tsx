@@ -167,7 +167,7 @@ export default function Login() {
         <div className="flex flex-col gap-2.5 text-[13px] text-n-frost">
           <span className="flex items-center gap-2"><Dot color={erpConfigured ? '#5FD38D' : C.mist} />{erpConfigured ? t('ERPNext set up') : t('ERPNext not set up')}</span>
           <span className="flex items-center gap-2"><Dot color={printers > 0 ? '#5FD38D' : C.amber} />{printers > 0 ? t('{n} printers set up', { n: printers }) : t('No printer set up')}</span>
-          <span className="flex items-center gap-2"><Dot color={shiftOpen ? '#5FD38D' : C.mist} />{shiftOpen === null ? t('Checking the shift…') : shiftOpen ? t('A shift is open on this till') : t('No shift open on this till')}</span>
+          <span className="flex items-center gap-2"><Dot color={shiftOpen ? '#5FD38D' : C.mist} />{shiftOpen === null ? t('Checking the shift…') : shiftOpen ? t('A shift is open on this POS') : t('No shift open on this POS')}</span>
         </div>
         <div className="mt-[22px] flex items-center gap-3">
           <Btn variant="ghostDark" onClick={() => setShowAdminLogin(true)}>{t('Supervisor tools')}</Btn>
@@ -185,7 +185,7 @@ export default function Login() {
 
       <section className="flex min-w-0 flex-1 gap-5 py-9 pr-9 max-[1100px]:pr-6">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <Cap className="mb-1.5 text-n-mist">{t('Who is on the till')}</Cap>
+          <Cap className="mb-1.5 text-n-mist">{t('Who is on the POS')}</Cap>
           <div className="scroll-none flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
             {staff.map((s) => {
               const on = who?.id === s.id

@@ -79,7 +79,7 @@ function onError(e: any): void {
 }
 
 export async function check(): Promise<UpdateActionResult> {
-  if (state.channel === 'off') return { ok: false, error: 'Updates are turned off on this till.', state }
+  if (state.channel === 'off') return { ok: false, error: 'Updates are turned off on this POS.', state }
   if (!app.isPackaged) {
     setState({ status: 'error', error: 'Updates only work in the installed app.', lastCheckedAt: new Date().toISOString() })
     return { ok: false, error: state.error, state }

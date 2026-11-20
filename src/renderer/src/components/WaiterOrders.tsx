@@ -167,7 +167,7 @@ export default function WaiterOrders({ state, autoAccept, onClose }: { state: Wa
   return (
     <div className="fixed inset-x-0 bottom-0 top-10 z-40 flex flex-col bg-n-cream animate-rise" role="dialog" aria-label="Waiter app orders">
       <div className="flex h-14 flex-shrink-0 items-center gap-3 bg-n-rail px-2 text-white">
-        <BackButton onClick={onClose} label="Back to the till" />
+        <BackButton onClick={onClose} label="Back to the POS" />
         <span className="cond ml-1.5 text-2xl font-bold">Waiter app</span>
         <span className="hidden truncate text-[13px] text-n-mist min-[900px]:inline">Orders arrive here before the kitchen sees them</span>
         <span className="flex-1" />

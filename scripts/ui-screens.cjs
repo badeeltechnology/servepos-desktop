@@ -241,7 +241,7 @@ async function run(browser, W) {
     await shot(page, 'waiter-orders')
     await page.getByRole('button', { name: /Accept and send/ }).first().click()
     await page.getByText(/sent to the kitchen|accepted/).first().waitFor({ timeout: 5000 })
-    await btn(page, /Back to the till/).click()
+    await btn(page, /Back to the POS/).click()
   })
   await page.close()
 
@@ -660,8 +660,8 @@ async function runFloor(browser, W) {
     if (!o || o.guests !== 4 || o.kot_printed !== 1) throw new Error('A3 order ' + JSON.stringify(o && { g: o.guests, k: o.kot_printed }))
   })
   await step('floor: tabs replace the rail (Floor, Takeaway & delivery, All open, Waiter app)', async () => {
-    await page.getByRole('navigation', { name: 'Till' }).getByRole('button', { name: /^Floor\s*\d+/ }).waitFor()
-    await page.getByRole('navigation', { name: 'Till' }).getByRole('button', { name: /^(Takeaway & delivery|Takeaway)\s*\d+/ }).click()
+    await page.getByRole('navigation', { name: 'POS' }).getByRole('button', { name: /^Floor\s*\d+/ }).waitFor()
+    await page.getByRole('navigation', { name: 'POS' }).getByRole('button', { name: /^(Takeaway & delivery|Takeaway)\s*\d+/ }).click()
     await page.getByText(/Delivery · Talabat 4412|Talabat 4412/).first().waitFor({ timeout: 3000 })
     await fl(page, 'takeaway-tab')
     await btn(page, /^Floor/).click()
@@ -820,7 +820,7 @@ async function runReview(browser) {
     await page.getByRole('button', { name: 'View', exact: true }).waitFor({ timeout: 3000 })
     await v3(page, 'waiter-toast-during-payment')
     await btn(page, /^Back/).click()
-    await page.getByRole('navigation', { name: 'Till' }).getByRole('button', { name: /^Waiter app\s*\d/ }).click()
+    await page.getByRole('navigation', { name: 'POS' }).getByRole('button', { name: /^Waiter app\s*\d/ }).click()
     await page.getByRole('dialog', { name: 'Waiter app orders' }).waitFor({ timeout: 3000 })
   })
   await page.close()
@@ -1276,7 +1276,7 @@ async function runUpdates(browser) {
   })
   await step('upd channel: Off disables checks, Stable turns them back on', async () => {
     await page.getByRole('radio', { name: /^Off/ }).click()
-    await page.getByText('Updates are off on this till.').waitFor()
+    await page.getByText('Updates are off on this POS.').waitFor()
     if (!(await btn(page, 'Check for updates').isDisabled())) throw new Error('check not disabled when off')
     const ch = await mock(page, () => window.__mock.update.channel)
     if (ch !== 'off') throw new Error('channel not saved: ' + ch)

@@ -148,7 +148,7 @@ export default function OpenOrders({ orders, activeOrderId, activeLabel, isSuper
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(11,59,73,.45)]" onMouseDown={(e) => { if (e.target === e.currentTarget) setMenuFor(null) }}>
           <div className="flex w-80 animate-rise flex-col overflow-hidden rounded-md bg-white shadow-pop">
             <span className="border-b border-n-line px-4 py-3 text-[15px] font-semibold">{orderLabel(menuFor)} · {menuFor.order_number}</span>
-            <button type="button" className="h-12 px-4 text-start text-sm" onClick={() => { const id = menuFor.id; setMenuFor(null); onOpen(id) }}>{t('Open on the till')}</button>
+            <button type="button" className="h-12 px-4 text-start text-sm" onClick={() => { const id = menuFor.id; setMenuFor(null); onOpen(id) }}>{t('Open on the POS')}</button>
             <button type="button" className="h-12 px-4 text-start text-sm" onClick={async () => { const id = menuFor.id; setMenuFor(null); try { const r = await window.api.print.invoice(id); r?.success === false ? toast.error('Invoice print failed') : toast.success('Invoice printed') } catch { toast.error('Invoice print failed') } }}>{t('Print invoice')}</button>
             <button type="button" className="h-12 border-t border-n-line px-4 text-start text-sm font-semibold text-n-red" onClick={() => { setVoidFor(menuFor); setMenuFor(null) }}>{t('Void order')}</button>
           </div>

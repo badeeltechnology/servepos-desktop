@@ -1684,7 +1684,7 @@ function BackupRestore() {
   }
 
   const handleImport = async () => {
-    if (!(await askConfirm({ title: 'Restore a backup?', body: 'Everything on this till is replaced by the backup you pick: orders, shifts, settings. This can’t be undone.', ok: 'Choose backup', danger: true, typeToConfirm: 'RESTORE' }))) return
+    if (!(await askConfirm({ title: 'Restore a backup?', body: 'Everything on this POS is replaced by the backup you pick: orders, shifts, settings. This can’t be undone.', ok: 'Choose backup', danger: true, typeToConfirm: 'RESTORE' }))) return
     setIsImporting(true)
     setStatus(null)
     try {

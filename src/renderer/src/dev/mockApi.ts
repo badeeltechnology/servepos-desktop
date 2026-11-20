@@ -489,7 +489,7 @@ const impl: Record<string, Record<string, (...a: any[]) => any>> = {
       return clone(lastResult)
     },
     status: () => ({ isSyncing: syncing, lastSyncAt: config.last_sync_at, nextSyncIn: Math.max(0, Math.round((nextSyncAt - Date.now()) / 1000)), lastResult: clone(lastResult) }),
-    startAuto: () => true, testConnection: () => ({ success: true }), getCompanies: () => [{ name: 'Demo Restaurants' }], getPosProfiles: () => [{ name: 'Cocktail · Till 2' }]
+    startAuto: () => true, testConnection: () => ({ success: true }), getCompanies: () => [{ name: 'Demo Restaurants' }], getPosProfiles: () => [{ name: 'Cocktail · POS 2' }]
   }
 }
 
@@ -516,7 +516,7 @@ function pushUpd(patch: any, replace = false) {
 const updatesApi = {
   getState: async () => { await sleep(20); return clone(updState) },
   check: async () => {
-    if (updState.channel === 'off') return { ok: false, error: 'Updates are turned off on this till.', state: clone(updState) }
+    if (updState.channel === 'off') return { ok: false, error: 'Updates are turned off on this POS.', state: clone(updState) }
     if (['downloading', 'downloaded'].includes(updState.status)) return { ok: true, state: clone(updState) }
     pushUpd({ status: 'checking' })
     await sleep(600)
