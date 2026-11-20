@@ -177,7 +177,7 @@ const printers = [
 ]
 
 const config: Record<string, string> = {
-  setup_complete: opt.setup ? '0' : '1', currency: OMR ? 'OMR' : 'QAR', erpnext_url: 'https://erp.example.com', pos_profile: LARGE ? 'Garden Hall' : 'Cocktail · Till 2', company: 'Demo Restaurants',
+  setup_complete: opt.setup ? '0' : '1', currency: OMR ? 'OMR' : 'QAR', erpnext_url: 'https://erp.example.com', pos_profile: LARGE ? 'Garden Hall' : 'Cocktail · POS 2', company: 'Demo Restaurants',
   // the bar checks start on the menu; the large floor uses the default (Tables, because it has tables)
   ...(LARGE ? {} : { start_screen: 'menu' }),
   pinned_items: JSON.stringify(opt.pinned === 'none' ? [] : opt.pinned ? opt.pinned.split(',') : [code('Club Sandwich'), 'BROWNIES', 'NOT-ON-THIS-MENU']),
