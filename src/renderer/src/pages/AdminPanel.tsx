@@ -106,7 +106,7 @@ export default function AdminPanel() {
                       value={receiptConfig.restaurant_name || ''}
                       onChange={(e) => updateField('restaurant_name', e.target.value)}
                       className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                      placeholder="Garden Cafe"
+                      placeholder="My Restaurant"
                     />
                   </div>
                   <div>

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // DEV-ONLY browser harness. Installs a stateful, in-memory window.api with realistic data for
-// Cocktail Bar so the renderer can run under plain Vite (no Electron, no SQLite).
+// a demo bar so the renderer can run under plain Vite (no Electron, no SQLite).
 // Loaded from main.tsx only when VITE_MOCK_API === '1' and window.api is missing; the Electron
 // build never defines VITE_MOCK_API, so this module is not even bundled there.
 //
@@ -11,7 +11,7 @@
 //   ?setup=1          first-run setup
 //   ?empty=1          no open orders
 //   ?idle=0.25        inactivity timeout in minutes (default 600)
-//   ?floor=olive      Garden Terrace layout: ~130 tables in Section A-F, Sofa, Terrace, Dine-in,
+//   ?floor=large      large-venue layout: ~130 tables in Section A-F, Sofa, Terrace, Dine-in,
 //                     ~25 occupied; start_screen left unset so the till opens on Tables
 //   ?printfail=1      KOT and receipt printing fail (to test sticky errors + Retry)
 //   ?directpay=supervisor|off  receipt config direct_pay (default all)
@@ -40,7 +40,7 @@ const opt = {
   update: q.get('update') as 'available' | 'downloading' | 'downloaded' | 'none' | null,
   channel: q.get('channel')
 }
-const OLIVE = opt.floor === 'olive'
+const LARGE = opt.floor === 'large'
 // ?currency=OMR: Omani outlet. Prices in rials (3 decimals), VAT 5% unless ?tax=0,
 // currency_decimals left unset so the decimals come from the currency code.
 const OMR = opt.currency === 'OMR'
@@ -133,11 +133,11 @@ const users: any[] = [
   { id: 'u-pass', name: 'Kitchen pass', full_name: 'Kitchen pass', role: 'coordinator', max_discount_pct: 0, pin: '444444', is_active: 1 }
 ]
 const waiters = [['Ahmed', '5550 1001'], ['Sara', '5550 1002'], ['Omar', '5550 1003'], ['Fatima', '5550 1004']].map(([n, phone]) => ({ name: n, waiter_name: n, phone, is_active: 1 }))
-const rooms = OLIVE
+const rooms = LARGE
   ? [...'ABCDEF'.split('').map((l) => ({ name: `Section ${l}`, room_name: `Section ${l}` })), { name: 'Sofa', room_name: 'Sofa' }, { name: 'Terrace', room_name: 'Terrace' }, { name: 'Dine-in', room_name: 'Dine-in' }]
   : [{ name: 'Terrace', room_name: 'Terrace' }, { name: 'Main hall', room_name: 'Main hall' }, { name: 'Pool', room_name: 'Pool' }]
 const tables: any[] = []
-if (OLIVE) {
+if (LARGE) {
   const add = (name: string, room: string, capacity = 4, status = 'Available') => tables.push({ name, table_name: name, room, capacity, status, current_order_id: null })
   for (const l of 'ABCDEF') {
     for (let i = 1; i <= 16; i++) {
@@ -150,9 +150,9 @@ if (OLIVE) {
   for (let i = 1; i <= 8; i++) add(`T${i}`, 'Terrace', 4, i === 8 ? 'Blocked' : 'Available')
   for (let i = 1; i <= 9; i++) add(`Dine-in ${i}`, 'Dine-in', 2, i === 9 ? 'Reserved' : 'Available')
 }
-/** Cocktail Bar table names in the seeded orders, re-seated on the large floor. */
-const OLIVE_SEAT: Record<string, string> = { T12: 'A12', T8: 'B3', T7: 'A7', T5: 'C5', T3: 'A1B', T6: 'Sofa 2', T9: 'D9', T2: 'T2', 'Bed 4': 'Dine-in 3', 'Bed 2': 'E4', T14: 'C14', T4: 'A4', T10: 'B10', 'Bed 3': 'F1' }
-if (!OLIVE) {
+/** Table names in the seeded orders, re-seated on the large floor. */
+const LARGE_SEAT: Record<string, string> = { T12: 'A12', T8: 'B3', T7: 'A7', T5: 'C5', T3: 'A1B', T6: 'Sofa 2', T9: 'D9', T2: 'T2', 'Bed 4': 'Dine-in 3', 'Bed 2': 'E4', T14: 'C14', T4: 'A4', T10: 'B10', 'Bed 3': 'F1' }
+if (!LARGE) {
   for (let i = 1; i <= 12; i++) tables.push({ name: `T${i}`, table_name: `T${i}`, room: 'Terrace', capacity: i % 3 === 0 ? 6 : 4, status: 'Available', current_order_id: null })
   for (let i = 13; i <= 20; i++) tables.push({ name: `T${i}`, table_name: `T${i}`, room: 'Main hall', capacity: 4, status: i === 17 ? 'Reserved' : 'Available', current_order_id: null })
   for (let i = 1; i <= 8; i++) tables.push({ name: `Bed ${i}`, table_name: `Bed ${i}`, room: 'Pool', capacity: 2, status: i === 7 ? 'Blocked' : 'Available', current_order_id: null })
@@ -177,14 +177,14 @@ const printers = [
 ]
 
 const config: Record<string, string> = {
-  setup_complete: opt.setup ? '0' : '1', currency: OMR ? 'OMR' : 'QAR', erpnext_url: 'https://demo.example.com', pos_profile: OLIVE ? 'Garden Terrace' : 'Cocktail · Till 2', company: 'Harbour Lane Hospitality',
+  setup_complete: opt.setup ? '0' : '1', currency: OMR ? 'OMR' : 'QAR', erpnext_url: 'https://erp.example.com', pos_profile: LARGE ? 'Garden Hall' : 'Cocktail · Till 2', company: 'Demo Restaurants',
   // the bar checks start on the menu; the large floor uses the default (Tables, because it has tables)
-  ...(OLIVE ? {} : { start_screen: 'menu' }),
+  ...(LARGE ? {} : { start_screen: 'menu' }),
   pinned_items: JSON.stringify(opt.pinned === 'none' ? [] : opt.pinned ? opt.pinned.split(',') : [code('Club Sandwich'), 'BROWNIES', 'NOT-ON-THIS-MENU']),
   inactivity_timeout: q.get('idle') || '600', touch_keyboard_enabled: '0', last_sync_at: new Date(Date.now() - 4 * 60000).toISOString()
 }
 const receiptConfig: Record<string, string> = {
-  restaurant_name: 'COCKTAIL BAR', restaurant_name_ar: 'كوكتيل بار', address_line_1: 'Corniche, Doha', address_line_1_ar: 'الكورنيش، الدوحة', phone: '+974 4400 1234',
+  restaurant_name: 'DEMO BAR', restaurant_name_ar: 'بار تجريبي', address_line_1: 'Seafront Road', address_line_1_ar: 'طريق الواجهة البحرية', phone: '+974 4400 1234',
   footer_message: 'Thank you, visit again', footer_message_ar: 'شكراً لزيارتكم', show_arabic: '1', show_arabic_items: '1', currency_symbol: OMR ? 'OMR' : 'QAR', currency_position: 'before', currency_decimals: OMR ? '' : '2',
   tax_enabled: OMR && opt.tax !== '0' ? '1' : '0', tax_rate: OMR && opt.tax !== '0' ? '5' : '0', tax_label: 'VAT', discount_enabled: '1', discount_permission: 'all_users', show_description_on_pos: '1',
   waiter_order_auto_accept: opt.autoAccept ? '1' : '0', receipt_auto_print: '1', kot_copies: '1', receipt_copies: '1', show_cashier_name: '1', vat_number: '', cr_number: '',
@@ -208,8 +208,8 @@ function lineFor(name: string, qty: number, extra: Partial<any> = {}) {
   return { item_code: it.item_code, item_name: it.item_name, qty, rate: it.rate, modifiers, modifier_total: modTotal, amount: (it.rate + modTotal) * qty, special_instructions: extra.special_instructions || null, kot_printed: extra.kot_printed ?? 1 }
 }
 function makeOrder(o: any, lines: any[]) {
-  if (OLIVE && o.table_name && OLIVE_SEAT[o.table_name]) {
-    o.table_name = OLIVE_SEAT[o.table_name]
+  if (LARGE && o.table_name && LARGE_SEAT[o.table_name]) {
+    o.table_name = LARGE_SEAT[o.table_name]
     o.room = tables.find((t) => t.name === o.table_name)?.room || null
   }
   const id = uid('ord')
@@ -248,7 +248,7 @@ if (!opt.empty) {
   makeOrder({ table_name: 'T9', room: 'Terrace', guests: 8, waiter_id: 'Sara', waiter_name: 'Sara', status: 'Invoiced', created_at: ago(52) }, [lineFor('Cappuccino', 3), lineFor('Orange Juice 12 oz', 2), lineFor('Crepe Nutella', 2), lineFor('Mango Cake', 1, { special_instructions: 'Birthday candle' })])
   // opened before midnight and still open (must stay visible on the kitchen pass)
   makeOrder({ table_name: 'T2', room: 'Terrace', guests: 2, waiter_id: 'Sara', waiter_name: 'Sara', status: 'Preparing', created_at: ago(new Date().getHours() * 60 + new Date().getMinutes() + 25) }, [lineFor('Moroccan Mint Tea', 2)])
-  if (OLIVE) {
+  if (LARGE) {
     // a busy evening: ~25 tables in use across the sections
     const W = ['Ahmed', 'Sara', 'Omar', 'Fatima', null]
     const seats: [string, string, number, number][] = [
@@ -315,7 +315,7 @@ let waiterOrders: any[] = [
   { name: 'WO-2026-00121', waiter_name: 'Ahmed', table: 'T8', room: 'Terrace', order_type: 'Dine In', guests: 4, created: ago(0), status: 'Pending', notes: 'Bring with the mains', parent_order: 'WO-2026-00102', round_no: 2,
     items: [{ item_code: code('Iced Latte'), item_name: 'Iced Latte', qty: 2, rate: 28, modifier_total: 0 }, { item_code: code('Water 500 ml'), item_name: 'Water 500 ml', qty: 2, rate: 6, modifier_total: 0 }] }
 ]
-if (OLIVE) for (const w of waiterOrders) if (OLIVE_SEAT[w.table]) { w.table = OLIVE_SEAT[w.table]; w.room = tables.find((t) => t.name === w.table)?.room }
+if (LARGE) for (const w of waiterOrders) if (LARGE_SEAT[w.table]) { w.table = LARGE_SEAT[w.table]; w.room = tables.find((t) => t.name === w.table)?.room }
 const woVisibleAt = opt.wo === 'now' ? 0 : opt.wo === 'later' ? Date.now() + 12000 : Infinity
 
 // ------------------------------------------------------------------ sync
@@ -489,7 +489,7 @@ const impl: Record<string, Record<string, (...a: any[]) => any>> = {
       return clone(lastResult)
     },
     status: () => ({ isSyncing: syncing, lastSyncAt: config.last_sync_at, nextSyncIn: Math.max(0, Math.round((nextSyncAt - Date.now()) / 1000)), lastResult: clone(lastResult) }),
-    startAuto: () => true, testConnection: () => ({ success: true }), getCompanies: () => [{ name: 'Harbour Lane Hospitality' }], getPosProfiles: () => [{ name: 'Cocktail · Till 2' }]
+    startAuto: () => true, testConnection: () => ({ success: true }), getCompanies: () => [{ name: 'Demo Restaurants' }], getPosProfiles: () => [{ name: 'Cocktail · Till 2' }]
   }
 }
 

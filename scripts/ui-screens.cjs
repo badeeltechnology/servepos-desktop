@@ -619,14 +619,14 @@ async function runV3(browser, W) {
   await page.close()
 }
 
-// ------------------------------------------------------------------ floor (Garden Terrace, ~130 tables)
+// ------------------------------------------------------------------ floor (large venue, ~130 tables)
 const fl = (page, name) => shot(page, name, '-floor')
 const floorMain = (page) => page.getByRole('main', { name: 'Tables' })
 const ticket = (page) => page.getByLabel('Current order')
 
 async function runFloor(browser, W) {
   console.log(`\n== floor checks ${W}×768`)
-  let page = await newPage(browser, W, '?floor=olive&wo=none')
+  let page = await newPage(browser, W, '?floor=large&wo=none')
   await step('floor: sign-in lands on Tables (130 tables, room counts)', async () => {
     await pin(page, '111111')
     await floorMain(page).waitFor({ timeout: 4000 })
@@ -730,12 +730,12 @@ async function runFloor(browser, W) {
   await page.close()
 }
 
-// ------------------------------------------------------------------ review findings (large-floor scale)
+// ------------------------------------------------------------------ review findings (large-venue scale)
 const v3 = (page, name) => shot(page, name, '-v3')
 async function runReview(browser) {
   const W = Number(process.env.REVIEW_W || 1366)
   console.log(`\n== review findings ${W}×768`)
-  let page = await newPage(browser, W, '?floor=olive&wo=none')
+  let page = await newPage(browser, W, '?floor=large&wo=none')
   const fm = () => floorMain(page)
   const order = (tb) => page.evaluate((t) => window.__mock.orders.find((o) => o.table_name === t && ['Open', 'Hold', 'Preparing', 'Ready to Serve', 'Invoiced'].includes(o.status)), tb)
   await step('F01: tap a seated table shows its rounds beside the floor; Open order goes in', async () => {
@@ -808,7 +808,7 @@ async function runReview(browser) {
   await page.close()
 
   // F04: a waiter order arriving during payment never covers it
-  page = await newPage(browser, W, '?floor=olive&wo=later&autoaccept=0')
+  page = await newPage(browser, W, '?floor=large&wo=later&autoaccept=0')
   await step('F04: waiter order during payment: toast and tab count, no overlay', async () => {
     await pin(page, '111111')
     await fm().getByRole('button', { name: /^B3, Occupied/ }).dblclick()
@@ -826,7 +826,7 @@ async function runReview(browser) {
   await page.close()
 
   // F09: orders left unsent by a signed-out cashier
-  page = await newPage(browser, W, '?floor=olive&wo=none')
+  page = await newPage(browser, W, '?floor=large&wo=none')
   await step('F09: next cashier is told about orders left not sent', async () => {
     await pin(page, '111111')
     await fm().getByRole('button', { name: 'C14, Free' }).click()
@@ -863,7 +863,7 @@ async function runReview(browser) {
   await page.close()
 
   // F12: kitchen view
-  page = await newPage(browser, W, '?floor=olive&wo=none')
+  page = await newPage(browser, W, '?floor=large&wo=none')
   await step('F12: kitchen view oldest first, Ready at the end with its clock stopped', async () => {
     await pin(page, '444444')
     await page.getByText(/Mark ready|Start/).first().waitFor({ timeout: 5000 })
@@ -875,7 +875,7 @@ async function runReview(browser) {
   await page.close()
 
   // 1024
-  page = await newPage(browser, 1024, '?floor=olive&wo=none')
+  page = await newPage(browser, 1024, '?floor=large&wo=none')
   await step('1024: till and floor keep table names and stages readable', async () => {
     await pin(page, '111111')
     await v3(page, 'floor')
@@ -895,7 +895,7 @@ async function runSplitHold(browser) {
   const lastPays = (page) => page.evaluate(() => { const m = window.__mock; const o = m.orders.filter((x) => x.status === 'Completed').pop(); return { total: o.grand_total, pays: m.payments.filter((p) => p.order_id === o.id).map((p) => [p.payment_method, p.amount, p.reference]) } })
   async function takeShare(page) { await payDlg(page).getByRole('button', { name: /^(Take .*share|Finish sale)/ }).click() }
 
-  let page = await newPage(browser, W, '?floor=olive&wo=none')
+  let page = await newPage(browser, W, '?floor=large&wo=none')
   const fm = () => floorMain(page)
   await step('F20: Hold saves without sending; the table shows Not sent; no KOT', async () => {
     await pin(page, '111111')
@@ -1049,7 +1049,7 @@ async function runDirect(browser) {
     if (r.cut) throw new Error('a label is cut ' + JSON.stringify(r))
   }
 
-  let page = await newPage(browser, 1366, '?floor=olive&wo=none')
+  let page = await newPage(browser, 1366, '?floor=large&wo=none')
   const fm = () => floorMain(page)
   let paid = null
   await step('direct: dine-in at A3 pays with no KOT prompt; receipt prints, no KOT, items marked, audit logged', async () => {
