@@ -7,6 +7,16 @@ The point of sale at the counter for [Serve POS](https://github.com/badeeltechno
 - Kitchen tickets routed to each kitchen's printer, a kitchen screen, shifts with a cash count
 - Updates itself from GitHub releases
 
+## Download
+
+| Computer | Download |
+|---|---|
+| **Windows** 10 or 11 | [**Download for Windows**](https://github.com/badeeltechnology/servepos-releases/releases/download/v2.19.3/servepos-desktop-2.19.3-setup.exe) (64-bit and 32-bit in one installer) |
+| **macOS** (Apple silicon) | [**Download for Mac**](https://github.com/badeeltechnology/servepos-releases/releases/download/v2.19.3/ServePOS-2.19.3-arm64-mac.zip) |
+| **Waiter app** for Android | [**Download the APK**](https://github.com/badeeltechnology/waiterapp/releases/latest/download/ServePOS-Waiter.apk) |
+
+Every version is on the [releases page](https://github.com/badeeltechnology/servepos-releases/releases). Once installed, the POS updates itself.
+
 ## Use it
 
 Install the latest version from the [releases page](https://github.com/badeeltechnology/servepos-releases/releases/latest), then follow the [Serve POS guide](https://github.com/badeeltechnology/servepos/blob/docs/user-guide/docs/guide/index.md): it needs the Serve POS app on your ERPNext site and a POS Profile for the outlet.
